@@ -93,13 +93,17 @@ def allocate_pools(
     - Model dtype: user-selected (default float64).
     - Recording T, EVT_TIME are always float64.
     - STEP:int64, FLAGS:int32, EVT_CODE:int32, EVT_INDEX:int32.
+    
+    Note: For steppers that need workspace >= n_state (like Euler using sw0 for RHS),
+    we ensure sw0_size is at least n_state.
     """
     sspec = struct.struct_spec()
 
     # Work banks (model dtype unless noted)
+    # For sw0, ensure it's at least n_state for steppers like Euler
     sp  = _zeros((sspec.sp_size,),  model_dtype)
     ss  = _zeros((sspec.ss_size,),  model_dtype)
-    sw0 = _zeros((sspec.sw0_size,), model_dtype)
+    sw0 = _zeros((max(sspec.sw0_size, n_state),), model_dtype)  # At least n_state
     sw1 = _zeros((sspec.sw1_size,), model_dtype)
     sw2 = _zeros((sspec.sw2_size,), model_dtype)
     sw3 = _zeros((sspec.sw3_size,), model_dtype)

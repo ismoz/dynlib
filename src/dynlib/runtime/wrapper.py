@@ -9,7 +9,7 @@ from dynlib.runtime.buffers import (
     allocate_pools, grow_rec_arrays, grow_evt_arrays,
 )
 from dynlib.runtime.results import Results
-from dynlib.steppers.base import StepperSpec
+from dynlib.steppers.base import StructSpec
 
 __all__ = ["run_with_wrapper"]
 
@@ -22,7 +22,7 @@ def run_with_wrapper(
     rhs: Callable[..., None],
     events_pre: Callable[..., None],
     events_post: Callable[..., None],
-    struct: StepperSpec,
+    struct: StructSpec,
     model_dtype: np.dtype,
     n_state: int,
     # sim config
@@ -68,9 +68,17 @@ def run_with_wrapper(
     y_curr = np.array(y0, dtype=model_dtype, copy=True)
     y_prev = np.array(y0, dtype=model_dtype, copy=True)  # will be set by runner after first commit
 
-    # Allocate banks and pools
+    # Allocate banks and pools - create a minimal wrapper that has struct_spec() method
+    class _StructWrapper:
+        def __init__(self, s: StructSpec):
+            self._s = s
+        def struct_spec(self):
+            return self._s
+    
+    struct_wrapper = _StructWrapper(struct)
+    
     banks, rec, ev = allocate_pools(
-        n_state=n_state, struct=struct, model_dtype=model_dtype,
+        n_state=n_state, struct=struct_wrapper, model_dtype=model_dtype,
         cap_rec=cap_rec, cap_evt=cap_evt,
     )
 

@@ -5,12 +5,19 @@ from dynlib.runtime.runner_api import GROW_REC, GROW_EVT, DONE
 from dynlib.steppers.base import StepperMeta, StepperSpec, StructSpec
 
 # ---- Fake stepper/spec (no real stepping) ------------------------------------
-class _DummyStepper(StepperSpec):
+class _DummyStepper:
+    """Minimal stepper spec for testing."""
     def __init__(self):
-        super().__init__(StepperMeta(name="dummy", kind="ode"))
+        self.meta = StepperMeta(name="dummy", kind="ode")
+    
     def struct_spec(self) -> StructSpec:
         # No work memory needed for the fake runner
-        return StructSpec(0,0,0,0,0,0, 0,0)
+        return StructSpec(
+            sp_size=1, ss_size=1,
+            sw0_size=1, sw1_size=1, sw2_size=1, sw3_size=1,
+            iw0_size=1, bw0_size=1
+        )
+    
     def emit(self, *args, **kwargs):
         raise NotImplementedError
 
@@ -74,7 +81,13 @@ class _RunnerScript:
             return DONE
 
 def test_wrapper_reentry_calls_and_cursors():
-    struct = _DummyStepper()
+    # Create a StructSpec directly
+    struct = StructSpec(
+        sp_size=1, ss_size=1,
+        sw0_size=1, sw1_size=1, sw2_size=1, sw3_size=1,
+        iw0_size=1, bw0_size=1
+    )
+    
     y0 = np.array([1.0], dtype=np.float64)
     params = np.array([2.0], dtype=np.float64)
     fake_runner = _RunnerScript()

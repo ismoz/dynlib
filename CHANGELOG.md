@@ -2,6 +2,27 @@
 
 ---
 
+## [2.4.0] – 2025-11-04
+### Added
+- Introduced `Sim.run` method in `src/dynlib/runtime/sim.py` for executing simulations with 
+  compiled models.
+- Added `run_with_wrapper` in `src/dynlib/runtime/wrapper.py` for orchestrating simulation runs.
+- Created `EulerSpec` in `src/dynlib/steppers/euler.py` for explicit Euler stepper implementation.
+
+### Changed
+- Updated `allocate_pools` in `src/dynlib/runtime/buffers.py` to ensure `sw0` size is at least 
+  `n_state` for steppers requiring workspace.
+- Enhanced `Model` dataclass in `src/dynlib/runtime/model.py` with additional attributes for 
+  compiled stepper and runner callables.
+
+### Tests
+- Added integration tests in `tests/integration/test_euler_basic.py` for Euler simulations, event 
+  handling, and buffer growth.
+- Updated unit tests in `tests/unit/test_wrapper_reentry.py` to validate re-entry logic for buffer 
+  growth.
+
+---
+
 ## [2.3.1] – 2025-11-04
 ### Fixed
 - Removed redundant validation functions `validate_dtype_rules` and `validate_equation_targets` 
