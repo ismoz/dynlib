@@ -1,7 +1,7 @@
 # src/dynlib/steppers/base.py
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import FrozenSet, Protocol
+from typing import FrozenSet, Protocol, Callable
 
 from dynlib.runtime.types import Kind, TimeCtrl, Scheme
 
@@ -62,11 +62,24 @@ class StepperSpec(Protocol):
     Implementations MUST:
       - accept `meta: StepperMeta` in __init__
       - provide `struct_spec() -> StructSpec`
-      - provide `emit(rhs_fn, struct: StructSpec)` for codegen (outside runtime)
+      - provide `emit(rhs_fn, struct: StructSpec) -> Callable` that returns a jittable stepper function
     """
 
     meta: StepperMeta
 
     def __init__(self, meta: StepperMeta) -> None: ...
     def struct_spec(self) -> StructSpec: ...
-    def emit(self, rhs_fn, struct: StructSpec): ...
+    def emit(self, rhs_fn: Callable, struct: StructSpec) -> Callable:
+        """
+        Generate a jittable stepper function.
+        
+        Args:
+            rhs_fn: The compiled RHS function (for inlining or reference)
+            struct: StructSpec for this stepper (for workspace allocation info)
+        
+        Returns:
+            A callable Python function that implements the stepper with the frozen ABI signature:
+                stepper(t, dt, y_curr, rhs, params, sp, ss, sw0, sw1, sw2, sw3, 
+                       iw0, bw0, y_prop, t_prop, dt_next, err_est) -> int32
+        """
+        ...

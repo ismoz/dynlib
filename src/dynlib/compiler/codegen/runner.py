@@ -1,8 +1,8 @@
 # src/dynlib/compiler/codegen/runner.py
 """
-Generic runner source generation (Slice 4).
+Generic runner (Slice 4).
 
-Generates a single @njit runner with the frozen ABI that:
+Defines a single runner function with the frozen ABI that:
   1. Pre-events on committed state
   2. Stepper loop (single attempt for fixed-step; adaptive may retry internally)
   3. Commit: y_prev, y_curr, t
@@ -10,57 +10,28 @@ Generates a single @njit runner with the frozen ABI that:
   5. Record (with capacity checks)
   6. Loop until t >= t_end or max_steps
   7. Return status codes per runner_api.py
+
+The runner accepts the stepper as a callable parameter, so steppers can be
+regular Python functions instead of generated source code.
+
+Per guardrails: same function body is used with/without JIT; decoration happens
+only in compiler/jit/*.
 """
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from dynlib.steppers.base import StructSpec
 
-__all__ = ["generate_runner_source"]
+# Import status codes from canonical source
+from dynlib.runtime.runner_api import (
+    OK, REJECT, STEPFAIL, NAN_DETECTED,
+    DONE, GROW_REC, GROW_EVT, USER_BREAK
+)
+
+__all__ = ["runner", "get_runner"]
 
 
-def generate_runner_source(
-    *,
-    n_state: int,
-    struct: StructSpec,
-    stepper_src: str,
-) -> str:
-    """
-    Generate the complete runner source code as a string.
-    
-    Args:
-        n_state: Number of state variables
-        struct: StructSpec from the chosen stepper (for maintenance hooks)
-        stepper_src: Source code for the stepper function (emitted by StepperSpec.emit())
-    
-    Returns:
-        Python source code defining the runner function with frozen ABI signature.
-    """
-    # The runner follows the exact signature from runner_api.py.
-    # We'll generate it as a string template.
-    
-    # Note: We import status codes at module level in the generated source.
-    # The stepper_src should return OK or other status codes.
-    
-    source = f"""
-# Auto-generated runner (Slice 4)
-import numpy as np
-
-# Status codes (must match runtime.runner_api)
-OK = 0
-REJECT = 1
-STEPFAIL = 2
-NAN_DETECTED = 3
-DONE = 9
-GROW_REC = 10
-GROW_EVT = 11
-USER_BREAK = 12
-
-# ---- Stepper function (injected) ----
-{stepper_src}
-
-# ---- Generic Runner (frozen ABI) ----
 def runner(
     # scalars
     t0, t_end, dt_init,
@@ -85,11 +56,13 @@ def runner(
     # function symbols (jittable callables)
     stepper, rhs, events_pre, events_post
 ):
-    \"\"\"
+    """
     Generic runner (Slice 4): fixed-step execution with events and recording.
     
+    Frozen ABI signature - must match runner_api.py specification.
+    
     Returns status code (int32).
-    \"\"\"
+    """
     # Initialize loop state
     t = float(t0)
     dt = float(dt_init)
@@ -187,6 +160,25 @@ def runner(
     status_out[0] = DONE
     hint_out[0] = m
     return DONE
-"""
+
+
+def get_runner(*, jit: bool = True) -> Callable:
+    """
+    Get the runner function, optionally JIT-compiled.
     
-    return source
+    Per guardrails: JIT decoration happens only in compiler/jit/*.
+    This is a convenience wrapper for build.py to avoid direct JIT logic there.
+    
+    Args:
+        jit: Whether to apply JIT compilation (default True)
+    
+    Returns:
+        Runner function (JIT-compiled if requested and available)
+    """
+    if jit:
+        try:
+            from numba import njit
+            return njit(cache=False)(runner)
+        except ImportError:
+            pass  # Fall back to non-JIT
+    return runner

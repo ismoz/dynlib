@@ -2,6 +2,25 @@
 
 ---
 
+## [2.4.1] – 2025-11-05
+### Added
+- Added `get_runner` in `src/dynlib/compiler/codegen/runner.py` for obtaining a generic runner
+  function.
+- Created `runner` function in `src/dynlib/compiler/codegen/runner.py` for fixed-step execution 
+  with events and recording.
+- Introduced `EulerSpec` in `src/dynlib/steppers/euler.py` for explicit Euler stepper 
+  implementation.
+
+### Changed
+- Updated `build` in `src/dynlib/compiler/build.py` to use `get_runner` instead of generating 
+  runner source code from string.
+- Enhanced `emit` in `src/dynlib/steppers/euler.py` to return a callable Python function instead 
+  of source code.
+- Improved `StepperSpec` in `src/dynlib/steppers/base.py` to include detailed docstrings for 
+  `emit` method.
+
+---
+
 ## [2.4.0] – 2025-11-04
 ### Added
 - Introduced `Sim.run` method in `src/dynlib/runtime/sim.py` for executing simulations with 

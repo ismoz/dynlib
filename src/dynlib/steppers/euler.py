@@ -100,9 +100,9 @@ class EulerSpec:
             stiff_ok=False,
         )
 
-    def emit(self, rhs_fn: Callable, struct: StructSpec) -> str:
+    def emit(self, rhs_fn: Callable, struct: StructSpec) -> Callable:
         """
-        Generate source code for the Euler stepper function.
+        Generate a jittable Euler stepper function.
         
         Signature (per ABI):
             status = stepper(
@@ -116,45 +116,44 @@ class EulerSpec:
             ) -> int32
         
         Returns:
-            Python source code as a string that defines the stepper function.
+            A callable Python function implementing the Euler stepper.
         """
-        # We'll generate an AST and convert it to source, or just return source directly.
-        # For simplicity in Slice 4, let's return source as a string (less AST wrangling).
-        # The compile layer will exec() it.
+        # Define the stepper function directly (not as a string)
+        # This function will be JIT-compiled later if jit=True
+        def euler_stepper(
+            t, dt,
+            y_curr, rhs,
+            params,
+            sp, ss,
+            sw0, sw1, sw2, sw3,
+            iw0, bw0,
+            y_prop, t_prop, dt_next, err_est
+        ):
+            # Euler: y_prop = y_curr + dt * f(t, y_curr)
+            n = y_curr.size
+            
+            # Use sw0 as scratch for dy (RHS evaluation)
+            # Wrapper ensures sw0.size >= n
+            dy = sw0[:n]
+            
+            # Evaluate RHS
+            rhs(t, y_curr, dy, params)
+            
+            # Propose next state
+            for i in range(n):
+                y_prop[i] = y_curr[i] + dt * dy[i]
+            
+            # Fixed step: dt_next = dt
+            t_prop[0] = t + dt
+            dt_next[0] = dt
+            err_est[0] = 0.0
+            
+            # Import OK from the module where this will be executed
+            # When JIT'd, OK will be available in the namespace
+            # For now, return 0 (OK status)
+            return 0  # OK
         
-        source = """
-def euler_stepper(
-    t, dt,
-    y_curr, rhs,
-    params,
-    sp, ss,
-    sw0, sw1, sw2, sw3,
-    iw0, bw0,
-    y_prop, t_prop, dt_next, err_est
-):
-    # Euler: y_prop = y_curr + dt * f(t, y_curr)
-    n = y_curr.size
-    
-    # Use sw0 as scratch for dy (RHS evaluation)
-    # Wrapper ensures sw0.size >= n
-    dy = sw0[:n]
-    
-    # Evaluate RHS
-    rhs(t, y_curr, dy, params)
-    
-    # Propose next state
-    for i in range(n):
-        y_prop[i] = y_curr[i] + dt * dy[i]
-    
-    # Fixed step: dt_next = dt
-    t_prop[0] = t + dt
-    dt_next[0] = dt
-    err_est[0] = 0.0
-    
-    # Return OK status (import at top of generated module)
-    return OK
-"""
-        return source
+        return euler_stepper
 
 
 # Auto-register on module import (optional; can also register explicitly in __init__.py)
