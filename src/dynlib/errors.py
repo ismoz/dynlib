@@ -1,11 +1,9 @@
 # src/dynlib/errors.py
 from __future__ import annotations
-from email.mime import message
-
 
 __all__ = [
-"DynlibError",
-"ModelLoadError",
+    "DynlibError",
+    "ModelLoadError",
 ]
 
 class DynlibError(Exception):

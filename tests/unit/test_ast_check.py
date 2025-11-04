@@ -6,9 +6,7 @@ from dynlib.dsl.parser import parse_model_v2
 from dynlib.dsl.astcheck import (
     collect_names,
     validate_expr_acyclic,
-    validate_equation_targets,
     validate_event_legality,
-    validate_dtype_rules,
     validate_functions_signature,
 )
 
@@ -59,6 +57,11 @@ def test_validate_expr_acyclic_cycle_in_functions():
         validate_expr_acyclic(n)
 
 def test_validate_equation_targets_unknown_and_duplicate():
+    """
+    Equation target validation (unknown states, duplicates) is now done
+    in schema.py:validate_name_collisions() during parse_model_v2().
+    This test verifies that the parser catches these errors.
+    """
     d = base_doc()
     # unknown
     d["equations"] = {"rhs": {"x": "-x"}, "expr": "z = 0"}
@@ -82,6 +85,10 @@ def test_validate_event_legality_only_states_or_params():
         validate_event_legality(n)
 
 def test_validate_dtype_rules_ode_requires_float():
+    """
+    Dtype validation is now done in schema.py:validate_model_header()
+    during parse_model_v2(). This test verifies the parser catches it.
+    """
     d = base_doc()
     d["model"]["dtype"] = "int32"
     with pytest.raises(ModelLoadError):

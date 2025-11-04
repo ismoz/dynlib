@@ -2,6 +2,17 @@
 
 ---
 
+## [2.3.1] – 2025-11-04
+### Fixed
+- Removed redundant validation functions `validate_dtype_rules` and `validate_equation_targets` 
+  from `src/dynlib/dsl/astcheck.py`.
+- Fixed unused import `from email.mime import message` in `src/dynlib/errors.py`.
+
+### Tests
+- Updated tests in `tests/unit/test_ast_check.py` to reflect changes in validation logic.
+
+---
+
 ## [2.3.0] – 2025-11-04
 ### Added
 - Introduced `build_callables` in `src/dynlib/compiler/build.py` for generating RHS and event 

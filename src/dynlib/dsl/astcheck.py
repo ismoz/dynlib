@@ -8,9 +8,7 @@ from dynlib.errors import ModelLoadError
 __all__ = [
     "collect_names",
     "validate_expr_acyclic",
-    "validate_equation_targets",
     "validate_event_legality",
-    "validate_dtype_rules",
     "validate_functions_signature",
 ]
 
@@ -90,35 +88,6 @@ def validate_expr_acyclic(normal: Dict[str, Any]) -> None:
     _dfs_cycle_check(graph)
 
 
-def validate_equation_targets(normal: Dict[str, Any]) -> None:
-    states = set(normal["states"].keys())
-    rhs = normal["equations"].get("rhs") or {}
-    expr = normal["equations"].get("expr")
-
-    # Collect block targets
-    block_targets: Set[str] = set()
-    if isinstance(expr, str):
-        for line in expr.splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" in line:
-                lhs = line.split("=", 1)[0].strip()
-                if lhs:
-                    block_targets.add(lhs)
-
-    rhs_targets = set(rhs.keys())
-    all_targets = rhs_targets | block_targets
-
-    unknown = all_targets - states
-    if unknown:
-        raise ModelLoadError(f"Equation targets must be declared in [states], unknown: {sorted(unknown)}")
-
-    dup = rhs_targets & block_targets
-    if dup:
-        raise ModelLoadError(f"Duplicate equation targets across rhs and block: {sorted(dup)}")
-
-
 def validate_event_legality(normal: Dict[str, Any]) -> None:
     states = set(normal["states"].keys())
     params = set(normal["params"].keys())
@@ -133,15 +102,6 @@ def validate_event_legality(normal: Dict[str, Any]) -> None:
                     f"[events.{name}] may mutate only states/params; illegal: {illegal}"
                 )
         # action_block legality is deferred to codegen parsing; enforced here by absence of aux/buffer names is not trivial.
-
-
-def validate_dtype_rules(normal: Dict[str, Any]) -> None:
-    model = normal["model"]
-    mtype = model["type"]
-    dtype = model.get("dtype", "float64")
-    if mtype == "ode":
-        if dtype not in {"float32", "float64", "float16", "bfloat16"}:
-            raise ModelLoadError("ODE models require a floating dtype (float32/float64/float16/bfloat16)")
 
 
 def validate_functions_signature(normal: Dict[str, Any]) -> None:
