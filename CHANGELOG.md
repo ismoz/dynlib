@@ -2,6 +2,28 @@
 
 ---
 
+## [2.3.0] – 2025-11-04
+### Added
+- Introduced `build_callables` in `src/dynlib/compiler/build.py` for generating RHS and event 
+  callables.
+- Added `emit_rhs_and_events` in `src/dynlib/compiler/codegen/emitter.py` for code generation.
+- Implemented `JITCache` in `src/dynlib/compiler/jit/cache.py` for caching compiled callables.
+- Added `maybe_jit_triplet` in `src/dynlib/compiler/jit/compile.py` for JIT compilation toggle.
+- Created `Model` dataclass in `src/dynlib/runtime/model.py` for simulation models.
+- Added `Sim` class in `src/dynlib/runtime/sim.py` as a placeholder for simulation runners.
+
+### Changed
+- Fixed column-major layout in `tests/unit/test_numba_probe.py` for recording buffers.
+- Enhanced `_normalize_event` in `src/dynlib/compiler/mods.py` to handle nested TOML dicts for 
+  actions.
+- Improved `_read_events` in `src/dynlib/dsl/parser.py` to support nested TOML keys for event 
+  actions.
+
+### Tests
+- Added unit tests for `build_callables` in `tests/unit/test_codegen_triplet.py`.
+
+---
+
 ## [2.2.0] – 2025-11-04
 ### Added
 - Implemented `parse_model_v2` in `src/dynlib/dsl/parser.py` for parsing DSL TOML into normalized 

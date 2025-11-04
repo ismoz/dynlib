@@ -44,10 +44,18 @@ def _read_events(ev_tbl: Dict[str, Any]) -> List[Dict[str, Any]]:
         # action: either keyed assignments or a block string
         action_keyed = None
         action_block = None
-        if "action" in body and isinstance(body["action"], str):
-            action_block = body["action"]
+        if "action" in body:
+            if isinstance(body["action"], str):
+                action_block = body["action"]
+            elif isinstance(body["action"], dict):
+                # TOML dotted keys like action.x create a nested dict
+                action_ns = body["action"]
+                for tgt, expr in action_ns.items():
+                    if not isinstance(expr, str):
+                        raise ModelLoadError(f"[events.{name}].action.{tgt} must be a string expression")
+                action_keyed = action_ns
         else:
-            # keyed form is in the 'action.*' namespace
+            # Alternative: keyed form via 'action.*' flat keys (fallback)
             action_ns = {k[7:]: v for k, v in body.items() if k.startswith("action.")}
             if action_ns:
                 for tgt, expr in action_ns.items():

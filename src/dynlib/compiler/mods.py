@@ -47,9 +47,17 @@ def _normalize_event(name: str, body: Dict[str, Any]) -> Dict[str, Any]:
     cond = body["cond"]
     action_keyed = None
     action_block = None
-    if isinstance(body.get("action"), str):
-        action_block = body.get("action")
-    else:
+    if "action" in body:
+        if isinstance(body.get("action"), str):
+            action_block = body.get("action")
+        elif isinstance(body.get("action"), dict):
+            # nested TOML dict: action = { x = "...", y = "..." }
+            ak_dict = body.get("action") or {}
+            action_keyed = {k: v for k, v in ak_dict.items()}
+        else:
+            action_keyed = None
+    # dotted fallback: action.x = "..."
+    if action_keyed is None:
         ak = {k[7:]: v for k, v in body.items() if k.startswith("action.")}
         action_keyed = ak or None
     record = bool(body.get("record", False))
@@ -123,26 +131,26 @@ def apply_mods_v2(normal: Dict[str, Any], selected: List[ModSpec]) -> Dict[str, 
         else:
             passthrough.append(m)
 
-    resolved: List[ModSpec] = []
+    # Resolve exclusives per group (choose lowest (priority, name)); non-exclusive keep all.
+    winners: Dict[str, ModSpec] = {}
     for g, mods in by_group.items():
         exclusives = [m for m in mods if m.exclusive]
         if exclusives:
-            chosen = sorted(exclusives, key=lambda x: (x.priority, x.name))[0]
-            resolved.append(chosen)
-        else:
-            # non-exclusive group: preserve original order
-            resolved.extend(mods)
+            winners[g] = sorted(exclusives, key=lambda x: (x.priority, x.name))[0]
 
-    # Preserve caller order for non-grouped + append resolved grouped
-    # Maintain original relative order as much as sensible
+    # Final order strictly follows caller order of 'selected',
+    # dropping losers from exclusive groups.
     final_order: List[ModSpec] = []
-    seen: set[str] = set()
-    # first, keep passthrough in the order given
     for m in selected:
         if m.group is None:
             final_order.append(m)
-    # then, add resolved grouped in stable (priority,name) order per group
-    final_order.extend(sorted(resolved, key=lambda x: (x.group or "", x.priority, x.name)))
+        else:
+            if m.group in winners:
+                if winners[m.group] is m:
+                    final_order.append(m)
+            else:
+                # non-exclusive group: keep original caller order
+                final_order.append(m)
 
     # Work on a shallow copy of normal
     out = {

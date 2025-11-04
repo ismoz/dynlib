@@ -141,7 +141,7 @@ def _runner(
     if i < cap_rec:
         T[i] = t
         for k in range(n_state):
-            Y[i, k] = y_curr[k]
+            Y[k, i] = y_curr[k]
         STEP[i] = step
         FLAGS[i] = np.int32(OK)
         i += 1
@@ -204,7 +204,8 @@ def test_numba_probe_minimal_ok():
 
     # Recording buffers
     T    = np.zeros(cap_rec, dtype=np.float64)
-    Y    = np.zeros((cap_rec, n_state), dtype=np.float64)
+    # Freeze Y layout to (n_state, cap_rec): states × records
+    Y    = np.zeros((n_state, cap_rec), dtype=np.float64)
     STEP = np.zeros(cap_rec, dtype=np.int64)
     FLAGS= np.zeros(cap_rec, dtype=np.int32)
 
@@ -248,4 +249,5 @@ def test_numba_probe_minimal_ok():
     assert i_out[0] == 1
     assert step_out[0] == 1
     assert T[0] == pytest.approx(t_out[0])
-    assert np.allclose(Y[0], y_curr)
+    # Column 0 contains the committed state
+    assert np.allclose(Y[:, 0], y_curr)
