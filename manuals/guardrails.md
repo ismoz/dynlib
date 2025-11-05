@@ -62,7 +62,7 @@ rhs(t: float, y_vec: float[:], dy_out: float[:], params: float[:] | int[:]) -> N
 - May **mutate only states/params**; may request logging/recording per DSL.
 
 ### Dtypes & Buffers
-- Model primary dtype from `[model].dtype` (default `float64`). ODEs must be float; maps may be float or int.
+- Model primary dtype from `[model].dtype` (default `float64`).
 - `T`, `EVT_TIME`: `float64`; `Y`: model dtype; `STEP:int64`, `FLAGS:int32`.
 - Work banks `sp, ss, sw*`: model dtype; `iw0:int32`, `bw0:uint8`.
 - `t_prop` is model dtype; committed `t` written to `T` as `float64`.
@@ -185,7 +185,7 @@ priority = 0
 
 ### Validation Highlights
 - Unique names; acyclic aux/functions; no duplicate equation targets.
-- Events mutate only states/params; dtype rules enforced (ODEs must be float).
+- Events mutate only states/params; dtype rules enforced.
 
 ---
 

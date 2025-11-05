@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .base import StepperMeta, StructSpec
+from dynlib.runtime.runner_api import OK
 
 if TYPE_CHECKING:
     from typing import Callable
@@ -72,7 +73,7 @@ class RK4Spec:
             stiff_ok=False,
         )
 
-    def emit(self, rhs_fn: Callable, struct: StructSpec) -> Callable:
+    def emit(self, rhs_fn: Callable, struct: StructSpec, model_spec=None) -> Callable:
         """
         Generate a jittable RK4 stepper function.
         
@@ -138,8 +139,7 @@ class RK4Spec:
             dt_next[0] = dt
             err_est[0] = 0.0
             
-            # Return OK status (0)
-            return 0  # OK
+            return OK
         
         return rk4_stepper
 

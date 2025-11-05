@@ -198,7 +198,7 @@ priority = 0         # optional tie-break (higher wins) if multiple provided
 
 ### Validation highlights
 - Unknown targets in remove.* → error (fail loud).
-- set.states/set.params may create new keys; if you want stricter behavior, require add.* for creation and make set.* “update-only”.
+- set.states/set.params can't create new keys; it is update-only. add.* can create new keys.
 - No assigning to aux inside events (events may read aux).
 - Dtype rules still enforced after mods.
 - Event names are unique; replace.events.X requires X to exist; add.events.X requires it not to exist.
@@ -291,7 +291,6 @@ labA = ["Z:/labA/models", "//server/share/models"]
 
 ### Dtypes
 - One primary dtype per model (from `[model].dtype`, default float64).
-- ODEs must use float dtype. Maps may use float or int dtype.
 - Recording: T=float64, Y=model dtype, STEP=int64, FLAGS=int32.
 - Float banks use model dtype; iw0=int32; bw0=uint8.
 - Expression validation enforces dtype rules (e.g., no sin in int models unless you explicitly add casts).

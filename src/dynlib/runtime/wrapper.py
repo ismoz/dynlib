@@ -68,17 +68,9 @@ def run_with_wrapper(
     y_curr = np.array(y0, dtype=model_dtype, copy=True)
     y_prev = np.array(y0, dtype=model_dtype, copy=True)  # will be set by runner after first commit
 
-    # Allocate banks and pools - create a minimal wrapper that has struct_spec() method
-    class _StructWrapper:
-        def __init__(self, s: StructSpec):
-            self._s = s
-        def struct_spec(self):
-            return self._s
-    
-    struct_wrapper = _StructWrapper(struct)
-    
+    # Allocate banks and pools
     banks, rec, ev = allocate_pools(
-        n_state=n_state, struct=struct_wrapper, model_dtype=model_dtype,
+        n_state=n_state, struct=struct, model_dtype=model_dtype,
         cap_rec=cap_rec, cap_evt=cap_evt,
     )
 

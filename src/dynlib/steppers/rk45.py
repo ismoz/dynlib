@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .base import StepperMeta, StructSpec
+from dynlib.runtime.runner_api import OK, NAN_DETECTED, STEPFAIL
 
 if TYPE_CHECKING:
     from typing import Callable
@@ -72,9 +73,12 @@ class RK45Spec:
             stiff_ok=False,
         )
 
-    def emit(self, rhs_fn: Callable, struct: StructSpec) -> Callable:
+    def emit(self, rhs_fn: Callable, struct: StructSpec, model_spec=None) -> Callable:
         """
         Generate a jittable RK45 stepper function with adaptive stepping.
+        
+        Tolerances are extracted from model_spec.sim.atol and model_spec.sim.rtol
+        if provided, otherwise defaults to atol=1e-8, rtol=1e-5.
         
         Signature (per ABI):
             status = stepper(
@@ -91,6 +95,15 @@ class RK45Spec:
             A callable Python function implementing the RK45 stepper with
             internal accept/reject loop.
         """
+        # Extract tolerances from model spec if available
+        if model_spec is not None:
+            atol = float(model_spec.sim.atol)
+            rtol = float(model_spec.sim.rtol)
+        else:
+            # Fallback defaults
+            atol = 1e-8
+            rtol = 1e-5
+        
         # Dormand-Prince coefficients
         # Butcher tableau for DOPRI5(4)
         # a_ij coefficients (lower triangular)
@@ -167,8 +180,8 @@ class RK45Spec:
             h = dt
             max_tries = 10
             min_step = 1e-12
-            atol = 1e-8
-            rtol = 1e-5
+            # Use tolerances from closure (set from model_spec or defaults)
+            # atol and rtol are already defined in outer scope
             error = 0.0  # Initialize error outside loop
             
             for attempt in range(max_tries):
@@ -235,7 +248,7 @@ class RK45Spec:
                 # Check for NaN
                 if error != error:  # NaN check
                     err_est[0] = error
-                    return 3  # NAN_DETECTED
+                    return NAN_DETECTED
                 
                 # Accept or reject
                 if error <= 1.0 or h <= min_step:
@@ -251,7 +264,7 @@ class RK45Spec:
                     else:
                         dt_next[0] = h * max_factor
                     
-                    return 0  # OK
+                    return OK
                 else:
                     # Reject step, reduce h
                     factor = safety * (1.0 / error) ** 0.25  # 1/embedded_order = 1/4
@@ -261,11 +274,11 @@ class RK45Spec:
                     if h < min_step:
                         # Step too small, fail
                         err_est[0] = error
-                        return 2  # STEPFAIL
+                        return STEPFAIL
             
             # Max tries exceeded
             err_est[0] = error
-            return 2  # STEPFAIL
+            return STEPFAIL
         
         return rk45_stepper
 

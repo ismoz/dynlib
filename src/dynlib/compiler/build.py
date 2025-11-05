@@ -1,18 +1,24 @@
 # src/dynlib/compiler/build.py
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Tuple, Callable, Dict, Any
+from typing import Tuple, Callable, Dict, Any, Union, List, Optional
+from pathlib import Path
 import numpy as np
 
-from dynlib.dsl.spec import ModelSpec, compute_spec_hash
+from dynlib.dsl.spec import ModelSpec, compute_spec_hash, build_spec
+from dynlib.dsl.parser import parse_model_v2
 from dynlib.steppers.registry import get_stepper
 from dynlib.steppers.base import StructSpec
 from dynlib.compiler.codegen.emitter import emit_rhs_and_events, CompiledCallables
 from dynlib.compiler.codegen.runner import get_runner
+from dynlib.compiler.codegen.validate import validate_stepper_function, report_validation_issues
 from dynlib.compiler.jit.compile import maybe_jit_triplet
 from dynlib.compiler.jit.cache import JITCache, CacheKey
+from dynlib.compiler.paths import resolve_uri, load_config, PathConfig
+from dynlib.compiler.mods import apply_mods_v2, ModSpec
+from dynlib.errors import ModelLoadError
 
-__all__ = ["CompiledPieces", "build_callables", "FullModel", "build"]
+__all__ = ["CompiledPieces", "build_callables", "FullModel", "build", "load_model_from_uri"]
 
 @dataclass(frozen=True)
 class CompiledPieces:
@@ -80,19 +86,227 @@ def build_callables(spec: ModelSpec, *, stepper_name: str, jit: bool, model_dtyp
     return CompiledPieces(spec, stepper_name, rhs_j, pre_j, post_j, s_hash)
 
 
-def build(spec: ModelSpec, *, stepper_name: str, jit: bool = True, model_dtype: str = "float64") -> FullModel:
+def load_model_from_uri(
+    model_uri: str,
+    *,
+    mods: Optional[List[str]] = None,
+    config: Optional[PathConfig] = None,
+) -> ModelSpec:
     """
-    Slice 4: Build a complete compiled model with runner + stepper.
+    Load and build a ModelSpec from a URI, applying mods if specified.
+    
+    This is the main entry point for Slice 6 URI-based model loading.
     
     Args:
-        spec: Validated ModelSpec
-        stepper_name: Name of the registered stepper (e.g., "euler")
+        model_uri: URI for the base model:
+            - "inline: [model]\\ntype='ode'\\n..." -> parse directly
+            - "/abs/path/model.toml" -> load from file
+            - "relative/model.toml" -> resolve from cwd
+            - "TAG://model.toml" -> resolve using config
+            - Any of above with "#mod=NAME" to select a mod from the file
+        mods: List of mod URIs to apply (same URI schemes).
+            Each can be:
+            - A full mod TOML file: "path/to/mods.toml"
+            - A mod within a file: "path/to/file.toml#mod=NAME"
+            - Inline mod: "inline: [mod]\\nname='drive'\\n..."
+        config: PathConfig for resolution (loads default if None)
+    
+    Returns:
+        Validated ModelSpec with mods applied
+    
+    Raises:
+        ModelNotFoundError: If any URI cannot be resolved
+        ModelLoadError: If parsing/validation fails
+        ConfigError: If TAG is unknown
+    """
+    if config is None:
+        config = load_config()
+    
+    # Resolve base model URI
+    resolved_model, model_fragment = resolve_uri(model_uri, config=config)
+    
+    # Load base model TOML
+    if model_uri.startswith("inline:"):
+        # Parse inline content
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib  # Python < 3.11
+        
+        try:
+            model_data = tomllib.loads(resolved_model)
+        except Exception as e:
+            raise ModelLoadError(f"Failed to parse inline model: {e}")
+    else:
+        # Load from file
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib  # Python < 3.11
+        
+        try:
+            with open(resolved_model, "rb") as f:
+                model_data = tomllib.load(f)
+        except Exception as e:
+            raise ModelLoadError(f"Failed to load model from {resolved_model}: {e}")
+    
+    # Parse to normalized form
+    normal = parse_model_v2(model_data)
+    
+    # If model fragment specifies a mod, extract and apply it first
+    if model_fragment and model_fragment.startswith("mod="):
+        mod_name = model_fragment[4:].strip()
+        if "mods" not in model_data or mod_name not in model_data["mods"]:
+            raise ModelLoadError(
+                f"Mod '{mod_name}' not found in {model_uri}. "
+                f"Available mods: {list(model_data.get('mods', {}).keys())}"
+            )
+        
+        # Extract and apply the specified mod
+        mod_data = model_data["mods"][mod_name]
+        mod_spec = _parse_mod_spec(mod_name, mod_data)
+        normal = apply_mods_v2(normal, [mod_spec])
+    
+    # Apply additional mods if specified
+    if mods:
+        mod_specs = []
+        for mod_uri in mods:
+            mod_spec = _load_mod_from_uri(mod_uri, config=config)
+            mod_specs.append(mod_spec)
+        
+        if mod_specs:
+            normal = apply_mods_v2(normal, mod_specs)
+    
+    # Build and validate final spec
+    spec = build_spec(normal)
+    return spec
+
+
+def _parse_mod_spec(name: str, mod_data: Dict[str, Any]) -> ModSpec:
+    """Parse a mod table into a ModSpec."""
+    return ModSpec(
+        name=name,
+        group=mod_data.get("group"),
+        exclusive=mod_data.get("exclusive", False),
+        priority=mod_data.get("priority", 0),
+        remove=mod_data.get("remove"),
+        replace=mod_data.get("replace"),
+        add=mod_data.get("add"),
+        set=mod_data.get("set"),
+    )
+
+
+def _load_mod_from_uri(mod_uri: str, config: PathConfig) -> ModSpec:
+    """
+    Load a ModSpec from a URI.
+    
+    Supports:
+        - "path.toml#mod=NAME" -> load specific mod from file
+        - "path.toml" -> load entire file as a mod collection (use first/only mod)
+        - "inline: [mod]\\n..." -> parse inline mod
+    """
+    resolved, fragment = resolve_uri(mod_uri, config=config)
+    
+    # Load TOML
+    if mod_uri.startswith("inline:"):
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib
+        
+        try:
+            mod_data = tomllib.loads(resolved)
+        except Exception as e:
+            raise ModelLoadError(f"Failed to parse inline mod: {e}")
+    else:
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib
+        
+        try:
+            with open(resolved, "rb") as f:
+                mod_data = tomllib.load(f)
+        except Exception as e:
+            raise ModelLoadError(f"Failed to load mod from {resolved}: {e}")
+    
+    # Extract mod
+    if fragment and fragment.startswith("mod="):
+        mod_name = fragment[4:].strip()
+        if "mods" not in mod_data or mod_name not in mod_data["mods"]:
+            raise ModelLoadError(
+                f"Mod '{mod_name}' not found in {mod_uri}. "
+                f"Available mods: {list(mod_data.get('mods', {}).keys())}"
+            )
+        return _parse_mod_spec(mod_name, mod_data["mods"][mod_name])
+    else:
+        # No fragment specified - check if this is a [mod] table or has [mods.*]
+        if "mod" in mod_data and isinstance(mod_data["mod"], dict):
+            # Single [mod] table
+            name = mod_data["mod"].get("name", "unnamed")
+            return _parse_mod_spec(name, mod_data["mod"])
+        elif "mods" in mod_data:
+            # Multiple [mods.*] - error, need to specify which one
+            available = list(mod_data["mods"].keys())
+            raise ModelLoadError(
+                f"Mod file {mod_uri} contains multiple mods: {available}. "
+                f"Please specify which one using #mod=NAME"
+            )
+        else:
+            raise ModelLoadError(f"No [mod] or [mods.*] table found in {mod_uri}")
+
+
+def build(
+    model: Union[ModelSpec, str],
+    *,
+    stepper_name: Optional[str] = None,
+    mods: Optional[List[str]] = None,
+    jit: bool = True,
+    model_dtype: str = "float64",
+    config: Optional[PathConfig] = None,
+    validate_stepper: bool = True,
+) -> FullModel:
+    """
+    Build a complete compiled model with runner + stepper.
+    
+    Supports both direct ModelSpec and URI-based loading (Slice 6).
+    
+    Args:
+        model: Either a validated ModelSpec or a URI string:
+            - "inline: [model]\\ntype='ode'\\n..." -> parse directly
+            - "/abs/path/model.toml" -> load from absolute path
+            - "relative/model.toml" -> load relative to cwd
+            - "TAG://model.toml" -> resolve using config tags
+            - Any of above with "#mod=NAME" fragment for mod selection
+        stepper_name: Name of the registered stepper (e.g., "euler").
+            If None, uses the model's sim.stepper default.
+        mods: List of mod URIs to apply (same URI schemes as model).
+            Mods are applied in order after loading the base model.
         jit: Enable JIT compilation (default True)
         model_dtype: Model dtype string (default "float64")
+        config: PathConfig for URI resolution (loads default if None)
+        validate_stepper: Enable build-time stepper validation (default True)
     
     Returns:
         FullModel with all compiled components
+    
+    Raises:
+        ModelNotFoundError: If URI cannot be resolved
+        ModelLoadError: If parsing/validation fails
+        ConfigError: If config is invalid or TAG is unknown
+        StepperValidationError: If stepper validation fails
     """
+    # If model is already a ModelSpec, use it directly
+    if isinstance(model, ModelSpec):
+        spec = model
+    else:
+        # Load from URI
+        spec = load_model_from_uri(model, mods=mods, config=config)
+    
+    # Use spec's default stepper if not specified
+    if stepper_name is None:
+        stepper_name = spec.sim.stepper
+    
     # Get stepper spec
     stepper_spec = get_stepper(stepper_name)
     struct = stepper_spec.struct_spec()
@@ -101,7 +315,12 @@ def build(spec: ModelSpec, *, stepper_name: str, jit: bool = True, model_dtype: 
     pieces = build_callables(spec, stepper_name=stepper_name, jit=jit, model_dtype=model_dtype)
     
     # Generate stepper function (returns a callable)
-    stepper_fn = stepper_spec.emit(pieces.rhs, struct)
+    stepper_fn = stepper_spec.emit(pieces.rhs, struct, model_spec=spec)
+    
+    # Validate stepper if requested (build-time guardrails check)
+    if validate_stepper:
+        issues = validate_stepper_function(stepper_fn, stepper_name)
+        report_validation_issues(issues, stepper_name, strict=False)
     
     # Get runner function (optionally JIT-compiled)
     runner_fn = get_runner(jit=jit)

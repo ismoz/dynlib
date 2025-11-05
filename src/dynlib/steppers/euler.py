@@ -9,6 +9,7 @@ import ast
 from typing import TYPE_CHECKING
 
 from .base import StepperMeta, StructSpec
+from dynlib.runtime.runner_api import OK
 
 if TYPE_CHECKING:
     from typing import Callable
@@ -64,7 +65,7 @@ class EulerSpec:
             stiff_ok=False,
         )
 
-    def emit(self, rhs_fn: Callable, struct: StructSpec) -> Callable:
+    def emit(self, rhs_fn: Callable, struct: StructSpec, model_spec=None) -> Callable:
         """
         Generate a jittable Euler stepper function.
         
@@ -112,10 +113,7 @@ class EulerSpec:
             dt_next[0] = dt
             err_est[0] = 0.0
             
-            # Import OK from the module where this will be executed
-            # When JIT'd, OK will be available in the namespace
-            # For now, return 0 (OK status)
-            return 0  # OK
+            return OK
         
         return euler_stepper
 

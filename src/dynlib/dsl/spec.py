@@ -21,6 +21,9 @@ class SimDefaults:
     dt: float = 1e-2
     stepper: str = "rk4"
     record: bool = True
+    # Adaptive stepper tolerances (used by RK45, etc.)
+    atol: float = 1e-8
+    rtol: float = 1e-5
 
 
 @dataclass(frozen=True)
@@ -102,6 +105,8 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
         dt=float(sim_in.get("dt", SimDefaults.dt)),
         stepper=str(sim_in.get("stepper", SimDefaults.stepper)),
         record=bool(sim_in.get("record", SimDefaults.record)),
+        atol=float(sim_in.get("atol", SimDefaults.atol)),
+        rtol=float(sim_in.get("rtol", SimDefaults.rtol)),
     )
 
     return ModelSpec(
@@ -159,6 +164,8 @@ def _json_canon(obj: Any) -> str:
                 "dt": o.dt,
                 "stepper": o.stepper,
                 "record": o.record,
+                "atol": o.atol,
+                "rtol": o.rtol,
             }
         if isinstance(o, tuple):
             return list(o)

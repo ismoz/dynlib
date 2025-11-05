@@ -2,6 +2,75 @@
 
 ---
 
+## [2.6.0] – 2025-11-05
+### Added
+- Implemented comprehensive path resolution system in `src/dynlib/compiler/paths.py`:
+  - Platform-specific config file locations (Linux/XDG, macOS, Windows)
+  - `DYNLIB_CONFIG` environment variable for custom config paths
+  - `DYN_MODEL_PATH` environment variable with prepend semantics for runtime tag additions
+  - `TAG://` URI scheme for model resolution from configured directories
+  - `inline:` URI scheme for embedding model definitions directly
+  - Support for absolute and relative paths with automatic `.toml` extension resolution
+  - Fragment selectors (`#mod=NAME`) for selecting embedded mods from files
+  - Path traversal prevention outside declared roots
+  - Clear error messages listing all searched candidates on failure
+- Enhanced `build()` function in `src/dynlib/compiler/build.py`:
+  - Accepts both URI strings and ModelSpec objects
+  - `mods` parameter for applying multiple mod files via URIs
+  - `config` parameter for custom PathConfig
+  - Automatically resolves stepper from model's sim defaults if not specified
+- Added `load_model_from_uri()` function for loading models with mod application
+- New exception classes in `src/dynlib/errors.py`:
+  - `ModelNotFoundError`: lists all searched paths
+  - `ConfigError`: configuration file or environment errors
+  - `PathTraversalError`: security violation detection
+  - `AmbiguousModelError`: multiple files match extensionless reference
+- Updated `src/dynlib/compiler/__init__.py` to export new public API
+
+### Changed
+- `build()` signature enhanced with optional `config` parameter
+- `build()` now accepts `Union[ModelSpec, str]` for model parameter
+
+### Tests
+- Added 37 unit tests in `tests/unit/test_paths.py`:
+  - Config loading from all platforms
+  - Environment variable handling
+  - TAG:// resolution with multiple roots and first-match-wins
+  - inline:, absolute, relative path handling
+  - Fragment extraction
+  - Path traversal security checks
+  - Error message quality verification
+- Added 16 integration tests in `tests/integration/test_uri_loading.py`:
+  - End-to-end model building from all URI schemes
+  - Embedded mod selection with fragments
+  - External mod file application
+  - Multiple mods in sequence
+  - Error handling with helpful diagnostics
+  - Backward compatibility with direct ModelSpec usage
+
+### Documentation
+- URI schemes supported:
+  - `inline: [model]\ntype='ode'\n...` - Direct TOML content
+  - `/abs/path/model.toml` - Absolute file path
+  - `relative/model.toml` - Relative to current working directory
+  - `TAG://model.toml` - Resolve using configured tag roots
+  - Any of above with `#mod=NAME` - Select embedded mod
+- Config file format:
+  ```toml
+  [paths]
+  proj = ["/home/user/models", "/opt/shared/models"]
+  user = "/home/user/personal/models"
+  ```
+- Config File Paths:
+  - Linux: `${XDG_CONFIG_HOME:-~/.config}/dynlib/config.toml`
+  - macOS: `~/Library/Application Support/dynlib/config.toml`
+  - Windows: `%APPDATA%\dynlib\config.toml`
+- Environment variables:
+  - `DYNLIB_CONFIG=/custom/path/config.toml` - Override config location
+  - `DYN_MODEL_PATH=proj=/extra/path,/another:new=/path` - Add paths at runtime
+
+---
+
 ## [2.5.0] – 2025-11-05
 ### Added
 - Implemented `RK45Spec` in `src/dynlib/steppers/rk45.py` for Dormand-Prince adaptive stepper 

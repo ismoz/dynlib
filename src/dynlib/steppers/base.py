@@ -62,20 +62,21 @@ class StepperSpec(Protocol):
     Implementations MUST:
       - accept `meta: StepperMeta` in __init__
       - provide `struct_spec() -> StructSpec`
-      - provide `emit(rhs_fn, struct: StructSpec) -> Callable` that returns a jittable stepper function
+      - provide `emit(rhs_fn, struct: StructSpec, model_spec=None) -> Callable` that returns a jittable stepper function
     """
 
     meta: StepperMeta
 
     def __init__(self, meta: StepperMeta) -> None: ...
     def struct_spec(self) -> StructSpec: ...
-    def emit(self, rhs_fn: Callable, struct: StructSpec) -> Callable:
+    def emit(self, rhs_fn: Callable, struct: StructSpec, model_spec=None) -> Callable:
         """
         Generate a jittable stepper function.
         
         Args:
             rhs_fn: The compiled RHS function (for inlining or reference)
             struct: StructSpec for this stepper (for workspace allocation info)
+            model_spec: Optional ModelSpec for accessing sim defaults (e.g., tolerances)
         
         Returns:
             A callable Python function that implements the stepper with the frozen ABI signature:

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 import numpy as np
 
-from dynlib.steppers.base import StepperSpec  # for StructSpec sizes
+from dynlib.steppers.base import StructSpec
 from dynlib.runtime.runner_api import (
     DONE, GROW_REC, GROW_EVT, STEPFAIL, NAN_DETECTED, USER_BREAK,
 )
@@ -83,7 +83,7 @@ def _zeros(shape: tuple[int, ...], dtype: np.dtype) -> np.ndarray:
 def allocate_pools(
     *,
     n_state: int,
-    struct: StepperSpec,          # only for .struct_spec() sizes
+    struct: StructSpec,          # StructSpec with sizes
     model_dtype: np.dtype,
     cap_rec: int,
     cap_evt: int,
@@ -104,7 +104,7 @@ def allocate_pools(
     Raw element counts for int/byte banks (iw0, bw0):
       - Size = raw element count; 0 is unused
     """
-    sspec = struct.struct_spec()
+    sspec = struct
 
     # Model-dtype work banks: lane counts (size * n_state)
     sp  = _zeros((sspec.sp_size * n_state,),  model_dtype)
