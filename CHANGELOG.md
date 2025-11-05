@@ -2,6 +2,20 @@
 
 ---
 
+## [2.7.1] – 2025-11-06
+### Changed
+- Updated `_edges_for_aux_and_functions` in `src/dynlib/dsl/astcheck.py`:
+  - Function dependencies now include references to auxiliary variables.
+- Enhanced `build_spec` in `src/dynlib/dsl/spec.py`:
+  - Added validation steps for acyclic expressions, event legality, and function signatures.
+
+### Tests
+- Added integration tests in `tests/integration/test_semantic_validation.py`:
+  - Verified detection of cyclic dependencies in auxiliary variables and functions.
+  - Tested event legality and function argument validation.
+
+---
+
 ## [2.7.0] – 2025-11-05
 ### Changed
 - Centralized JIT compilation logic in `src/dynlib/compiler/jit/compile.py`:

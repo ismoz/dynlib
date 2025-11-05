@@ -67,6 +67,17 @@ def _canon_dtype(dtype: str) -> str:
 
 
 def build_spec(normal: Dict[str, Any]) -> ModelSpec:
+    # VALIDATE BEFORE PARSING
+    from .astcheck import (
+        validate_expr_acyclic,
+        validate_event_legality,
+        validate_functions_signature,
+    )
+    
+    validate_expr_acyclic(normal)
+    validate_event_legality(normal)
+    validate_functions_signature(normal)
+    
     model = normal["model"]
     kind = model["type"]
     dtype = _canon_dtype(model.get("dtype", "float64"))

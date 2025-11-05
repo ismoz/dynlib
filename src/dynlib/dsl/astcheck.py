@@ -53,11 +53,11 @@ def _edges_for_aux_and_functions(normal: Dict[str, Any]) -> Dict[str, Set[str]]:
         if deps:
             edges[a].update(deps)
 
-    # function dependencies (may call other functions)
+    # function dependencies (may call other functions or reference aux)
     for f, fdef in (normal.get("functions") or {}).items():
         expr = fdef["expr"]
         used = _find_idents(expr)
-        deps = used & fn_names
+        deps = (used & fn_names) | (used & aux_names)
         if deps:
             edges[f].update(deps)
     return edges
