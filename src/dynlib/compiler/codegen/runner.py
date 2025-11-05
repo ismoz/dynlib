@@ -29,6 +29,9 @@ from dynlib.runtime.runner_api import (
     DONE, GROW_REC, GROW_EVT, USER_BREAK
 )
 
+# Import centralized JIT compilation helper
+from dynlib.compiler.jit.compile import jit_compile
+
 __all__ = ["runner", "get_runner"]
 
 
@@ -68,7 +71,10 @@ def runner(
     dt = float(dt_init)
     i = int(i_start)         # record cursor
     step = int(step_start)   # global step counter
-    m = 0                    # event log cursor (not used in Slice 4 minimal; placeholder)
+    
+    # Event log cursor: hint_out[0] is used to pass m between re-entries
+    # On first call, hint_out[0] is 0; on re-entry after GROW_EVT, it contains the saved m
+    m = int(hint_out[0])     # event log cursor (resume from hint)
     
     # Recording at t0 (if record_every_step > 0)
     if record_every_step > 0 and step == 0:
@@ -92,7 +98,23 @@ def runner(
     # Main integration loop
     while step < max_steps and t < t_end:
         # 1. Pre-events on committed state
-        events_pre(t, y_curr, params)
+        event_code_pre = events_pre(t, y_curr, params)
+        
+        # Record pre-event if it fired and requested logging
+        if event_code_pre >= 0:
+            if m >= cap_evt:
+                # Need event buffer growth
+                i_out[0] = i
+                step_out[0] = step
+                t_out[0] = t
+                status_out[0] = GROW_EVT
+                hint_out[0] = m
+                return GROW_EVT
+            
+            EVT_TIME[m] = t
+            EVT_CODE[m] = event_code_pre
+            EVT_INDEX[m] = 0  # Not indexed for now
+            m += 1
         
         # 2. Clip dt to avoid overshooting t_end
         if t + dt > t_end:
@@ -124,7 +146,23 @@ def runner(
         step += 1
         
         # 5. Post-events on committed state
-        events_post(t, y_curr, params)
+        event_code_post = events_post(t, y_curr, params)
+        
+        # Record post-event if it fired and requested logging
+        if event_code_post >= 0:
+            if m >= cap_evt:
+                # Need event buffer growth
+                i_out[0] = i
+                step_out[0] = step
+                t_out[0] = t
+                status_out[0] = GROW_EVT
+                hint_out[0] = m
+                return GROW_EVT
+            
+            EVT_TIME[m] = t
+            EVT_CODE[m] = event_code_post
+            EVT_INDEX[m] = 0  # Not indexed for now
+            m += 1
         
         # 6. Record (if enabled and step matches record_every_step)
         if record_every_step > 0 and (step % record_every_step == 0):
@@ -178,11 +216,10 @@ def get_runner(*, jit: bool = True) -> Callable:
     
     Returns:
         Runner function (JIT-compiled if requested and available)
+    
+    Behavior:
+        - If jit=False: returns pure Python runner
+        - If jit=True and numba not installed: warns and returns pure Python runner
+        - If jit=True and numba installed but compilation fails: raises RuntimeError
     """
-    if jit:
-        try:
-            from numba import njit
-            return njit(cache=False)(runner)
-        except ImportError:
-            pass  # Fall back to non-JIT
-    return runner
+    return jit_compile(runner, jit=jit)

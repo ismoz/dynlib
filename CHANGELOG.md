@@ -2,6 +2,29 @@
 
 ---
 
+## [2.7.0] – 2025-11-05
+### Changed
+- Centralized JIT compilation logic in `src/dynlib/compiler/jit/compile.py`:
+  - Introduced `jit_compile` function for consistent error handling.
+  - Updated `maybe_jit_triplet` to use `jit_compile`.
+- Enhanced `runner` function in `src/dynlib/compiler/codegen/runner.py`:
+  - Added event logging for pre/post events.
+  - Improved event buffer growth handling.
+- Updated `emit_rhs_and_events` in `src/dynlib/compiler/codegen/emitter.py`:
+  - Added event codes for logging-enabled events.
+  - Ensured default return value for no events fired.
+- Modified `run_with_wrapper` in `src/dynlib/runtime/wrapper.py`:
+  - Preserved event cursor during buffer growth.
+
+### Tests
+- Added integration tests in `tests/integration/test_event_logging.py`:
+  - Verified event logging functionality.
+  - Tested multiple event firings and state captures.
+- Updated `tests/data/models/decay_with_event.toml`:
+  - Added `log` field to reset event.
+
+---
+
 ## [2.6.1] – 2025-11-05
 ### Changed
 - Preceding newlines are removed from the inline model declarations. This way `inline:`

@@ -20,6 +20,7 @@ phase = "post"
 cond = "x < threshold"
 action.x = "1.0"
 record = true
+log = ["x"]
 
 [sim]
 t0 = 0.0

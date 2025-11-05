@@ -134,6 +134,8 @@ def run_with_wrapper(
 
         if status == GROW_EVT:
             ev = grow_evt_arrays(ev, filled=m_filled, min_needed=m_filled + 1)
+            # Keep event cursor in hint_out for re-entry
+            hint_out[0] = np.int32(m_filled)
             i_start = np.int64(n_filled)
             step_start = np.int64(step_curr)
             continue

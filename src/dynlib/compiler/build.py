@@ -12,7 +12,7 @@ from dynlib.steppers.base import StructSpec
 from dynlib.compiler.codegen.emitter import emit_rhs_and_events, CompiledCallables
 from dynlib.compiler.codegen.runner import get_runner
 from dynlib.compiler.codegen.validate import validate_stepper_function, report_validation_issues
-from dynlib.compiler.jit.compile import maybe_jit_triplet
+from dynlib.compiler.jit.compile import maybe_jit_triplet, jit_compile
 from dynlib.compiler.jit.cache import JITCache, CacheKey
 from dynlib.compiler.paths import resolve_uri, load_config, PathConfig
 from dynlib.compiler.mods import apply_mods_v2, ModSpec
@@ -326,13 +326,8 @@ def build(
     # Get runner function (optionally JIT-compiled)
     runner_fn = get_runner(jit=jit)
     
-    # Apply JIT to stepper if enabled
-    if jit:
-        try:
-            from numba import njit
-            stepper_fn = njit(cache=False)(stepper_fn)
-        except ImportError:
-            pass  # Fall back to non-JIT
+    # Apply JIT to stepper if enabled (using centralized helper)
+    stepper_fn = jit_compile(stepper_fn, jit=jit)
     
     dtype_np = np.dtype(model_dtype)
     

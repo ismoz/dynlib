@@ -103,13 +103,19 @@ def _emit_events_function(spec: ModelSpec, phase: str, nmap: NameMaps):
     Emit a single function:
         def events_phase(t, y_vec, params):
             if <cond>: <mutations> ; (in declared order)
+            Returns event_code (int) if an event fired and has logging enabled, else -1
     """
     import ast
     body: List[ast.stmt] = []
-    for ev in spec.events:
+    
+    # Assign unique event codes to events in this phase that have logging enabled
+    event_code_counter = 0
+    for ev_idx, ev in enumerate(spec.events):
         if ev.phase not in ("both", phase):
             continue
+        
         cond_node = lower_expr_node(ev.cond or "1", nmap, aux_defs=_aux_defs(spec), fn_defs=nmap.functions)
+        
         # collect actions (keyed or block)
         actions: List[Tuple[str, str]] = []
         if ev.action_keyed:
@@ -121,8 +127,19 @@ def _emit_events_function(spec: ModelSpec, phase: str, nmap: NameMaps):
                     continue
                 lhs, rhs = [p.strip() for p in line.split("=", 1)]
                 actions.append((lhs, rhs))
+        
         act_stmts = _compile_action_block_ast(actions, spec, nmap)
+        
+        # If this event has record=True and log items, return its code after mutations
+        if ev.record and ev.log:
+            # Add return statement with event code after mutations
+            act_stmts.append(ast.Return(value=ast.Constant(value=event_code_counter)))
+            event_code_counter += 1
+        
         body.append(ast.If(test=cond_node, body=act_stmts or [ast.Pass()], orelse=[]))
+    
+    # Default return -1 (no event fired with logging)
+    body.append(ast.Return(value=ast.Constant(value=-1)))
 
     mod = ast.Module(
         body=[
@@ -132,7 +149,7 @@ def _emit_events_function(spec: ModelSpec, phase: str, nmap: NameMaps):
                 args=ast.arguments(posonlyargs=[], args=[
                     ast.arg(arg="t"), ast.arg(arg="y_vec"), ast.arg(arg="params")
                 ], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]),
-                body=body if body else [ast.Pass()],
+                body=body if body else [ast.Return(value=ast.Constant(value=-1))],
                 decorator_list=[],
             )
         ],
