@@ -1,6 +1,6 @@
 # tests/unit/test_paths.py
 """
-Unit tests for path resolution and configuration (Slice 6).
+Unit tests for path resolution and configuration.
 
 Tests cover:
 - Config file loading from platform-specific paths

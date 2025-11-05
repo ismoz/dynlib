@@ -2,7 +2,7 @@
 """
 Euler (explicit, fixed-step) stepper implementation.
 
-Slice 4: first real stepper. Minimal StructSpec (mostly size-1 banks).
+First real stepper. Minimal StructSpec (mostly size-1 banks).
 """
 from __future__ import annotations
 import ast

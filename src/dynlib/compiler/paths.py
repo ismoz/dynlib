@@ -171,10 +171,15 @@ def parse_uri(uri: str) -> Tuple[str, Optional[str]]:
     """
     Parse a URI into (base_uri, fragment).
     
+    Supports both inline declaration styles:
+        - Same line: "inline: [model]\\ntype='ode'"
+        - Separate lines (cleaner): "inline:\\n    [model]\\n    type='ode'"
+    
     Examples:
         "model.toml#mod=drive" -> ("model.toml", "mod=drive")
         "proj://ho.toml" -> ("proj://ho.toml", None)
         "inline: [model]\\ntype='ode'" -> ("inline: [model]\\ntype='ode'", None)
+        "inline:\\n    [model]\\n    type='ode'" -> ("inline: [model]\\ntype='ode'", None)
     
     Args:
         uri: URI string
@@ -182,11 +187,20 @@ def parse_uri(uri: str) -> Tuple[str, Optional[str]]:
     Returns:
         Tuple of (base_uri, fragment or None)
     """
-    if "#" not in uri:
+    # Normalize inline: declarations - support both formats:
+    # 1. "inline: [model]\ntype='ode'"  (on same line)
+    # 2. "inline:\n    [model]\n    type='ode'"  (on separate lines)
+    if uri.strip().startswith("inline:"):
+        # If inline: is on its own line, strip it and keep the rest
+        stripped = uri.strip()
+        if stripped == "inline:" or stripped.startswith("inline:\n"):
+            # Extract content after "inline:" and strip leading whitespace from each line
+            content = stripped[7:].lstrip()  # Remove "inline:" prefix
+            return (f"inline: {content}", None)
+        # Otherwise keep as-is
         return (uri, None)
     
-    # Don't split on # if it's in an inline: definition
-    if uri.startswith("inline:"):
+    if "#" not in uri:
         return (uri, None)
     
     base, fragment = uri.split("#", 1)
@@ -284,8 +298,9 @@ def resolve_uri(
     base_uri, fragment = parse_uri(uri)
     
     # Handle inline: prefix
+    # Note: parse_uri already normalized this to "inline: <content>" format
     if base_uri.startswith("inline:"):
-        content = base_uri[7:].strip()  # Remove "inline:" prefix
+        content = base_uri[7:].strip()  # Remove "inline:" prefix and trim
         return (content, fragment)
     
     if config is None:

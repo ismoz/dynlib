@@ -2,7 +2,7 @@
 """
 RK45 (Dormand-Prince, adaptive) stepper implementation.
 
-Slice 5: Adaptive RK method with embedded error estimation.
+Adaptive RK method with embedded error estimation.
 Uses internal accept/reject loop until step is accepted or fails.
 """
 from __future__ import annotations

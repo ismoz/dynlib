@@ -15,7 +15,7 @@ __all__ = ["Sim"]
 
 class Sim:
     """
-    Simulation facade around a compiled Model (Slice 4+).
+    Simulation facade around a compiled Model.
     
     Delegates to the wrapper for execution.
     """
@@ -23,7 +23,7 @@ class Sim:
         self.model = model
 
     def dry_run(self) -> bool:
-        """Tiny helper to assert callability (legacy from Slice 3)."""
+        """Tiny helper to assert callability."""
         return (
             callable(self.model.rhs) 
             and callable(self.model.events_pre) 

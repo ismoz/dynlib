@@ -2,7 +2,7 @@
 """
 RK4 (Runge-Kutta 4th order, explicit, fixed-step) stepper implementation.
 
-Slice 5: Classic fixed-step RK4 without touching wrapper/results/ABI.
+Classic fixed-step RK4 without touching wrapper/results/ABI.
 """
 from __future__ import annotations
 from typing import TYPE_CHECKING

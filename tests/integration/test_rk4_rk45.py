@@ -1,13 +1,12 @@
 # tests/integration/test_rk4_rk45.py
 """
-Slice 5 integration tests: RK4 and RK45 steppers.
+Integration tests: RK4 and RK45 steppers.
 
 Tests verify:
 - RK4 fixed-step provides 4th-order accuracy
 - RK45 adaptive stepping works correctly
 - Order convergence tests
 - Adaptive step count varies with tolerance
-- No ABI changes from Slice 4
 """
 from __future__ import annotations
 import pytest

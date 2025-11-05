@@ -1,6 +1,6 @@
 # tests/integration/test_uri_loading.py
 """
-Integration tests for URI-based model loading (Slice 6).
+Integration tests for URI-based model loading.
 
 Tests end-to-end model building using different URI schemes:
 - inline: models

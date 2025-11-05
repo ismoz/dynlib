@@ -31,7 +31,7 @@ class CompiledPieces:
 
 @dataclass(frozen=True)
 class FullModel:
-    """Complete compiled model (Slice 4): includes runner + stepper + callables."""
+    """Complete compiled model: includes runner + stepper + callables."""
     spec: ModelSpec
     stepper_name: str
     struct: StructSpec
@@ -60,8 +60,7 @@ def _structsig_from_stepper(stepper_name: str) -> Tuple[int, ...]:
 
 def build_callables(spec: ModelSpec, *, stepper_name: str, jit: bool, model_dtype: str = "float64") -> CompiledPieces:
     """
-    Slice-3 target: produce (rhs, events_pre, events_post) with optional JIT.
-    No runner/stepper glue here yet.
+    produce (rhs, events_pre, events_post) with optional JIT.
     """
     s_hash = compute_spec_hash(spec)
     structsig = _structsig_from_stepper(stepper_name)
@@ -95,20 +94,20 @@ def load_model_from_uri(
     """
     Load and build a ModelSpec from a URI, applying mods if specified.
     
-    This is the main entry point for Slice 6 URI-based model loading.
-    
     Args:
         model_uri: URI for the base model:
-            - "inline: [model]\\ntype='ode'\\n..." -> parse directly
-            - "/abs/path/model.toml" -> load from file
-            - "relative/model.toml" -> resolve from cwd
-            - "TAG://model.toml" -> resolve using config
-            - Any of above with "#mod=NAME" to select a mod from the file
+            - Inline (same line): "inline: [model]\\ntype='ode'\\n..."
+            - Inline (cleaner): "inline:\\n    [model]\\n    type='ode'\\n..."
+            - Absolute path: "/abs/path/model.toml"
+            - Relative path: "relative/model.toml" (from cwd)
+            - TAG resolution: "TAG://model.toml" (from config)
+            - With mod selector: Any of above + "#mod=NAME"
         mods: List of mod URIs to apply (same URI schemes).
             Each can be:
             - A full mod TOML file: "path/to/mods.toml"
             - A mod within a file: "path/to/file.toml#mod=NAME"
-            - Inline mod: "inline: [mod]\\nname='drive'\\n..."
+            - Inline mod (same line): "inline: [mod]\\nname='drive'\\n..."
+            - Inline mod (cleaner): "inline:\\n    [mod]\\n    name='drive'\\n..."
         config: PathConfig for resolution (loads default if None)
     
     Returns:
@@ -126,7 +125,8 @@ def load_model_from_uri(
     resolved_model, model_fragment = resolve_uri(model_uri, config=config)
     
     # Load base model TOML
-    if model_uri.startswith("inline:"):
+    # Check if it's inline by looking at the stripped/normalized URI
+    if model_uri.strip().startswith("inline:"):
         # Parse inline content
         try:
             import tomllib
@@ -208,7 +208,8 @@ def _load_mod_from_uri(mod_uri: str, config: PathConfig) -> ModSpec:
     resolved, fragment = resolve_uri(mod_uri, config=config)
     
     # Load TOML
-    if mod_uri.startswith("inline:"):
+    # Check if it's inline by looking at the stripped/normalized URI
+    if mod_uri.strip().startswith("inline:"):
         try:
             import tomllib
         except ImportError:
@@ -269,7 +270,7 @@ def build(
     """
     Build a complete compiled model with runner + stepper.
     
-    Supports both direct ModelSpec and URI-based loading (Slice 6).
+    Supports both direct ModelSpec and URI-based loading.
     
     Args:
         model: Either a validated ModelSpec or a URI string:

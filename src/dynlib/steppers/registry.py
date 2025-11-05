@@ -6,7 +6,7 @@ from .base import StepperSpec, StepperMeta
 
 __all__ = ["register", "get_stepper", "registry"]
 
-# name -> spec instance (minimal for Slice 0)
+# name -> spec instance
 _registry: Dict[str, StepperSpec] = {}
 
 def register(spec: StepperSpec) -> None:

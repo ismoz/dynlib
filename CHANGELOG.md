@@ -2,6 +2,17 @@
 
 ---
 
+## [2.6.1] – 2025-11-05
+### Changed
+- Preceding newlines are removed from the inline model declarations. This way `inline:`
+  statement can be placed above `[model]` statements.
+
+### Known Issues
+- A FIX_PLAN.md file is created to implement planned but missing features. These features
+  will be added.
+
+---
+
 ## [2.6.0] – 2025-11-05
 ### Added
 - Implemented comprehensive path resolution system in `src/dynlib/compiler/paths.py`:

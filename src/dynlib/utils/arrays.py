@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any
 import numpy as np
 
-#TODO: Add below functionality after Slice 6+
 """
 When you want to harden the API (beyond Slice 4), add validation in Sim.run():
 

@@ -12,7 +12,7 @@ __all__ = ["Model"]
 @dataclass(frozen=True)
 class Model:
     """
-    Compiled model ready for execution (Slice 4+).
+    Compiled model ready for execution.
     
     Attributes:
         spec: Original ModelSpec

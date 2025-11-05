@@ -1,6 +1,6 @@
 # src/dynlib/compiler/codegen/runner.py
 """
-Generic runner (Slice 4).
+Generic runner.
 
 Defines a single runner function with the frozen ABI that:
   1. Pre-events on committed state
@@ -57,7 +57,7 @@ def runner(
     stepper, rhs, events_pre, events_post
 ):
     """
-    Generic runner (Slice 4): fixed-step execution with events and recording.
+    Generic runner: fixed-step execution with events and recording.
     
     Frozen ABI signature - must match runner_api.py specification.
     

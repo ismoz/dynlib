@@ -1,6 +1,6 @@
 # tests/integration/test_euler_basic.py
 """
-Slice 4 integration tests: end-to-end Euler simulations.
+Integration tests: end-to-end Euler simulations.
 
 Tests verify:
 - Analytic solution matching for dx/dt = -a*x

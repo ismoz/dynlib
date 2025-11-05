@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 """
-Demo of Slice 6: URI-based Model Loading
-
 This script demonstrates the new path resolution and URI system,
 showing various ways to load and run models.
 """
@@ -17,26 +15,27 @@ def demo_inline_model():
     print("=" * 60)
     
     inline_model = """
-[model]
-type = "ode"
+    inline:
+    [model]
+    type = "ode"
 
-[states]
-x = 1.0
+    [states]
+    x = 1.0
 
-[params]
-a = 1.0
+    [params]
+    a = 1.0
 
-[equations.rhs]
-x = "-a * x"
+    [equations.rhs]
+    x = "-a * x"
 
-[sim]
-t0 = 0.0
-t_end = 2.0
-dt = 0.1
-stepper = "euler"
-"""
+    [sim]
+    t0 = 0.0
+    t_end = 2.0
+    dt = 0.1
+    stepper = "euler"
+    """
     
-    uri = f"inline: {inline_model}"
+    uri = inline_model
     full_model = build(uri, jit=False)
     
     print(f"Model kind: {full_model.spec.kind}")

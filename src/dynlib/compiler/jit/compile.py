@@ -21,7 +21,7 @@ def _jit_if_enabled(fn: Callable, jit: bool) -> Callable:
     return fn
 
 def maybe_jit_triplet(rhs: Callable, events_pre: Callable, events_post: Callable, *, jit: bool):
-    # Apply JIT here (and only here) per Slice-3 contract.
+    # Apply JIT here (and only here).
     return (
         _jit_if_enabled(rhs, jit),
         _jit_if_enabled(events_pre, jit),
