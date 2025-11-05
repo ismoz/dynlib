@@ -1,3 +1,4 @@
+# src/dynlib/runtime/buffers.py
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
@@ -94,19 +95,26 @@ def allocate_pools(
     - Recording T, EVT_TIME are always float64.
     - STEP:int64, FLAGS:int32, EVT_CODE:int32, EVT_INDEX:int32.
     
-    Note: For steppers that need workspace >= n_state (like Euler using sw0 for RHS),
-    we ensure sw0_size is at least n_state.
+    Lane-based allocation for model-dtype banks (sp, ss, sw0-sw3):
+      - Size = number of lanes (multiples of n_state)
+      - 0 lanes → unused (length 0)
+      - 1 lane  → length = n_state
+      - 2 lanes → length = 2*n_state, etc.
+    
+    Raw element counts for int/byte banks (iw0, bw0):
+      - Size = raw element count; 0 is unused
     """
     sspec = struct.struct_spec()
 
-    # Work banks (model dtype unless noted)
-    # For sw0, ensure it's at least n_state for steppers like Euler
-    sp  = _zeros((sspec.sp_size,),  model_dtype)
-    ss  = _zeros((sspec.ss_size,),  model_dtype)
-    sw0 = _zeros((max(sspec.sw0_size, n_state),), model_dtype)  # At least n_state
-    sw1 = _zeros((sspec.sw1_size,), model_dtype)
-    sw2 = _zeros((sspec.sw2_size,), model_dtype)
-    sw3 = _zeros((sspec.sw3_size,), model_dtype)
+    # Model-dtype work banks: lane counts (size * n_state)
+    sp  = _zeros((sspec.sp_size * n_state,),  model_dtype)
+    ss  = _zeros((sspec.ss_size * n_state,),  model_dtype)
+    sw0 = _zeros((sspec.sw0_size * n_state,), model_dtype)
+    sw1 = _zeros((sspec.sw1_size * n_state,), model_dtype)
+    sw2 = _zeros((sspec.sw2_size * n_state,), model_dtype)
+    sw3 = _zeros((sspec.sw3_size * n_state,), model_dtype)
+    
+    # Int/byte banks: raw element counts
     iw0 = _zeros((sspec.iw0_size,), np.int32)
     bw0 = _zeros((sspec.bw0_size,), np.uint8)
 

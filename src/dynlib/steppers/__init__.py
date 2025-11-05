@@ -4,6 +4,8 @@ from .registry import register, get_stepper, registry
 
 # Import concrete steppers to trigger auto-registration
 from . import euler
+from . import rk4
+from . import rk45
 
 __all__ = [
     "StepperMeta", "StepperInfo", "StructSpec", "StepperSpec",

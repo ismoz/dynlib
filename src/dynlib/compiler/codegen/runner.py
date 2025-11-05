@@ -94,7 +94,11 @@ def runner(
         # 1. Pre-events on committed state
         events_pre(t, y_curr, params)
         
-        # 2. Stepper attempt (fixed-step: single call; adaptive may loop internally)
+        # 2. Clip dt to avoid overshooting t_end
+        if t + dt > t_end:
+            dt = t_end - t
+        
+        # 3. Stepper attempt (fixed-step: single call; adaptive may loop internally)
         step_status = stepper(
             t, dt, y_curr, rhs, params,
             sp, ss, sw0, sw1, sw2, sw3, iw0, bw0,
@@ -111,7 +115,7 @@ def runner(
             hint_out[0] = m
             return step_status
         
-        # 3. Commit: y_prev <- y_curr, y_curr <- y_prop, t <- t_prop
+        # 4. Commit: y_prev <- y_curr, y_curr <- y_prop, t <- t_prop
         for k in range(n_state):
             y_prev[k] = y_curr[k]
             y_curr[k] = y_prop[k]
@@ -119,10 +123,10 @@ def runner(
         dt = dt_next[0]
         step += 1
         
-        # 4. Post-events on committed state
+        # 5. Post-events on committed state
         events_post(t, y_curr, params)
         
-        # 5. Record (if enabled and step matches record_every_step)
+        # 6. Record (if enabled and step matches record_every_step)
         if record_every_step > 0 and (step % record_every_step == 0):
             if i >= cap_rec:
                 # Need growth

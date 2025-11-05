@@ -42,56 +42,20 @@ class EulerSpec:
     def struct_spec(self) -> StructSpec:
         """
         Euler requires minimal workspace:
-          - sw0: scratch for RHS evaluations (n_state floats)
-          - All other banks are size 1 (unused but must exist per ABI)
-        """
-        # We'll allocate sw0 dynamically based on n_state at build time.
-        # For the spec itself, we declare sizes. The builder will use n_state.
-        # Since n_state is not known here, we use a placeholder. The actual allocation
-        # happens in the wrapper with the concrete n_state from ModelSpec.
-        # 
-        # Per guardrails: StructSpec sizes are counts in elements.
-        # For Euler, we'll say sw0_size is a marker (0 here), and the actual 
-        # allocation will be max(sw0_size, n_state) by convention in the wrapper.
-        # 
-        # Actually, let's follow the design more carefully: the StructSpec should
-        # declare the *additional* workspace beyond y_curr/y_prop. For Euler,
-        # we need one n_state-sized scratch for dy. We'll use sw0 for that.
-        # 
-        # But n_state is model-specific. The solution: StructSpec sizes can be
-        # expressed as multipliers of n_state or as fixed sizes. For simplicity,
-        # we'll declare sw0_size=0 and document that the emitted stepper uses
-        # sw0 as scratch (which wrapper already allocates with at least n_state).
-        # 
-        # Looking at test_numba_probe.py: sw0 = np.zeros(n_state, dtype=np.float64)
-        # So the wrapper allocates sw0 with size >= n_state if needed.
-        # 
-        # Let's be explicit: Euler's emit() will use sw0[:n] as scratch. The
-        # StructSpec declares minimum sizes. For Euler, we need sw0 >= n_state.
-        # We'll use a convention: sw0_size=0 means "at least n_state".
-        # Or better: we declare sw0_size=1 as a flag, and document that the
-        # builder interprets this as "allocate n_state elements".
-        # 
-        # Actually, re-reading the design: StructSpec sizes are in elements.
-        # The builder knows n_state. For Euler, we need sw0 of size n_state.
-        # We'll declare sw0_size as a symbolic value. Let's use -1 to mean
-        # "n_state" or just document it. Or simpler: declare sw0_size=0 and
-        # let the builder/wrapper ensure sw0.size >= n_state (which it already does
-        # in test_numba_probe.py).
-        # 
-        # For now, let's keep it simple per the design doc: mostly size-1 banks,
-        # with the understanding that the wrapper allocates sw0 with size n_state
-        # as needed (it's already doing that in the test).
+          - sw0: 1 lane for RHS evaluation (n_state floats)
+          - All other banks are unused (0 lanes/elements)
         
+        Lane-based sizes: sp/ss/sw* sizes are lane counts (multiples of n_state).
+        """
         return StructSpec(
-            sp_size=1,    # unused
-            ss_size=1,    # unused
-            sw0_size=0,   # actual size will be max(0, n_state) by wrapper convention
-            sw1_size=1,   # unused
-            sw2_size=1,   # unused
-            sw3_size=1,   # unused
-            iw0_size=1,   # unused
-            bw0_size=1,   # unused
+            sp_size=0,    # unused
+            ss_size=0,    # unused
+            sw0_size=1,   # 1 lane for dy (RHS scratch)
+            sw1_size=0,   # unused
+            sw2_size=0,   # unused
+            sw3_size=0,   # unused
+            iw0_size=0,   # unused
+            bw0_size=0,   # unused
             use_history=False,
             use_f_history=False,
             dense_output=False,

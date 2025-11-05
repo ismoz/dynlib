@@ -3,6 +3,26 @@ from __future__ import annotations
 from typing import Any
 import numpy as np
 
+#TODO: Add below functionality after Slice 6+
+"""
+When you want to harden the API (beyond Slice 4), add validation in Sim.run():
+
+from dynlib.utils.arrays import require_c_contig, require_dtype
+
+def run(self, ..., y0=None, params=None, ...):
+    # ... (your current defaults code) ...
+    
+    # Add validation when user provides arrays
+    if y0 is not None:
+        y0 = require_c_contig(y0, "y0")
+        y0 = require_dtype(y0, self.model.model_dtype, "y0")
+        if y0.shape != (n_state,):
+            raise ValueError(f"y0 shape must be ({n_state},), got {y0.shape}")
+    
+    # Similar for params...
+"""
+
+
 __all__ = [
     "require_c_contig", "require_dtype", "require_len1", "carve_view",
 ]

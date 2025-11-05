@@ -2,6 +2,31 @@
 
 ---
 
+## [2.5.0] – 2025-11-05
+### Added
+- Implemented `RK45Spec` in `src/dynlib/steppers/rk45.py` for Dormand-Prince adaptive stepper 
+  with embedded 4th/5th order error estimation.
+
+### Changed
+- Enhanced buffer allocation in `src/dynlib/runtime/buffers.py`:
+  - Improved `allocate_pools` to handle workspace banks (sp, ss, sw0-sw3) with size 0 convention.
+  - Size 0 now means "allocate n_state elements", size >= 1 uses spec size as-is.
+  - Ensures all RK methods get sufficient workspace without ABI changes.
+- Updated `RK4Spec` for the new banks allocation rule.
+
+### Tests
+- Added comprehensive integration tests in `tests/integration/test_rk4_rk45.py`:
+  - `test_rk4_accuracy`: Verifies RK4 achieves < 1e-5 relative error for exponential decay.
+  - `test_rk4_order_convergence`: Confirms 4th-order convergence (16x error reduction when 
+    halving dt).
+  - `test_rk45_adaptive_accuracy`: Validates RK45 adaptive stepping accuracy.
+  - `test_rk45_step_adaptation`: Verifies RK45 outperforms Euler significantly.
+  - `test_rk4_jit_parity` and `test_rk45_jit_parity`: Ensure identical results with JIT on/off.
+  - `test_stepper_registration`: Confirms all steppers and aliases are properly registered.
+- Added test models `tests/data/models/decay_rk4.toml` and `decay_rk45.toml`.
+
+---
+
 ## [2.4.1] – 2025-11-05
 ### Added
 - Added `get_runner` in `src/dynlib/compiler/codegen/runner.py` for obtaining a generic runner

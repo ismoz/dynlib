@@ -16,7 +16,7 @@ Arguments are fixed: scalars + ndarrays only (no `None`/Optionals/objects).
   - Float64/Float32 (model primary dtype): `sw0[:]`, `sw1[:]`, `sw2[:]`, `sw3[:]`
   - Int32: `iw0[:]`
   - UInt8: `bw0[:]`
-  - *(Unused banks are size 1. All are views carved from contiguous dtype-specific buffers allocated at init.)*
+  - *(0 lanes = unused; 1 lane = n_state; All are views carved from contiguous dtype-specific buffers allocated at init.)*
 - **Proposal/outs**: `y_prop[n_state]`, `t_prop[1]`, `dt_next[1]`, `err_est[1]`.
 - **Recording**: `T[CAP]` (float64 time), `Y[n_state, CAP]` (model dtype), `STEP[CAP]` (int64), `FLAGS[CAP]` (int32).
 - **Optional event log**: `EVT_TIME[EVTCAP]`, `EVT_CODE[EVTCAP]`, `EVT_INDEX[EVTCAP]` *(present with minimal size if logging disabled)*.

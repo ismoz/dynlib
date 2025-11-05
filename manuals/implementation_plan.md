@@ -170,6 +170,6 @@ Add steppers without touching wrapper/results/ABI.
 ## Cross-cutting “Never drift from Numba” rules (frozen now)
 - No `Optional`/`Union` in any jitted signature, ever.
 - Hot path = only scalars/ndarrays of fixed dtypes; no Python objects/allocations.
-- All banks/outs are C-contiguous; len-1 outs have shape `(1,)`.
+- All banks/outs are C-contiguous;
 - ODE model `dtype` is float; `T`/`EVT_TIME` are always `float64`.
 - Events may mutate only states/params; they never touch buffers or cursors.
