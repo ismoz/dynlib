@@ -119,12 +119,11 @@ def test_events_only_mutate_states_params_and_effect_is_visible():
     scratch = np.zeros(1, dtype=np.float64)  # event log scratch buffer
 
     # pre does nothing; post adds +1.0 to x
-    pre_code, pre_rec, pre_log = cp.events_pre(0.0, y, p, scratch)
+    pre_code, pre_log = cp.events_pre(0.0, y, p, scratch)
     assert pre_code == -1  # no event fired
     assert y[0] == pytest.approx(1.0)
-    post_code, post_rec, post_log = cp.events_post(0.0, y, p, scratch)
+    post_code, post_log = cp.events_post(0.0, y, p, scratch)
     assert post_code == 0  # event fired (always fires since cond is implicit True)
-    assert post_rec == False  # no record=True in event
     assert post_log == 0  # no log items
     assert y[0] == pytest.approx(2.0)
 

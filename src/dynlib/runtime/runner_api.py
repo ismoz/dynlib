@@ -75,7 +75,7 @@ class RunnerABI:
     FLAGS: str = "int32[:]"
 
     # Event log buffers
-    EVT_TIME: str = "float64[:]"
+    EVT_TIME: str = "float64[:]"              # DEPRECATED - kept for compatibility, not used
     EVT_CODE: str = "int32[:]"
     EVT_INDEX: str = "int32[:]"
     EVT_LOG_DATA: str = "model_dtype[:, :]"  # shape (cap_evt, max_log_width)
@@ -140,14 +140,14 @@ Rules:
 - Runner performs capacity checks, pre/post events, commit & record, then exits only with the codes above.
 - Stepper reads t, dt, y_curr, params, sp, ss; writes y_prop, t_prop[0], dt_next[0], err_est[0]; may mutate ss.
 - RHS: rhs(t: float64, y_vec: model_dtype[:], dy_out: model_dtype[:], params: model_dtype[:] | int64[:]) -> None.
-- Events: events_phase(t, y_vec, params, evt_log_scratch) -> (event_code: int32, has_record: bool, log_width: int32)
+- Events: events_phase(t, y_vec, params, evt_log_scratch) -> (event_code: int32, log_width: int32)
   - event_code: -1 if no event fired, else unique event identifier (0, 1, 2...)
-  - has_record: True if event has record=True (log to EVT_TIME/EVT_CODE)
   - log_width: number of values written to evt_log_scratch (len(event.log))
   - Events run 'pre' on committed state before step; 'post' after commit. May only mutate states/params.
 - EVT_INDEX stores log_width; EVT_LOG_DATA[m, :log_width] contains logged signal values
-- EVT_TIME set to -1.0 for events with log but no record
-- T/EVT_TIME are float64; Y/EVT_LOG_DATA is model dtype; STEP:int64, FLAGS:int32, EVT_CODE/EVT_INDEX:int32.
+- Time can be logged using log=["t", ...] - it appears as first column in EVT_LOG_DATA
+- EVT_TIME is deprecated and kept only for backward compatibility (not populated by runner)
+- T is float64; Y/EVT_LOG_DATA is model dtype; STEP:int64, FLAGS:int32, EVT_CODE/EVT_INDEX:int32.
 - Work banks sp, ss, sw* are model dtype; iw0:int32, bw0:uint8.
 - t_prop is model dtype; committed t written to T as float64.
 - Growth/resume: on GROW_REC/GROW_EVT wrapper reallocates & re-enters; runner resumes seamlessly.

@@ -15,7 +15,7 @@ def base_normal():
         "aux": {},
         "functions": {},
         "events": {
-            "tick": {"phase": "post", "cond": "1", "action": "x = x", "record": False, "log": []}
+            "tick": {"phase": "post", "cond": "1", "action": "x = x", "log": []}
         },
         "sim": {},
     }

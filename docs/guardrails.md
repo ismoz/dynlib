@@ -121,8 +121,7 @@ expr = "u/(1+abs(u)^c)"
 phase  = "post"              # "pre" | "post" | "both"
 cond   = "x >= 1"
 action.x = "0"               # keyed form
-record = true
-log    = ["x", "aux:E", "param:a"]
+log    = ["t", "x", "aux:E", "param:a"]
 ```
 **Block action alternative**
 ```toml

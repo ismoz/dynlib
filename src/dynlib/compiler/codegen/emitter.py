@@ -219,15 +219,17 @@ def _emit_events_function(spec: ModelSpec, phase: str, nmap: NameMaps):
         def events_phase(t, y_vec, params, evt_log_scratch):
             if <cond>: 
                 <mutations>
-                [optionally fill evt_log_scratch with log values]
-                return (event_code, has_record, log_width)
+                [fill evt_log_scratch with log values if log is non-empty]
+                return (event_code, log_width)
             ...
-            return (-1, False, 0)  # no event fired
+            return (-1, 0)  # no event fired
     
     Where:
       - event_code: unique int identifying which event fired (0, 1, 2...)
-      - has_record: True if this event has record=True (should log to EVT_TIME/CODE)
       - log_width: number of values written to evt_log_scratch (len(ev.log))
+    
+    All log values (including "t" if present) are written to EVT_LOG_DATA.
+    The "t" signal is treated like any other signal - no special EVT_TIME buffer.
     """
     import ast
     body: List[ast.stmt] = []
@@ -273,11 +275,9 @@ def _emit_events_function(spec: ModelSpec, phase: str, nmap: NameMaps):
                 )
                 act_stmts.append(assign)
         
-        # Return (event_code, has_record, log_width)
-        has_record = ev.record
+        # Return (event_code, log_width)
         act_stmts.append(ast.Return(value=ast.Tuple(elts=[
             ast.Constant(value=event_code_counter),
-            ast.Constant(value=has_record),
             ast.Constant(value=log_width),
         ], ctx=ast.Load())))
         
@@ -285,10 +285,9 @@ def _emit_events_function(spec: ModelSpec, phase: str, nmap: NameMaps):
         
         body.append(ast.If(test=cond_node, body=act_stmts or [ast.Pass()], orelse=[]))
     
-    # Default return (-1, False, 0) - no event fired
+    # Default return (-1, 0) - no event fired
     body.append(ast.Return(value=ast.Tuple(elts=[
         ast.Constant(value=-1),
-        ast.Constant(value=False),
         ast.Constant(value=0),
     ], ctx=ast.Load())))
 
@@ -305,7 +304,6 @@ def _emit_events_function(spec: ModelSpec, phase: str, nmap: NameMaps):
                 ], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]),
                 body=body if body else [ast.Return(value=ast.Tuple(elts=[
                     ast.Constant(value=-1),
-                    ast.Constant(value=False),
                     ast.Constant(value=0),
                 ], ctx=ast.Load()))],
                 decorator_list=[],

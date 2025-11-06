@@ -100,10 +100,10 @@ def runner(
     # Main integration loop
     while step < max_steps and t < t_end:
         # 1. Pre-events on committed state
-        event_code_pre, has_record_pre, log_width_pre = events_pre(t, y_curr, params, evt_log_scratch)
+        event_code_pre, log_width_pre = events_pre(t, y_curr, params, evt_log_scratch)
         
-        # Record pre-event if it fired and has record or log
-        if event_code_pre >= 0 and (has_record_pre or log_width_pre > 0):
+        # Record pre-event if it fired and has log data
+        if event_code_pre >= 0 and log_width_pre > 0:
             if m >= cap_evt:
                 # Need event buffer growth
                 i_out[0] = i
@@ -113,22 +113,13 @@ def runner(
                 hint_out[0] = m
                 return GROW_EVT
             
-            # Record time/code if record=True
-            if has_record_pre:
-                EVT_TIME[m] = t
-                EVT_CODE[m] = event_code_pre
-            else:
-                EVT_TIME[m] = -1.0  # Sentinel for no time recording
-                EVT_CODE[m] = event_code_pre
+            # Copy log data to buffers
+            # Note: evt_log_scratch[0] contains time if log[0]=="t", otherwise first signal
+            for log_idx in range(log_width_pre):
+                EVT_LOG_DATA[m, log_idx] = evt_log_scratch[log_idx]
             
-            # Copy log data if log items exist
-            if log_width_pre > 0:
-                for log_idx in range(log_width_pre):
-                    EVT_LOG_DATA[m, log_idx] = evt_log_scratch[log_idx]
-                EVT_INDEX[m] = log_width_pre  # Store width for interpretation
-            else:
-                EVT_INDEX[m] = 0
-            
+            EVT_CODE[m] = event_code_pre
+            EVT_INDEX[m] = log_width_pre  # Store width for interpretation
             m += 1
         
         # 2. Clip dt to avoid overshooting t_end
@@ -161,10 +152,10 @@ def runner(
         step += 1
         
         # 5. Post-events on committed state
-        event_code_post, has_record_post, log_width_post = events_post(t, y_curr, params, evt_log_scratch)
+        event_code_post, log_width_post = events_post(t, y_curr, params, evt_log_scratch)
         
-        # Record post-event if it fired and has record or log
-        if event_code_post >= 0 and (has_record_post or log_width_post > 0):
+        # Record post-event if it fired and has log data
+        if event_code_post >= 0 and log_width_post > 0:
             if m >= cap_evt:
                 # Need event buffer growth
                 i_out[0] = i
@@ -174,22 +165,12 @@ def runner(
                 hint_out[0] = m
                 return GROW_EVT
             
-            # Record time/code if record=True
-            if has_record_post:
-                EVT_TIME[m] = t
-                EVT_CODE[m] = event_code_post
-            else:
-                EVT_TIME[m] = -1.0  # Sentinel for no time recording
-                EVT_CODE[m] = event_code_post
+            # Copy log data to buffers
+            for log_idx in range(log_width_post):
+                EVT_LOG_DATA[m, log_idx] = evt_log_scratch[log_idx]
             
-            # Copy log data if log items exist
-            if log_width_post > 0:
-                for log_idx in range(log_width_post):
-                    EVT_LOG_DATA[m, log_idx] = evt_log_scratch[log_idx]
-                EVT_INDEX[m] = log_width_post  # Store width for interpretation
-            else:
-                EVT_INDEX[m] = 0
-            
+            EVT_CODE[m] = event_code_post
+            EVT_INDEX[m] = log_width_post  # Store width for interpretation
             m += 1
         
         # 6. Record (if enabled and step matches record_every_step)

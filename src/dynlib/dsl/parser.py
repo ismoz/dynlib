@@ -62,7 +62,14 @@ def _read_events(ev_tbl: Dict[str, Any]) -> List[Dict[str, Any]]:
                     if not isinstance(expr, str):
                         raise ModelLoadError(f"[events.{name}].action.{tgt} must be a string expression")
                 action_keyed = action_ns
-        record = bool(body.get("record", False))
+        
+        # Reject deprecated 'record' key
+        if "record" in body:
+            raise ModelLoadError(
+                f"[events.{name}].record is no longer supported. "
+                f"Use log=['t'] to record event occurrence times, or log=['t', 'x', ...] to log time and values."
+            )
+        
         log = body.get("log", [])
         if log is None:
             log = []
@@ -74,7 +81,6 @@ def _read_events(ev_tbl: Dict[str, Any]) -> List[Dict[str, Any]]:
             "cond": cond,
             "action_keyed": action_keyed,
             "action_block": action_block,
-            "record": record,
             "log": list(log),
         })
     return events

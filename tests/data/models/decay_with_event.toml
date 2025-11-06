@@ -19,8 +19,7 @@ x = "-a * x"
 phase = "post"
 cond = "x < threshold"
 action.x = "1.0"
-record = true
-log = ["x"]
+log = ["t", "x"]
 
 [sim]
 t0 = 0.0

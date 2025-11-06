@@ -33,7 +33,6 @@ class EventSpec:
     cond: str
     action_keyed: Dict[str, str] | None
     action_block: str | None
-    record: bool
     log: Tuple[str, ...]
 
 
@@ -105,7 +104,6 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
             cond=e["cond"],
             action_keyed=dict(e["action_keyed"]) if e.get("action_keyed") else None,
             action_block=e.get("action_block"),
-            record=bool(e.get("record", False)),
             log=tuple(e.get("log", []) or []),
         )
         for e in (normal.get("events") or [])
@@ -167,7 +165,6 @@ def _json_canon(obj: Any) -> str:
                 "cond": o.cond,
                 "action_keyed": o.action_keyed,
                 "action_block": o.action_block,
-                "record": o.record,
                 "log": list(o.log),
             }
         if isinstance(o, SimDefaults):

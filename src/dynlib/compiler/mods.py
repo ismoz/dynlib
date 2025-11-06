@@ -78,7 +78,14 @@ def _normalize_event(name: str, body: Dict[str, Any]) -> Dict[str, Any]:
     if action_keyed is None:
         ak = {k[7:]: v for k, v in body.items() if k.startswith("action.")}
         action_keyed = ak or None
-    record = bool(body.get("record", False))
+    
+    # Reject deprecated 'record' key
+    if "record" in body:
+        raise ModelLoadError(
+            f"events.{name}.record is no longer supported. "
+            f"Use log=['t'] to record event occurrence times."
+        )
+    
     log = list(body.get("log", []) or [])
     return {
         "name": name,
@@ -86,7 +93,6 @@ def _normalize_event(name: str, body: Dict[str, Any]) -> Dict[str, Any]:
         "cond": cond,
         "action_keyed": action_keyed,
         "action_block": action_block,
-        "record": record,
         "log": log,
     }
 

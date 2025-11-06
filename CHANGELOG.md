@@ -2,6 +2,44 @@
 
 ---
 
+## [2.10.1] – 2025-11-06
+### Changed
+- Removed `record` key from events in favor of unified `log` mechanism:
+  - Events no longer support `record=True/False`
+  - Use `log=["t"]` to capture event occurrence times
+  - Use `log=["t", "x", ...]` to capture both time and other values
+  - The `"t"` signal is treated like any other loggable value in `EVT_LOG_DATA`
+  - Eliminates non-orthogonal design where `record` and `log` overlapped
+  - Removes wasteful sentinel value pattern (`EVT_TIME=-1.0`)
+  - Event buffers only grow when events actually have `log` items
+  - Migration: Replace `record=true` with `log=["t"]`, or add `"t"` to existing log arrays
+
+### Fixed
+- Event buffer allocation is now more efficient:
+  - No buffer space wasted on events without logging
+  - No sentinel values written to `EVT_TIME`
+  - Events only increment buffer counter when they have actual log data
+
+### Changed
+- Updated event function signature in `src/dynlib/compiler/codegen/emitter.py`:
+  - Old: `events_phase(...) -> (event_code, has_record, log_width)`
+  - New: `events_phase(...) -> (event_code, log_width)`
+- Updated runner in `src/dynlib/compiler/codegen/runner.py`:
+  - Removed `has_record` conditional logic
+  - Simplified event recording: only fires when `log_width > 0`
+  - All log values (including `"t"`) go to `EVT_LOG_DATA`
+- Updated `EventSpec` dataclass in `src/dynlib/dsl/spec.py`:
+  - Removed `record: bool` field
+- Updated parsers to reject deprecated `record` key with helpful error:
+  - `src/dynlib/dsl/parser.py`: Raises error directing users to use `log=["t"]`
+  - `src/dynlib/compiler/mods.py`: Same validation in mod files
+- Updated `src/dynlib/runtime/runner_api.py` documentation
+
+### Tests
+- Updated all test models and test cases to use `log=["t"]` instead of `record=True`.
+
+---
+
 ## [2.10.0] – 2025-11-06
 ### Fixed
 - Event logging now properly separates `record` and `log` functionality:

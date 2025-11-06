@@ -10,7 +10,7 @@ def minimal_doc():
         "equations": {"rhs": {"x": "-a*x", "u": "x - u"}, "expr": None},
         "aux": {"z": "x+u"},
         "functions": {"f": {"args": ["q"], "expr": "q+1"}},
-        "events": {"tick": {"phase": "post", "cond": "1", "action": "u = 0", "record": True, "log": ["x"]}},
+        "events": {"tick": {"phase": "post", "cond": "1", "action": "u = 0", "log": ["t", "x"]}},
         "sim": {"t0": 0.0, "t_end": 2.0, "dt": 0.1, "stepper": "rk4", "record": False},
     }
 

@@ -105,8 +105,7 @@ phase  = "pre" | "post" | "both"
 cond   = "expr"
 action = "expr"
 tags   = ["..."]     # optional
-record = true/false  # optional (record event time)
-log    = ["x", "y", "aux:E", "param:a"]   
+log    = ["t", "x", "y", "aux:E", "param:a"]   
 ```
 - Allowed assignments: states, params. Forbidden assignments: aux, buffers, stepper internals.
 
@@ -161,7 +160,6 @@ Where they apply
   cond  = "v >= 30"
   action.v = "-65"
   action.u = "u + 2"
-  record = true
   log    = ["v","u","aux:E"]
 ```
 - **Block action**:

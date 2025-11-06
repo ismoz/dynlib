@@ -124,15 +124,14 @@ def test_parse_model_v2_events_keyed_and_block_forms():
         "tick": {
             "phase": "post", "cond": "1",
             "action.dx": "1", "action.u": "0",
-            "record": True, "log": ["x", "u"]
+            "log": ["t", "x", "u"]
         }
     })
     n1 = parse_model_v2(d1)
     assert n1["events"][0]["name"] == "tick"
     assert n1["events"][0]["action_keyed"] == {"dx": "1", "u": "0"}
     assert n1["events"][0]["action_block"] is None
-    assert n1["events"][0]["record"] is True
-    assert n1["events"][0]["log"] == ["x", "u"]
+    assert n1["events"][0]["log"] == ["t", "x", "u"]
 
     d2 = minimal_doc(events={
         "tick": {

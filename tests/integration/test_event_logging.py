@@ -1,8 +1,9 @@
 """
 Integration tests for event logging functionality.
 
-Tests that events with record=true and log=[...] correctly populate
-the EVT_TIME, EVT_CODE, and EVT_INDEX buffers.
+Tests that events with log=[...] correctly populate
+the EVT_CODE, EVT_INDEX, and EVT_LOG_DATA buffers.
+Time can be logged using log=["t", ...].
 """
 import pytest
 import numpy as np
@@ -45,7 +46,7 @@ def load_model_from_toml(path: Path, jit: bool = True) -> Model:
 
 def test_event_logging_basic():
     """Test that event logging records when an event fires."""
-    # Load model with event that has record=true and log=["x"]
+    # Load model with event that has log=["t", "x"]
     data_dir = Path(__file__).parent.parent / "data" / "models"
     model_path = data_dir / "decay_with_event.toml"
     
@@ -56,31 +57,31 @@ def test_event_logging_basic():
     result = sim.run(cap_evt=100)
     
     # Check that event log has entries
-    evt_time = result.EVT_TIME_view
     evt_code = result.EVT_CODE_view
     evt_index = result.EVT_INDEX_view
     evt_log_data = result.EVT_LOG_DATA_view
     
     # The decay model should trigger the reset event when x < threshold (0.5)
     # This should happen at least once during the simulation
-    assert len(evt_time) > 0, "Event log should have entries when event fires"
     assert len(evt_code) > 0, "Event code log should have entries"
     assert len(evt_index) > 0, "Event index log should have entries"
     assert np.all(evt_code == 0), "Single event should emit code 0"
-    assert np.all(evt_index == 1), "Event index should be 1 (log width for log=['x'])"
+    assert np.all(evt_index == 2), "Event index should be 2 (log width for log=['t', 'x'])"
     
     # Check that log data was captured
-    assert evt_log_data.shape[1] >= 1, "Log data should have at least 1 column"
-    # The logged value should be the state 'x' at event fire time
-    # Since event fires when x < threshold (0.5), and then resets x to 1.0,
-    # the logged values should be close to threshold
-    for i in range(len(evt_time)):
-        logged_x = evt_log_data[i, 0]
+    assert evt_log_data.shape[1] >= 2, "Log data should have at least 2 columns (t and x)"
+    
+    # Column 0 is time, column 1 is x
+    for i in range(len(evt_code)):
+        logged_t = evt_log_data[i, 0]
+        logged_x = evt_log_data[i, 1]
+        assert 0.0 <= logged_t <= 3.0, f"Logged time should be in range, got {logged_t}"
         assert 0.0 <= logged_x <= 1.5, f"Logged x value should be reasonable, got {logged_x}"
     
     # All logged event times should be within simulation bounds
-    assert np.all(evt_time >= 0.0), "Event times should be >= t0"
-    assert np.all(evt_time <= 3.0), "Event times should be <= t_end"
+    logged_times = evt_log_data[:len(evt_code), 0]
+    assert np.all(logged_times >= 0.0), "Event times should be >= t0"
+    assert np.all(logged_times <= 3.0), "Event times should be <= t_end"
     
     # Event codes should be non-negative
     assert np.all(evt_code >= 0), "Event codes should be non-negative"
@@ -99,10 +100,10 @@ def test_event_logging_no_log_field():
     result = sim.run()
     
     # Event log should be empty (or minimal)
-    evt_time = result.EVT_TIME_view
+    evt_code = result.EVT_CODE_view
     
     # No events with logging enabled, so should be empty
-    assert len(evt_time) == 0, "Event log should be empty when no events have log field"
+    assert len(evt_code) == 0, "Event log should be empty when no events have log field"
 
 
 def test_event_logging_multiple_fires():
@@ -116,16 +117,19 @@ def test_event_logging_multiple_fires():
     # Run with longer simulation to ensure multiple resets
     result = sim.run(t_end=10.0, cap_evt=100)
     
-    evt_time = result.EVT_TIME_view
     evt_code = result.EVT_CODE_view
+    evt_log_data = result.EVT_LOG_DATA_view
     
     # With t_end=10.0 and reset threshold=0.5, should fire multiple times
     # (exact count depends on dynamics, but should be > 1)
-    assert len(evt_time) > 1, "Event should fire multiple times over longer simulation"
+    assert len(evt_code) > 1, "Event should fire multiple times over longer simulation"
     assert np.all(evt_code == 0), "Single reset event should keep code 0 across firings"
     
+    # Extract logged times (column 0)
+    logged_times = evt_log_data[:len(evt_code), 0]
+    
     # Event times should be monotonically increasing (or at least non-decreasing)
-    assert np.all(np.diff(evt_time) >= 0), "Event times should be in chronological order"
+    assert np.all(np.diff(logged_times) >= 0), "Event times should be in chronological order"
 
 
 def test_event_logging_captures_state():
@@ -138,18 +142,22 @@ def test_event_logging_captures_state():
     
     result = sim.run(t_end=3.0, cap_evt=100)
     
-    evt_time = result.EVT_TIME_view
+    evt_code = result.EVT_CODE_view
+    evt_log_data = result.EVT_LOG_DATA_view
     
     # Each event should correspond to when x crosses threshold
     # The event fires when x < threshold (0.5), then resets x to 1.0
     
-    if len(evt_time) > 0:
+    if len(evt_code) > 0:
         # Get the trajectory
         t_series = result.T_view
         x_series = result.Y_view[0, :]  # First state
         
+        # Extract logged times (column 0)
+        logged_times = evt_log_data[:len(evt_code), 0]
+        
         # For each event time, find the closest recorded time point
-        for evt_t in evt_time:
+        for evt_t in logged_times:
             # Find index closest to event time
             idx = np.argmin(np.abs(t_series - evt_t))
             
