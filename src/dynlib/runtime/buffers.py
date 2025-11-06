@@ -41,12 +41,10 @@ class EventPools:
     """
     Event log storage (may be disabled with cap_evt==1).
     Shapes:
-      - EVT_TIME:  (cap_evt,) float64
       - EVT_CODE:  (cap_evt,) int32   — event identifier (runner-defined)
       - EVT_INDEX: (cap_evt,) int32   — index into log data row
       - EVT_LOG_DATA: (cap_evt, max_log_width) model_dtype — logged signal values
     """
-    EVT_TIME: np.ndarray      # float64
     EVT_CODE: np.ndarray      # int32
     EVT_INDEX: np.ndarray     # int32
     EVT_LOG_DATA: np.ndarray  # model dtype, shape (cap_evt, max_log_width)
@@ -96,7 +94,7 @@ def allocate_pools(
     Allocate banks and record/log pools with the frozen dtypes.
 
     - Model dtype: user-selected (default float64).
-    - Recording T, EVT_TIME are always float64.
+    - Recording T is always float64.
     - STEP:int64, FLAGS:int32, EVT_CODE:int32, EVT_INDEX:int32.
     
     Lane-based allocation for model-dtype banks (sp, ss, sw0-sw3):
@@ -132,11 +130,10 @@ def allocate_pools(
     rec   = RecordingPools(T, Y, STEP, FLAGS, cap_rec, n_state, model_dtype)
 
     # Event pools (cap_evt may be 1 if disabled; max_log_width may be 0 if no logging)
-    EVT_TIME     = _zeros((cap_evt,), np.float64)
     EVT_CODE     = _zeros((cap_evt,), np.int32)
     EVT_INDEX    = _zeros((cap_evt,), np.int32)
     EVT_LOG_DATA = _zeros((cap_evt, max(1, max_log_width)), model_dtype)  # at least (cap_evt, 1) for numba
-    ev           = EventPools(EVT_TIME, EVT_CODE, EVT_INDEX, EVT_LOG_DATA, cap_evt, max_log_width)
+    ev           = EventPools(EVT_CODE, EVT_INDEX, EVT_LOG_DATA, cap_evt, max_log_width)
 
     return banks, rec, ev
 
@@ -198,15 +195,13 @@ def grow_evt_arrays(
 
     new_cap = _next_cap(ev.cap_evt, min_needed)
 
-    EVT_TIME_new     = _zeros((new_cap,), np.float64)
     EVT_CODE_new     = _zeros((new_cap,), np.int32)
     EVT_INDEX_new    = _zeros((new_cap,), np.int32)
     EVT_LOG_DATA_new = _zeros((new_cap, max(1, ev.max_log_width)), model_dtype)
 
     if filled > 0:
-        EVT_TIME_new[:filled]     = ev.EVT_TIME[:filled]
         EVT_CODE_new[:filled]     = ev.EVT_CODE[:filled]
         EVT_INDEX_new[:filled]    = ev.EVT_INDEX[:filled]
         EVT_LOG_DATA_new[:filled, :] = ev.EVT_LOG_DATA[:filled, :]
 
-    return EventPools(EVT_TIME_new, EVT_CODE_new, EVT_INDEX_new, EVT_LOG_DATA_new, new_cap, ev.max_log_width)
+    return EventPools(EVT_CODE_new, EVT_INDEX_new, EVT_LOG_DATA_new, new_cap, ev.max_log_width)

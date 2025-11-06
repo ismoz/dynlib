@@ -2,6 +2,12 @@
 
 ---
 
+## [2.10.2] – 2025-11-06
+### Changed
+- Dropped the legacy `EVT_TIME` buffer entirely; logged times live in `EVT_LOG_DATA`.
+
+---
+
 ## [2.10.1] – 2025-11-06
 ### Changed
 - Removed `record` key from events in favor of unified `log` mechanism:
@@ -10,14 +16,12 @@
   - Use `log=["t", "x", ...]` to capture both time and other values
   - The `"t"` signal is treated like any other loggable value in `EVT_LOG_DATA`
   - Eliminates non-orthogonal design where `record` and `log` overlapped
-  - Removes wasteful sentinel value pattern (`EVT_TIME=-1.0`)
   - Event buffers only grow when events actually have `log` items
   - Migration: Replace `record=true` with `log=["t"]`, or add `"t"` to existing log arrays
 
 ### Fixed
 - Event buffer allocation is now more efficient:
   - No buffer space wasted on events without logging
-  - No sentinel values written to `EVT_TIME`
   - Events only increment buffer counter when they have actual log data
 
 ### Changed

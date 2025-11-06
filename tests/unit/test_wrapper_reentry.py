@@ -46,7 +46,7 @@ class _RunnerScript:
         # Unpack outs (last group before function symbols)
         # ... args[?] layout mirrors wrapper call order; we read by position:
         # [ ... rec.T, rec.Y, rec.STEP, rec.FLAGS,
-        #   ev.EVT_TIME, ev.EVT_CODE, ev.EVT_INDEX,
+        #   ev.EVT_CODE, ev.EVT_INDEX, ev.EVT_LOG_DATA,
         #   i_start, step_start, cap_rec, cap_evt,
         #   user_break_flag, status_out, hint_out, i_out, step_out, t_out, ...]
         # Last 4 args are (stepper, rhs, events_pre, events_post)

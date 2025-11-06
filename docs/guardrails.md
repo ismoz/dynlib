@@ -23,7 +23,8 @@ runner(
   # recording
   T: float64[:], Y: float[:, :], STEP: int64[:], FLAGS: int32[:],
   # event log (present; cap may be 1 if disabled)
-  EVT_TIME: float64[:], EVT_CODE: int32[:], EVT_INDEX: int32[:],
+  EVT_CODE: int32[:], EVT_INDEX: int32[:], EVT_LOG_DATA: float[:, :],
+  evt_log_scratch: float[:],
   # cursors & caps
   i_start: int64, step_start: int64, cap_rec: int64, cap_evt: int64,
   # control/outs (len-1)
@@ -63,7 +64,7 @@ rhs(t: float, y_vec: float[:], dy_out: float[:], params: float[:] | int[:]) -> N
 
 ### Dtypes & Buffers
 - Model primary dtype from `[model].dtype` (default `float64`).
-- `T`, `EVT_TIME`: `float64`; `Y`: model dtype; `STEP:int64`, `FLAGS:int32`.
+- `T`: `float64`; `Y`/`EVT_LOG_DATA`: model dtype; `STEP:int64`, `FLAGS:int32`; `EVT_CODE`/`EVT_INDEX:int32`.
 - Work banks `sp, ss, sw*`: model dtype; `iw0:int32`, `bw0:uint8`.
 - `t_prop` is model dtype; committed `t` written to `T` as `float64`.
 

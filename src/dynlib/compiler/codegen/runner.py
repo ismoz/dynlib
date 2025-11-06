@@ -50,7 +50,7 @@ def runner(
     # recording
     T, Y, STEP, FLAGS,
     # event log (present; cap may be 1 if disabled)
-    EVT_TIME, EVT_CODE, EVT_INDEX, EVT_LOG_DATA,
+    EVT_CODE, EVT_INDEX, EVT_LOG_DATA,
     # event log scratch (for writing log values before copying)
     evt_log_scratch,
     # cursors & caps
@@ -114,7 +114,6 @@ def runner(
                 return GROW_EVT
             
             # Copy log data to buffers
-            # Note: evt_log_scratch[0] contains time if log[0]=="t", otherwise first signal
             for log_idx in range(log_width_pre):
                 EVT_LOG_DATA[m, log_idx] = evt_log_scratch[log_idx]
             

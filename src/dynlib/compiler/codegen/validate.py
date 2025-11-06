@@ -38,7 +38,7 @@ ALLOWED_WRITES = {"y_prop", "t_prop", "dt_next", "err_est"}
 # Forbidden targets (runner-owned)
 FORBIDDEN_WRITES = {
     "y_curr", "y_prev", "T", "Y", "STEP", "FLAGS",
-    "EVT_TIME", "EVT_CODE", "EVT_INDEX", "EVT_LOG_DATA",
+    "EVT_CODE", "EVT_INDEX", "EVT_LOG_DATA",
     "i_start", "step_start", "cap_rec", "cap_evt",
     "user_break_flag", "status_out", "hint_out",
     "i_out", "step_out", "t_out",

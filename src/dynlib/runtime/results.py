@@ -12,7 +12,7 @@ class Results:
 
     Fields:
       - T, Y, STEP, FLAGS: backing arrays (not copies)
-      - EVT_TIME, EVT_CODE, EVT_INDEX, EVT_LOG_DATA: event arrays (may be size 1 if disabled)
+      - EVT_CODE, EVT_INDEX, EVT_LOG_DATA: event arrays (may be size 1 if disabled)
       - n: number of valid records
       - m: number of valid event entries
 
@@ -28,7 +28,6 @@ class Results:
     FLAGS: np.ndarray      # int32,   shape (cap_rec,)
 
     # event log (backing arrays)
-    EVT_TIME: np.ndarray      # float64, shape (cap_evt,)
     EVT_CODE: np.ndarray      # int32,   shape (cap_evt,)
     EVT_INDEX: np.ndarray     # int32,   shape (cap_evt,) - stores log_width
     EVT_LOG_DATA: np.ndarray  # model dtype, shape (cap_evt, max_log_width)
@@ -54,10 +53,6 @@ class Results:
     @property
     def FLAGS_view(self) -> np.ndarray:
         return self.FLAGS[: self.n]
-
-    @property
-    def EVT_TIME_view(self) -> np.ndarray:
-        return self.EVT_TIME[: self.m]
 
     @property
     def EVT_CODE_view(self) -> np.ndarray:

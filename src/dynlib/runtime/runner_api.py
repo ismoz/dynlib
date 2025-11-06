@@ -75,7 +75,6 @@ class RunnerABI:
     FLAGS: str = "int32[:]"
 
     # Event log buffers
-    EVT_TIME: str = "float64[:]"              # DEPRECATED - kept for compatibility, not used
     EVT_CODE: str = "int32[:]"
     EVT_INDEX: str = "int32[:]"
     EVT_LOG_DATA: str = "model_dtype[:, :]"  # shape (cap_evt, max_log_width)
@@ -122,7 +121,7 @@ runner(
   # recording
   T: float64[:], Y: model_dtype[:, :], STEP: int64[:], FLAGS: int32[:],
   # event log
-  EVT_TIME: float64[:], EVT_CODE: int32[:], EVT_INDEX: int32[:], EVT_LOG_DATA: model_dtype[:, :],
+  EVT_CODE: int32[:], EVT_INDEX: int32[:], EVT_LOG_DATA: model_dtype[:, :],
   evt_log_scratch: model_dtype[:],
   # cursors & caps
   i_start: int64, step_start: int64, cap_rec: int64, cap_evt: int64,
@@ -146,7 +145,6 @@ Rules:
   - Events run 'pre' on committed state before step; 'post' after commit. May only mutate states/params.
 - EVT_INDEX stores log_width; EVT_LOG_DATA[m, :log_width] contains logged signal values
 - Time can be logged using log=["t", ...] - it appears as first column in EVT_LOG_DATA
-- EVT_TIME is deprecated and kept only for backward compatibility (not populated by runner)
 - T is float64; Y/EVT_LOG_DATA is model dtype; STEP:int64, FLAGS:int32, EVT_CODE/EVT_INDEX:int32.
 - Work banks sp, ss, sw* are model dtype; iw0:int32, bw0:uint8.
 - t_prop is model dtype; committed t written to T as float64.

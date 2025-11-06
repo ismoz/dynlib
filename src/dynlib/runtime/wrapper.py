@@ -52,7 +52,7 @@ def run_with_wrapper(
             sp, ss, sw0, sw1, sw2, sw3, iw0, bw0,
             y_prop, t_prop, dt_next, err_est,
             T, Y, STEP, FLAGS,
-            EVT_TIME, EVT_CODE, EVT_INDEX,
+            EVT_CODE, EVT_INDEX, EVT_LOG_DATA,
             i_start, step_start, cap_rec, cap_evt,
             user_break_flag, status_out, hint_out,
             i_out, step_out, t_out,
@@ -109,7 +109,7 @@ def run_with_wrapper(
             banks.iw0, banks.bw0,
             y_prop, t_prop, dt_next, err_est,
             rec.T, rec.Y, rec.STEP, rec.FLAGS,
-            ev.EVT_TIME, ev.EVT_CODE, ev.EVT_INDEX, ev.EVT_LOG_DATA,
+            ev.EVT_CODE, ev.EVT_INDEX, ev.EVT_LOG_DATA,
             evt_log_scratch,
             i_start, step_start, int(rec.cap_rec), int(ev.cap_evt),
             user_break_flag, status_out, hint_out,
@@ -125,7 +125,7 @@ def run_with_wrapper(
         if status == DONE:
             return Results(
                 T=rec.T, Y=rec.Y, STEP=rec.STEP, FLAGS=rec.FLAGS,
-                EVT_TIME=ev.EVT_TIME, EVT_CODE=ev.EVT_CODE, EVT_INDEX=ev.EVT_INDEX,
+                EVT_CODE=ev.EVT_CODE, EVT_INDEX=ev.EVT_INDEX,
                 EVT_LOG_DATA=ev.EVT_LOG_DATA,
                 n=n_filled, m=m_filled,
             )
@@ -150,7 +150,7 @@ def run_with_wrapper(
             # Early termination or error; return what we have (viewed via n/m)
             return Results(
                 T=rec.T, Y=rec.Y, STEP=rec.STEP, FLAGS=rec.FLAGS,
-                EVT_TIME=ev.EVT_TIME, EVT_CODE=ev.EVT_CODE, EVT_INDEX=ev.EVT_INDEX,
+                EVT_CODE=ev.EVT_CODE, EVT_INDEX=ev.EVT_INDEX,
                 EVT_LOG_DATA=ev.EVT_LOG_DATA,
                 n=n_filled, m=m_filled,
             )

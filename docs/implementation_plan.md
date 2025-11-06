@@ -51,7 +51,7 @@ Lock growth semantics and the wrapper↔runner re-entry contract. No codegen yet
 ### 1.1 Files
 - **`src/dynlib/runtime/buffers.py`**
   - Contiguous pools per dtype; carve banks: `sp`, `ss`, `sw0..sw3` (model dtype), `iw0:int32`, `bw0:uint8`.
-  - Recording: `T:float64`, `Y:model_dtype`, `STEP:int64`, `FLAGS:int32`; optional EVT buffers `EVT_TIME:float64`, `EVT_CODE:int32`, `EVT_INDEX:int32`.
+  - Recording: `T:float64`, `Y:model_dtype`, `STEP:int64`, `FLAGS:int32`; optional EVT buffers `EVT_CODE:int32`, `EVT_INDEX:int32`, `EVT_LOG_DATA:model_dtype`.
   - Geometric growth helpers returning `(new_arr, new_cap)`; copy only filled slices.
 - **`src/dynlib/runtime/results.py`**
   - `Results` dataclass exposing views, not copies: `T[:n]`, `Y[:, :n]`, etc.
@@ -171,5 +171,5 @@ Add steppers without touching wrapper/results/ABI.
 - No `Optional`/`Union` in any jitted signature, ever.
 - Hot path = only scalars/ndarrays of fixed dtypes; no Python objects/allocations.
 - All banks/outs are C-contiguous;
-- ODE model `dtype` is float; `T`/`EVT_TIME` are always `float64`.
+- ODE model `dtype` is float; `T` is always `float64`.
 - Events may mutate only states/params; they never touch buffers or cursors.
