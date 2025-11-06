@@ -9,6 +9,7 @@ __all__ = [
     "collect_names",
     "validate_expr_acyclic",
     "validate_event_legality",
+    "validate_event_tags",
     "validate_functions_signature",
     "validate_no_duplicate_equation_targets",
 ]
@@ -17,6 +18,10 @@ __all__ = [
 # this module only uses the patterns to help validate equations.
 # emitter.py converts validated equations to AST.
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+# Pattern for valid tag identifiers/slugs: alphanumeric + underscore + hyphen
+# Must start with letter or underscore
+_TAG_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 
 # Regex patterns for derivative notation (ODE only)
 _DFUNC_PAREN = re.compile(r'^d\(\s*([A-Za-z_]\w*)\s*\)$')
@@ -110,6 +115,39 @@ def validate_event_legality(normal: Dict[str, Any]) -> None:
                     f"[events.{name}] may mutate only states/params; illegal: {illegal}"
                 )
         # action_block legality is deferred to codegen parsing; enforced here by absence of aux/buffer names is not trivial.
+
+
+def validate_event_tags(normal: Dict[str, Any]) -> None:
+    """Validate event tags are well-formed identifiers/slugs.
+    
+    Tags must:
+    - Match pattern: [A-Za-z_][A-Za-z0-9_-]*
+    - Not be empty
+    
+    Note: Duplicates are handled by normalization (deduplication) in build_spec,
+    not treated as an error.
+    """
+    for ev in (normal.get("events") or []):
+        name = ev["name"]
+        tags = ev.get("tags", [])
+        
+        if not tags:
+            continue
+        
+        # Validate each tag format
+        for tag in tags:
+            if not isinstance(tag, str):
+                raise ModelLoadError(f"[events.{name}] tag must be a string, got {type(tag).__name__}")
+            
+            if not tag:
+                raise ModelLoadError(f"[events.{name}] tag cannot be empty")
+            
+            if not _TAG_PATTERN.match(tag):
+                raise ModelLoadError(
+                    f"[events.{name}] tag '{tag}' is invalid. "
+                    f"Tags must start with a letter or underscore and contain only "
+                    f"letters, digits, underscores, and hyphens."
+                )
 
 
 def validate_functions_signature(normal: Dict[str, Any]) -> None:

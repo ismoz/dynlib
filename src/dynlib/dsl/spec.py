@@ -34,6 +34,7 @@ class EventSpec:
     action_keyed: Dict[str, str] | None
     action_block: str | None
     log: Tuple[str, ...]
+    tags: Tuple[str, ...]  # compile-time only, order-stable, canonical
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,7 @@ class ModelSpec:
     functions: Dict[str, tuple[list[str], str]]
     events: Tuple[EventSpec, ...]
     sim: SimDefaults
+    tag_index: Dict[str, Tuple[str, ...]]  # tag -> event names, compile-time only
 
 
 # ---- builders ----------------------------------------------------------------
@@ -65,17 +67,35 @@ def _canon_dtype(dtype: str) -> str:
     return alias.get(dtype, dtype)
 
 
+def _build_tag_index(events: Tuple[EventSpec, ...]) -> Dict[str, Tuple[str, ...]]:
+    """Build a reverse index: tag -> tuple of event names.
+    
+    Returns a dict where each tag maps to an ordered tuple of event names
+    that have that tag. Event names maintain their declaration order.
+    """
+    index: Dict[str, list[str]] = {}
+    for event in events:
+        for tag in event.tags:
+            if tag not in index:
+                index[tag] = []
+            index[tag].append(event.name)
+    # Convert lists to tuples for immutability
+    return {tag: tuple(names) for tag, names in index.items()}
+
+
 def build_spec(normal: Dict[str, Any]) -> ModelSpec:
     # VALIDATE BEFORE PARSING
     from .astcheck import (
         validate_expr_acyclic,
         validate_event_legality,
+        validate_event_tags,
         validate_functions_signature,
         validate_no_duplicate_equation_targets,
     )
     
     validate_expr_acyclic(normal)
     validate_event_legality(normal)
+    validate_event_tags(normal)
     validate_functions_signature(normal)
     validate_no_duplicate_equation_targets(normal)
     
@@ -105,6 +125,7 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
             action_keyed=dict(e["action_keyed"]) if e.get("action_keyed") else None,
             action_block=e.get("action_block"),
             log=tuple(e.get("log", []) or []),
+            tags=tuple(sorted(set(e.get("tags", []) or []))),  # normalize: dedupe & sort
         )
         for e in (normal.get("events") or [])
     )
@@ -134,6 +155,7 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
         functions=functions,
         events=events,
         sim=sim,
+        tag_index=_build_tag_index(events),
     )
 
 
@@ -157,6 +179,7 @@ def _json_canon(obj: Any) -> str:
                 "functions": o.functions,
                 "events": [encode(e) for e in o.events],
                 "sim": encode(o.sim),
+                "tag_index": {k: list(v) for k, v in o.tag_index.items()},
             }
         if isinstance(o, EventSpec):
             return {
@@ -166,6 +189,7 @@ def _json_canon(obj: Any) -> str:
                 "action_keyed": o.action_keyed,
                 "action_block": o.action_block,
                 "log": list(o.log),
+                "tags": list(o.tags),
             }
         if isinstance(o, SimDefaults):
             return {

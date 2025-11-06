@@ -2,6 +2,41 @@
 
 ---
 
+## [2.12.0] – 2025-11-06
+### Added
+- Event tagging feature for compile-time metadata and filtering:
+  - Added `tags: Tuple[str, ...]` field to `EventSpec` dataclass in `src/dynlib/dsl/spec.py`
+  - Tags are immutable, order-stable (sorted), and deduplicated tuples
+  - Compile-time only; no ABI or runtime impact
+  - Added `tag_index: Dict[str, Tuple[str, ...]]` to `ModelSpec` for fast reverse lookup
+  - Tag index maps each tag to tuple of event names that have that tag
+- DSL support for event tags:
+  - Parser accepts `tags = ["tag1", "tag2", ...]` under each event in TOML files
+  - Empty or absent tags field defaults to empty tuple (no tags)
+  - Tags are normalized: duplicates removed, alphabetically sorted
+- Tag validation in `src/dynlib/dsl/astcheck.py`:
+  - Added `validate_event_tags` function with pattern `[A-Za-z_][A-Za-z0-9_-]*`
+  - Tags must start with letter or underscore, contain only alphanumerics, underscores, hyphens
+  - Empty tags rejected; non-string tags caught by parser
+  - Duplicates normalized away (not an error)
+
+### Changed
+- Spec hash includes tags for deterministic cache invalidation.
+- Updated `_json_canon` in `src/dynlib/dsl/spec.py` to serialize tags in EventSpec and tag_index
+  in ModelSpec.
+- Added helper `_build_tag_index` to construct reverse index during spec building.
+
+### Tests
+- Added comprehensive test suite in `tests/unit/test_event_tags.py`:
+  - Tag parsing, normalization, and validation
+  - Tag index construction and event lookup
+  - Format validation (valid slugs, invalid special chars, empty tags)
+  - Spec hash stability and changes with tags
+  - Integration with TOML file loading
+- Added test data file `tests/data/models/tagged_events.toml` demonstrating tag usage.
+
+---
+
 ## [2.11.3] – 2025-11-06
 ### Changed
 - Exclusive groups now raise a ModelLoadError when more than one exclusive mod is supplied,

@@ -1,0 +1,55 @@
+# Model with tagged events for testing event tag functionality
+
+[model]
+type = "ode"
+label = "Tagged Events Test"
+dtype = "float64"
+
+[states]
+x = 1.0
+y = 0.5
+
+[params]
+a = 1.0
+threshold_x = 0.3
+threshold_y = 0.7
+
+[equations.rhs]
+x = "-a * x"
+y = "a * (1.0 - y)"
+
+# Event with multiple tags
+[events.reset_x]
+phase = "post"
+cond = "x < threshold_x"
+action.x = "1.0"
+log = ["t", "x"]
+tags = ["reset", "critical", "state-x"]
+
+# Event with single tag
+[events.reset_y]
+phase = "post"
+cond = "y > threshold_y"
+action.y = "0.0"
+log = ["t", "y"]
+tags = ["reset"]
+
+# Event with no tags (empty list is fine)
+[events.monitor]
+phase = "both"
+cond = "x + y > 1.5"
+log = ["t", "x", "y"]
+tags = []
+
+# Event without tags field at all (implicit empty)
+[events.boundary]
+phase = "pre"
+cond = "x < 0.01"
+action.x = "0.01"
+
+[sim]
+t0 = 0.0
+t_end = 5.0
+dt = 0.05
+stepper = "rk4"
+record = true

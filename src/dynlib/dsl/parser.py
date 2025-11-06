@@ -75,6 +75,14 @@ def _read_events(ev_tbl: Dict[str, Any]) -> List[Dict[str, Any]]:
             log = []
         if not isinstance(log, list) or not all(isinstance(s, str) for s in log):
             raise ModelLoadError(f"[events.{name}].log must be a list of strings if present")
+        
+        # Tags
+        tags = body.get("tags", [])
+        if tags is None:
+            tags = []
+        if not isinstance(tags, list) or not all(isinstance(s, str) for s in tags):
+            raise ModelLoadError(f"[events.{name}].tags must be a list of strings if present")
+        
         events.append({
             "name": name,
             "phase": phase,
@@ -82,6 +90,7 @@ def _read_events(ev_tbl: Dict[str, Any]) -> List[Dict[str, Any]]:
             "action_keyed": action_keyed,
             "action_block": action_block,
             "log": list(log),
+            "tags": list(tags),
         })
     return events
 
