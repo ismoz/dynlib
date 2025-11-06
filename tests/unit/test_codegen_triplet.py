@@ -118,9 +118,11 @@ def test_events_only_mutate_states_params_and_effect_is_visible():
     p = np.array([2.0], dtype=np.float64)
 
     # pre does nothing; post adds +1.0 to x
-    cp.events_pre(0.0, y, p)
+    pre_code = cp.events_pre(0.0, y, p)
+    assert pre_code == -1  # non-recording event -> sentinel
     assert y[0] == pytest.approx(1.0)
-    cp.events_post(0.0, y, p)
+    post_code = cp.events_post(0.0, y, p)
+    assert post_code == -1  # non-recording event -> sentinel
     assert y[0] == pytest.approx(2.0)
 
 def test_aux_is_recomputed_inside_rhs_every_call():

@@ -65,6 +65,8 @@ def test_event_logging_basic():
     assert len(evt_time) > 0, "Event log should have entries when event fires"
     assert len(evt_code) > 0, "Event code log should have entries"
     assert len(evt_index) > 0, "Event index log should have entries"
+    assert np.all(evt_code == 0), "Single event should emit code 0"
+    assert np.all(evt_index == 0), "Default event index should be zero-filled"
     
     # All logged event times should be within simulation bounds
     assert np.all(evt_time >= 0.0), "Event times should be >= t0"
@@ -105,10 +107,12 @@ def test_event_logging_multiple_fires():
     result = sim.run(t_end=10.0, cap_evt=100)
     
     evt_time = result.EVT_TIME_view
+    evt_code = result.EVT_CODE_view
     
     # With t_end=10.0 and reset threshold=0.5, should fire multiple times
     # (exact count depends on dynamics, but should be > 1)
     assert len(evt_time) > 1, "Event should fire multiple times over longer simulation"
+    assert np.all(evt_code == 0), "Single reset event should keep code 0 across firings"
     
     # Event times should be monotonically increasing (or at least non-decreasing)
     assert np.all(np.diff(evt_time) >= 0), "Event times should be in chronological order"

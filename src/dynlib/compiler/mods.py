@@ -31,7 +31,11 @@ def _events_index(events: List[Dict[str, Any]]) -> Dict[str, int]:
 
 
 def _apply_remove(normal: Dict[str, Any], payload: Dict[str, Any]) -> None:
-    names = payload.get("events", {}).get("names", []) if payload else []
+    if not payload:
+        return
+    
+    # remove.events
+    names = payload.get("events", {}).get("names", [])
     if names:
         idx = _events_index(normal["events"]) if normal.get("events") else {}
         keep: List[Dict[str, Any]] = []
@@ -39,6 +43,20 @@ def _apply_remove(normal: Dict[str, Any], payload: Dict[str, Any]) -> None:
             if ev["name"] not in names:
                 keep.append(ev)
         normal["events"] = keep
+    
+    # remove.aux
+    remove_aux = payload.get("aux", {}).get("names", [])
+    if remove_aux:
+        for k in remove_aux:
+            if k in normal.get("aux", {}):
+                del normal["aux"][k]
+    
+    # remove.functions
+    remove_funcs = payload.get("functions", {}).get("names", [])
+    if remove_funcs:
+        for k in remove_funcs:
+            if k in normal.get("functions", {}):
+                del normal["functions"][k]
 
 
 def _normalize_event(name: str, body: Dict[str, Any]) -> Dict[str, Any]:
@@ -73,24 +91,81 @@ def _normalize_event(name: str, body: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _normalize_function(name: str, body: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert TOML function def to internal format."""
+    args = body.get("args", [])
+    expr = body.get("expr")
+    if not isinstance(args, list) or not all(isinstance(a, str) for a in args):
+        raise ModelLoadError(f"functions.{name}.args must be list of strings")
+    if not isinstance(expr, str):
+        raise ModelLoadError(f"functions.{name}.expr must be a string")
+    return {"args": list(args), "expr": expr}
+
+
 def _apply_replace(normal: Dict[str, Any], payload: Dict[str, Any]) -> None:
-    repl = payload.get("events", {}) if payload else {}
+    if not payload:
+        return
+    
+    # replace.events
+    repl = payload.get("events", {})
     if repl:
         idx = _events_index(normal.get("events", []))
         for name, body in repl.items():
             if name not in idx:
                 raise ModelLoadError(f"replace.events.{name}: event does not exist")
             normal["events"][idx[name]] = _normalize_event(name, body)
+    
+    # replace.aux
+    repl_aux = payload.get("aux", {})
+    if repl_aux:
+        for k, v in repl_aux.items():
+            if k not in normal.get("aux", {}):
+                raise ModelLoadError(f"replace.aux.{k}: aux does not exist")
+            if not isinstance(v, str):
+                raise ModelLoadError(f"replace.aux.{k}: value must be a string expression")
+            normal["aux"][k] = v
+    
+    # replace.functions
+    repl_funcs = payload.get("functions", {})
+    if repl_funcs:
+        for fname, fbody in repl_funcs.items():
+            if fname not in normal.get("functions", {}):
+                raise ModelLoadError(f"replace.functions.{fname}: function does not exist")
+            normal["functions"][fname] = _normalize_function(fname, fbody)
 
 
 def _apply_add(normal: Dict[str, Any], payload: Dict[str, Any]) -> None:
-    add = payload.get("events", {}) if payload else {}
+    if not payload:
+        return
+    
+    # add.events
+    add = payload.get("events", {})
     if add:
         existing = set(ev["name"] for ev in normal.get("events", []))
         for name, body in add.items():
             if name in existing:
                 raise ModelLoadError(f"add.events.{name}: event already exists")
             normal.setdefault("events", []).append(_normalize_event(name, body))
+    
+    # add.aux
+    add_aux = payload.get("aux", {})
+    if add_aux:
+        existing_aux = set(normal.get("aux", {}).keys())
+        for k, v in add_aux.items():
+            if k in existing_aux:
+                raise ModelLoadError(f"add.aux.{k}: aux already exists")
+            if not isinstance(v, str):
+                raise ModelLoadError(f"add.aux.{k}: value must be a string expression")
+            normal.setdefault("aux", {})[k] = v
+    
+    # add.functions
+    add_funcs = payload.get("functions", {})
+    if add_funcs:
+        existing_funcs = set(normal.get("functions", {}).keys())
+        for fname, fbody in add_funcs.items():
+            if fname in existing_funcs:
+                raise ModelLoadError(f"add.functions.{fname}: function already exists")
+            normal.setdefault("functions", {})[fname] = _normalize_function(fname, fbody)
 
 
 def _apply_set(normal: Dict[str, Any], payload: Dict[str, Any]) -> None:
@@ -110,6 +185,18 @@ def _apply_set(normal: Dict[str, Any], payload: Dict[str, Any]) -> None:
             if k not in normal["params"]:
                 raise ModelLoadError(f"set.params.{k}: unknown param")
             normal["params"][k] = v
+    # set.aux (upsert semantics - can create or update)
+    a = payload.get("aux")
+    if isinstance(a, dict):
+        for k, v in a.items():
+            if not isinstance(v, str):
+                raise ModelLoadError(f"set.aux.{k}: value must be a string expression")
+            normal.setdefault("aux", {})[k] = v
+    # set.functions (upsert semantics - can create or update)
+    f = payload.get("functions")
+    if isinstance(f, dict):
+        for fname, fbody in f.items():
+            normal.setdefault("functions", {})[fname] = _normalize_function(fname, fbody)
 
 
 # ---- main -------------------------------------------------------------------

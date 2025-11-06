@@ -2,6 +2,48 @@
 
 ---
 
+## [2.9.0] – 2025-11-06
+### Added
+- Implemented complete mod support for DSL aux and functions:
+  - Added `add.aux` and `add.functions` verbs in `src/dynlib/compiler/mods.py`
+  - Added `replace.aux` and `replace.functions` verbs with existence validation
+  - Added `remove.aux` and `remove.functions` verbs (silent for non-existent items)
+  - Added `set.aux` and `set.functions` verbs with upsert semantics
+  - All verbs follow the same deterministic application order: remove → replace → add → set
+
+### Changed
+- Enhanced `_apply_remove`, `_apply_replace`, `_apply_add`, and `_apply_set` in 
+  `src/dynlib/compiler/mods.py`:
+  - Extended all verb handlers to support aux and functions alongside existing events support
+  - Added `_normalize_function` helper for consistent function definition validation
+  - String expression validation for aux values
+  - Function args and expr validation matching parser requirements
+
+### Tests
+- Updated tests and removed redundant ones.
+- Added 19 comprehensive tests in `tests/unit/test_mods_aux_functions.py`:
+  - `test_add_aux` - Adding new auxiliary variables
+  - `test_add_aux_duplicate_raises` - Duplicate detection
+  - `test_replace_aux` - Replacing existing aux expressions
+  - `test_replace_aux_nonexistent_raises` - Error on missing aux
+  - `test_remove_aux` - Removing aux variables
+  - `test_remove_aux_nonexistent_silent` - Silent handling of non-existent removals
+  - `test_set_aux_upsert` - Upsert semantics (create or update)
+  - `test_add_functions` - Adding new functions
+  - `test_add_functions_duplicate_raises` - Duplicate detection
+  - `test_replace_functions` - Replacing existing functions
+  - `test_replace_functions_nonexistent_raises` - Error on missing function
+  - `test_remove_functions` - Removing functions
+  - `test_remove_functions_nonexistent_silent` - Silent handling
+  - `test_set_functions_upsert` - Upsert semantics
+  - `test_verb_order_remove_then_add` - Verb ordering validation
+  - `test_multiple_mods_aux_and_functions` - Sequential application
+  - `test_invalid_aux_value_type` - Type validation for aux
+  - `test_invalid_function_args` - Args validation
+  - `test_invalid_function_expr` - Expr validation
+
+---
+
 ## [2.8.0] – 2025-11-06
 ### Added
 - DSL block equations are now parsed (previously they were omitted).

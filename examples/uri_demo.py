@@ -125,7 +125,7 @@ def main():
     """Run all demos."""
     print("\n")
     print("╔" + "═" * 58 + "╗")
-    print("║" + " " * 10 + "DYNLIB Slice 6 URI System Demo" + " " * 17 + "║")
+    print("║" + " " * 10 + "DYNLIB URI System Demo" + " " * 26 + "║")
     print("╚" + "═" * 58 + "╝")
     print()
     
