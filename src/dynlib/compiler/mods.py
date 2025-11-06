@@ -218,8 +218,7 @@ def apply_mods_v2(normal: Dict[str, Any], selected: List[ModSpec]) -> Dict[str, 
     """Apply mods deterministically: remove → replace → add → set.
 
     Group/exclusive rules:
-      - If multiple mods from the same exclusive group are provided, the one with
-        the lowest priority (then name) wins; others from that group are ignored.
+      - If multiple mods from the same exclusive group are provided, raise an error.
       - Otherwise, mods apply in the *original* provided order.
     """
     # Filter by group exclusivity
@@ -231,12 +230,17 @@ def apply_mods_v2(normal: Dict[str, Any], selected: List[ModSpec]) -> Dict[str, 
         else:
             passthrough.append(m)
 
-    # Resolve exclusives per group (choose lowest (priority, name)); non-exclusive keep all.
+    # Resolve exclusives per group; non-exclusive keep all.
     winners: Dict[str, ModSpec] = {}
     for g, mods in by_group.items():
         exclusives = [m for m in mods if m.exclusive]
+        if len(exclusives) > 1:
+            names = ", ".join(sorted(m.name for m in exclusives))
+            raise ModelLoadError(
+                f"exclusive group '{g}' activates multiple mods: {names}"
+            )
         if exclusives:
-            winners[g] = sorted(exclusives, key=lambda x: (x.priority, x.name))[0]
+            winners[g] = exclusives[0]
 
     # Final order strictly follows caller order of 'selected',
     # dropping losers from exclusive groups.

@@ -69,15 +69,20 @@ def test_mods_remove_nonexistent_event_raises():
     with pytest.raises(ModelLoadError, match="remove.events: event 'nonexistent' does not exist"):
         apply_mods_v2(normal, [ModSpec(name="bad", remove={"events": {"names": ["nonexistent"]}})])
 
-def test_mods_group_exclusive_priority_and_stable_order():
+def test_mods_group_exclusive_conflict_raises():
     normal = base_normal()
-    # Same group, both exclusive → choose lowest priority then name
     m1 = ModSpec(name="B", group="G", exclusive=True, priority=10, add={"events": {"eB": {"phase": "pre", "cond": "1", "action": "x=0"}}})
     m2 = ModSpec(name="A", group="G", exclusive=True, priority=5, add={"events": {"eA": {"phase": "pre", "cond": "1", "action": "x=0"}}})
-    # Passthrough before grouped
-    p0 = ModSpec(name="P0", add={"events": {"p": {"phase": "pre", "cond": "1", "action": "x=0"}}})
-    out = apply_mods_v2(normal, [p0, m1, m2])
+
+    with pytest.raises(ModelLoadError, match="exclusive group 'G' activates multiple mods"):
+        apply_mods_v2(normal, [m1, m2])
+
+
+def test_mods_group_single_exclusive_preserves_order():
+    normal = base_normal()
+    exclusive = ModSpec(name="solo", group="G", exclusive=True, add={"events": {"e1": {"phase": "pre", "cond": "1", "action": "x=0"}}})
+    passthrough = ModSpec(name="P0", add={"events": {"p": {"phase": "pre", "cond": "1", "action": "x=0"}}})
+    out = apply_mods_v2(normal, [passthrough, exclusive])
 
     names = [e["name"] for e in out["events"]]
-    # p applied, and only m2 (priority 5) chosen from the group
-    assert "p" in names and "eA" in names and "eB" not in names
+    assert "p" in names and "e1" in names

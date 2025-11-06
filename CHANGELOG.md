@@ -2,6 +2,19 @@
 
 ---
 
+## [2.11.3] – 2025-11-06
+### Changed
+- Exclusive groups now raise a ModelLoadError when more than one exclusive mod is supplied,
+  so conflicts no longer slip through unnoticed.
+ - `src/dynlib/compiler/mods.py`:  updated exclusivity docs and enforce a conflict check 
+   that raises with the conflicting mod names instead of silently selecting a winner.
+
+### Tests
+- Replaced the previous “pick a winner” assertion with a conflict-raises check in 
+  `tests/unit/test_mods.py`.
+
+---
+
 ## [2.11.2] – 2025-11-06
 ### Changed
 - Updated `_apply_remove` in `src/dynlib/compiler/mods.py`:
