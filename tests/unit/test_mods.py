@@ -64,6 +64,11 @@ def test_mods_add_duplicate_raises():
     with pytest.raises(ModelLoadError):
         apply_mods_v2(normal, mods)
 
+def test_mods_remove_nonexistent_event_raises():
+    normal = base_normal()
+    with pytest.raises(ModelLoadError, match="remove.events: event 'nonexistent' does not exist"):
+        apply_mods_v2(normal, [ModSpec(name="bad", remove={"events": {"names": ["nonexistent"]}})])
+
 def test_mods_group_exclusive_priority_and_stable_order():
     normal = base_normal()
     # Same group, both exclusive → choose lowest priority then name

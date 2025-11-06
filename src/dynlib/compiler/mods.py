@@ -38,6 +38,9 @@ def _apply_remove(normal: Dict[str, Any], payload: Dict[str, Any]) -> None:
     names = payload.get("events", {}).get("names", [])
     if names:
         idx = _events_index(normal["events"]) if normal.get("events") else {}
+        for name in names:
+            if name not in idx:
+                raise ModelLoadError(f"remove.events: event '{name}' does not exist")
         keep: List[Dict[str, Any]] = []
         for ev in normal.get("events", []):
             if ev["name"] not in names:
@@ -47,16 +50,20 @@ def _apply_remove(normal: Dict[str, Any], payload: Dict[str, Any]) -> None:
     # remove.aux
     remove_aux = payload.get("aux", {}).get("names", [])
     if remove_aux:
+        existing_aux = set(normal.get("aux", {}).keys())
         for k in remove_aux:
-            if k in normal.get("aux", {}):
-                del normal["aux"][k]
+            if k not in existing_aux:
+                raise ModelLoadError(f"remove.aux.{k}: aux does not exist")
+            del normal["aux"][k]
     
     # remove.functions
     remove_funcs = payload.get("functions", {}).get("names", [])
     if remove_funcs:
+        existing_funcs = set(normal.get("functions", {}).keys())
         for k in remove_funcs:
-            if k in normal.get("functions", {}):
-                del normal["functions"][k]
+            if k not in existing_funcs:
+                raise ModelLoadError(f"remove.functions.{k}: function does not exist")
+            del normal["functions"][k]
 
 
 def _normalize_event(name: str, body: Dict[str, Any]) -> Dict[str, Any]:

@@ -145,11 +145,10 @@ Where they apply
   - `[mod.replace.functions.NAME]`
   - `[mod.replace.aux.NAME]`
 - **Remove** (by name list)
-  - `[mod.remove.states]` names = ["v","u"]
-  - `[mod.remove.params]` names = ["I"]
   - `[mod.remove.aux]` names = ["E"]
   - `[mod.remove.functions]names = ["sat"]
   - `[mod.remove.events]` names = ["reset","kick"]
+  **Note** States and params cannot be removed.
 
 ### Event body forms (both allowed)
 - **Keyed actions**:
@@ -194,7 +193,8 @@ priority = 0         # optional tie-break (higher wins) if multiple provided
 4. Freeze spec → codegen/JIT.
 
 ### Validation highlights
-- Unknown targets in remove.* → error (fail loud).
+- Unknown targets in remove.* → error (fail loud) to catch typos.
+- replace.* also requires target to exist (already enforced).
 - set.states/set.params can't create new keys; it is update-only. add.* can create new keys.
 - No assigning to aux inside events (events may read aux).
 - Dtype rules still enforced after mods.

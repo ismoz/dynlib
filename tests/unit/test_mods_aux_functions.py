@@ -101,8 +101,8 @@ def test_remove_aux():
     assert "power" not in out["aux"]
 
 
-def test_remove_aux_nonexistent_silent():
-    """Test that removing nonexistent aux is silent (no error)."""
+def test_remove_aux_nonexistent_raises():
+    """Test that removing nonexistent aux raises an error."""
     normal = base_normal_with_aux_funcs()
     
     mod = ModSpec(
@@ -110,11 +110,8 @@ def test_remove_aux_nonexistent_silent():
         remove={"aux": {"names": ["nonexistent", "E"]}}
     )
     
-    out = apply_mods_v2(normal, [mod])
-    
-    # E should be removed, nonexistent silently ignored
-    assert "E" not in out["aux"]
-    assert "power" in out["aux"]  # not removed
+    with pytest.raises(ModelLoadError, match="remove.aux.nonexistent: aux does not exist"):
+        apply_mods_v2(normal, [mod])
 
 
 def test_set_aux_upsert():
@@ -220,8 +217,8 @@ def test_remove_functions():
     assert "step" not in out["functions"]
 
 
-def test_remove_functions_nonexistent_silent():
-    """Test that removing nonexistent function is silent (no error)."""
+def test_remove_functions_nonexistent_raises():
+    """Test that removing nonexistent function raises an error."""
     normal = base_normal_with_aux_funcs()
     
     mod = ModSpec(
@@ -229,11 +226,8 @@ def test_remove_functions_nonexistent_silent():
         remove={"functions": {"names": ["nonexistent", "sat"]}}
     )
     
-    out = apply_mods_v2(normal, [mod])
-    
-    # sat should be removed, nonexistent silently ignored
-    assert "sat" not in out["functions"]
-    assert "step" in out["functions"]  # not removed
+    with pytest.raises(ModelLoadError, match="remove.functions.nonexistent: function does not exist"):
+        apply_mods_v2(normal, [mod])
 
 
 def test_set_functions_upsert():

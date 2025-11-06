@@ -2,6 +2,29 @@
 
 ---
 
+## [2.11.2] – 2025-11-06
+### Changed
+- Updated `_apply_remove` in `src/dynlib/compiler/mods.py`:
+  - Added validation to raise errors for non-existent `events`, `aux`, and `functions` during 
+    removal.
+  - Improved error messages for better debugging.
+- Enhanced `_apply_replace` in `src/dynlib/compiler/mods.py`:
+  - Added validation to ensure replaced `events`, `aux`, and `functions` exist.
+  - Improved error handling for invalid replacements.
+
+### Tests
+- Added new test cases in `tests/unit/test_mods.py`:
+  - `test_mods_remove_nonexistent_event_raises`: Verifies error is raised for non-existent event 
+    removal.
+  - `test_mods_replace_nonexistent_raises`: Ensures replacement of non-existent entities raises 
+    errors.
+- Updated `tests/unit/test_mods_aux_functions.py`:
+  - `test_remove_aux_nonexistent_raises`: Validates error handling for non-existent aux removal.
+  - `test_remove_functions_nonexistent_raises`: Ensures error is raised for non-existent function 
+    removal.
+
+---
+
 ## [2.11.1] – 2025-11-06
 ### Changed
 - Updated `Results` class in `src/dynlib/runtime/results.py`:
