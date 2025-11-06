@@ -2,6 +2,22 @@
 
 ---
 
+## [2.11.1] – 2025-11-06
+### Changed
+- Updated `Results` class in `src/dynlib/runtime/results.py`:
+  - Added `status` field to store runner exit status.
+  - Added `ok` property to check if the runner exited cleanly.
+  - Updated docstrings to reflect the new `status` field.
+- Enhanced `run_with_wrapper` function in `src/dynlib/runtime/wrapper.py`:
+  - Added `status` field to `Results` object returned by the function.
+  - Improved early termination handling with warnings for specific statuses.
+  - Refactored status handling logic for clarity.
+
+### Tests
+- New assertions for `status` and `ok` properties in `tests/unit/test_wrapper_reentry.py`.
+
+---
+
 ## [2.11.0] – 2025-11-06
 ### Changed
 - Removed `REJECT` status code from the stepper/runner contract:
@@ -385,7 +401,7 @@
   callables.
 - Added `emit_rhs_and_events` in `src/dynlib/compiler/codegen/emitter.py` for code generation.
 - Implemented `JITCache` in `src/dynlib/compiler/jit/cache.py` for caching compiled callables.
-- Added `maybe_jit_triplet` in `src/dynlib/compiler/jit/compile.py` for JIT compilation toggle.
+  - Added `maybe_jit_triplet` in `src/dynlib/compiler/jit/compile.py` for JIT compilation toggle.
 - Created `Model` dataclass in `src/dynlib/runtime/model.py` for simulation models.
 - Added `Sim` class in `src/dynlib/runtime/sim.py` as a placeholder for simulation runners.
 

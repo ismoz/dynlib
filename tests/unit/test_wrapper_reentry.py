@@ -1,7 +1,8 @@
 # tests/unit/test_wrapper_reentry.py
 import numpy as np
+import pytest
 from dynlib.runtime.wrapper import run_with_wrapper
-from dynlib.runtime.runner_api import GROW_REC, GROW_EVT, DONE
+from dynlib.runtime.runner_api import GROW_REC, GROW_EVT, DONE, STEPFAIL
 from dynlib.steppers.base import StepperMeta, StepperSpec, StructSpec
 
 # ---- Fake stepper/spec (no real stepping) ------------------------------------
@@ -107,3 +108,49 @@ def test_wrapper_reentry_calls_and_cursors():
     # Final cursors from fake status_out/hint_out
     assert res.n == 2
     assert res.m == 2
+    assert res.status == DONE
+    assert res.ok
+
+
+class _FailingRunner:
+    def __call__(self, *args):
+        user_break_flag = args[-10]
+        status_out = args[-9]
+        hint_out = args[-8]
+        i_out = args[-7]
+        step_out = args[-6]
+        t_out = args[-5]
+
+        i_out[0] = 0
+        step_out[0] = 0
+        hint_out[0] = 0
+        t_out[0] = 0.0
+        status_out[0] = STEPFAIL
+        return STEPFAIL
+
+
+def test_wrapper_warns_and_sets_status_on_failure():
+    struct = StructSpec(
+        sp_size=1, ss_size=1,
+        sw0_size=1, sw1_size=1, sw2_size=1, sw3_size=1,
+        iw0_size=1, bw0_size=1
+    )
+
+    y0 = np.array([1.0], dtype=np.float64)
+    params = np.array([2.0], dtype=np.float64)
+
+    with pytest.warns(RuntimeWarning, match="STEPFAIL"):
+        res = run_with_wrapper(
+            runner=_FailingRunner(),
+            stepper=_stepper, rhs=_rhs, events_pre=_events_pre, events_post=_events_post,
+            struct=struct, model_dtype=np.float64, n_state=1,
+            t0=0.0, t_end=1.0, dt_init=0.1, max_steps=10,
+            record=True, record_every_step=1,
+            y0=y0, params=params,
+            cap_rec=1, cap_evt=1,
+        )
+
+    assert res.status == STEPFAIL
+    assert not res.ok
+    assert res.n == 0
+    assert res.m == 0

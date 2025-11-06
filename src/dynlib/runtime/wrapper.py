@@ -1,9 +1,10 @@
 from __future__ import annotations
 from typing import Callable
+import warnings
 import numpy as np
 
 from dynlib.runtime.runner_api import (
-    OK, STEPFAIL, NAN_DETECTED, DONE, GROW_REC, GROW_EVT, USER_BREAK,
+    OK, STEPFAIL, NAN_DETECTED, DONE, GROW_REC, GROW_EVT, USER_BREAK, Status,
 )
 from dynlib.runtime.buffers import (
     allocate_pools, grow_rec_arrays, grow_evt_arrays,
@@ -117,20 +118,23 @@ def run_with_wrapper(
             stepper, rhs, events_pre, events_post,
         )
 
+        status_value = int(status)
+
         # Filled cursors reported by runner
         n_filled = int(i_out[0])            # records
         m_filled = max(0, int(hint_out[0])) # events (by convention)
         step_curr = int(step_out[0])
 
-        if status == DONE:
+        if status_value == DONE:
             return Results(
                 T=rec.T, Y=rec.Y, STEP=rec.STEP, FLAGS=rec.FLAGS,
                 EVT_CODE=ev.EVT_CODE, EVT_INDEX=ev.EVT_INDEX,
                 EVT_LOG_DATA=ev.EVT_LOG_DATA,
                 n=n_filled, m=m_filled,
+                status=status_value,
             )
 
-        if status == GROW_REC:
+        if status_value == GROW_REC:
             # Require at least one more slot beyond current n_filled
             rec = grow_rec_arrays(rec, filled=n_filled, min_needed=n_filled + 1)
             # Re-enter: update cursors/caps
@@ -138,7 +142,7 @@ def run_with_wrapper(
             step_start = np.int64(step_curr)
             continue
 
-        if status == GROW_EVT:
+        if status_value == GROW_EVT:
             ev = grow_evt_arrays(ev, filled=m_filled, min_needed=m_filled + 1, model_dtype=model_dtype)
             # Keep event cursor in hint_out for re-entry
             hint_out[0] = np.int32(m_filled)
@@ -146,14 +150,20 @@ def run_with_wrapper(
             step_start = np.int64(step_curr)
             continue
 
-        if status in (USER_BREAK, STEPFAIL, NAN_DETECTED):
+        if status_value in (USER_BREAK, STEPFAIL, NAN_DETECTED):
+            status_name = Status(status_value).name
+            warnings.warn(
+                f"run_with_wrapper exited early with status {status_name} ({status_value})",
+                RuntimeWarning,
+                stacklevel=2,
+            )
             # Early termination or error; return what we have (viewed via n/m)
             return Results(
                 T=rec.T, Y=rec.Y, STEP=rec.STEP, FLAGS=rec.FLAGS,
                 EVT_CODE=ev.EVT_CODE, EVT_INDEX=ev.EVT_INDEX,
                 EVT_LOG_DATA=ev.EVT_LOG_DATA,
-                n=n_filled, m=m_filled,
+                n=n_filled, m=m_filled, status=status_value,
             )
 
         # Any other code is unexpected in wrapper-level exit contract.
-        raise RuntimeError(f"Runner returned unexpected status {int(status)}")
+        raise RuntimeError(f"Runner returned unexpected status {status_value}")

@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 import numpy as np
 
+from dynlib.runtime.runner_api import DONE
+
 __all__ = ["Results"]
 
 @dataclass(frozen=True)
@@ -15,6 +17,7 @@ class Results:
       - EVT_CODE, EVT_INDEX, EVT_LOG_DATA: event arrays (may be size 1 if disabled)
       - n: number of valid records
       - m: number of valid event entries
+      - status: runner exit status code (see runner_api.Status)
 
     Notes:
       - All accessors return *views* limited to n/m (no copying).
@@ -35,6 +38,7 @@ class Results:
     # filled lengths (cursors)
     n: int                 # filled records
     m: int                 # filled events
+    status: int            # runner exit status
 
     # ---------------- views ----------------
 
@@ -97,3 +101,8 @@ class Results:
 
     def __len__(self) -> int:
         return self.n
+
+    @property
+    def ok(self) -> bool:
+        """Return True when the runner exited cleanly (status == DONE)."""
+        return int(self.status) == DONE
