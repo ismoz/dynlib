@@ -6,15 +6,14 @@ from enum import IntEnum
 __all__ = [
     "Status",
     # int constants (jit-friendly)
-    "OK", "REJECT", "STEPFAIL", "NAN_DETECTED", "DONE",
+    "OK", "STEPFAIL", "NAN_DETECTED", "DONE",
     "GROW_REC", "GROW_EVT", "USER_BREAK",
     "RunnerABI",
 ]
 
 class Status(IntEnum):
     """Stable exit/status codes for runner/stepper."""
-    OK = 0              # internal (no exit)
-    REJECT = 1          # internal (no exit)
+    OK = 0              # internal (no exit): step accepted, proceed
     STEPFAIL = 2        # exit (recoverable by wrapper or fail)
     NAN_DETECTED = 3    # exit
     DONE = 9            # exit
@@ -24,7 +23,6 @@ class Status(IntEnum):
 
 # Plain int constants for JIT friendliness in tests / kernels
 OK: int = int(Status.OK)
-REJECT: int = int(Status.REJECT)
 STEPFAIL: int = int(Status.STEPFAIL)
 NAN_DETECTED: int = int(Status.NAN_DETECTED)
 DONE: int = int(Status.DONE)
@@ -133,7 +131,7 @@ runner(
 ) -> int32
 
 Exit statuses (int32): DONE=9, GROW_REC=10, GROW_EVT=11, USER_BREAK=12, STEPFAIL=2, NAN_DETECTED=3.
-Internal (no exit): OK=0, REJECT=1.
+Internal (no exit): OK=0 (step accepted, runner continues).
 
 Rules:
 - Runner performs capacity checks, pre/post events, commit & record, then exits only with the codes above.

@@ -9,7 +9,7 @@ import ast
 from typing import TYPE_CHECKING
 
 from .base import StepperMeta, StructSpec
-from dynlib.runtime.runner_api import OK
+from dynlib.runtime.runner_api import OK, NAN_DETECTED
 
 if TYPE_CHECKING:
     from typing import Callable
@@ -107,6 +107,13 @@ class EulerSpec:
             # Propose next state
             for i in range(n):
                 y_prop[i] = y_curr[i] + dt * dy[i]
+            
+            # Check for NaN/Inf in proposal (fixed-step: single attempt)
+            for i in range(n):
+                val = y_prop[i]
+                # Fast finiteness check: NaN and Inf fail this
+                if not (val == val and -1e308 < val < 1e308):
+                    return NAN_DETECTED
             
             # Fixed step: dt_next = dt
             t_prop[0] = t + dt

@@ -7,7 +7,7 @@ Lock names/shapes and prove they compile under `@njit` right now. Product code s
 
 ### 0.1 Files (compile-free runtime)
 - **`src/dynlib/runtime/runner_api.py`**
-  - `IntEnum`/consts: `OK=0`, `REJECT=1`, `STEPFAIL=2`, `NAN_DETECTED=3`, `DONE=9`, `GROW_REC=10`, `GROW_EVT=11`, `USER_BREAK=12`.
+  - `IntEnum`/consts: `OK=0`, `STEPFAIL=2`, `NAN_DETECTED=3`, `DONE=9`, `GROW_REC=10`, `GROW_EVT=11`, `USER_BREAK=12`.
   - Single source of truth for the runner signature (docstring includes exact shapes/dtypes).
   - Tiny `RunnerABI` dataclass (discoverability only; never used in hot path).
 - **`src/dynlib/runtime/types.py`**

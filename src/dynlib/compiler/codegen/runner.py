@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 # Import status codes from canonical source
 from dynlib.runtime.runner_api import (
-    OK, REJECT, STEPFAIL, NAN_DETECTED,
+    OK, STEPFAIL, NAN_DETECTED,
     DONE, GROW_REC, GROW_EVT, USER_BREAK
 )
 
@@ -132,9 +132,10 @@ def runner(
             y_prop, t_prop, dt_next, err_est
         )
         
-        # Check for stepper failure
+        # Check for stepper failure/termination
+        # Steppers return: OK (accepted step) or terminal codes (STEPFAIL, NAN_DETECTED)
+        # Fixed-step: single attempt; adaptive: internal accept/reject loop
         if step_status != OK:
-            # STEPFAIL, NAN_DETECTED, or other error
             i_out[0] = i
             step_out[0] = step
             t_out[0] = t

@@ -25,14 +25,13 @@ Arguments are fixed: scalars + ndarrays only (no `None`/Optionals/objects).
 - **Function symbols**: `stepper`, `rhs`, `events_pre`, `events_post` *(all jittable callables; no Python objects in hot path)*.
 
 #### Runner Status Codes (int32):
-- `OK=0` (internal)
-- `REJECT=1`
-- `STEPFAIL=2`
-- `NAN_DETECTED=3`
-- `DONE=9`
-- `GROW_REC=10`
-- `GROW_EVT=11`
-- `USER_BREAK=12`
+- `OK=0` (internal: step accepted, runner continues)
+- `STEPFAIL=2` (exit: method failure)
+- `NAN_DETECTED=3` (exit: overflow/NaN/Inf detected)
+- `DONE=9` (exit: integration complete)
+- `GROW_REC=10` (exit: need record buffer growth)
+- `GROW_EVT=11` (exit: need event buffer growth)
+- `USER_BREAK=12` (exit: user requested stop)
 
 *Runner exits to wrapper only with: DONE/GROW_*/STEPFAIL/NAN/USER_BREAK.*
 
@@ -308,8 +307,10 @@ labA = ["Z:/labA/models", "//server/share/models"]
 - Wrapper doubles capacity, copies filled slices, updates cursors, resumes the same runner (no reinit).
 
 ### Error/Interrupt Discipline
-- Stepper returns: OK, REJECT (retry internally), STEPFAIL, NAN_DETECTED.
-- Runner escalates only generic signals to wrapper: DONE, GROW_*, STEPFAIL, NAN_DETECTED, USER_BREAK.
+- **Fixed-step steppers** (euler, rk4): single attempt per step; return `OK` (accepted) or `NAN_DETECTED`/`STEPFAIL` (terminal).
+- **Adaptive steppers** (rk45): internal accept/reject loop; return `OK` (accepted) or `NAN_DETECTED`/`STEPFAIL` (terminal).
+- Runner never sees rejection codes; adaptive steppers handle retries internally.
+- Runner escalates only terminal signals to wrapper: DONE, GROW_*, STEPFAIL, NAN_DETECTED, USER_BREAK.
 - Commit/record/events happen only after OK (no side-effects on rejected attempts).
 
 ### Numba Policy

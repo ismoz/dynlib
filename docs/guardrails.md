@@ -34,7 +34,11 @@ runner(
   stepper, rhs, events_pre, events_post
 ) -> int32
 ```
-**Exit statuses** (int32): `DONE=9`, `GROW_REC=10`, `GROW_EVT=11`, `USER_BREAK=12`, `STEPFAIL=2`, `NAN_DETECTED=3`. Internal codes (no exit): `OK=0`, `REJECT=1`.
+**Exit statuses** (int32): `DONE=9`, `GROW_REC=10`, `GROW_EVT=11`, `USER_BREAK=12`, `STEPFAIL=2`, `NAN_DETECTED=3`. Internal code (no exit): `OK=0` (step accepted, runner continues).
+
+**Stepper contract**:
+- **Fixed-step** (euler, rk4): single attempt per step; return `OK` (accepted) or `NAN_DETECTED`/`STEPFAIL` (terminal error).
+- **Adaptive** (rk45): internal accept/reject loop; runner only sees `OK` (accepted) or `NAN_DETECTED`/`STEPFAIL` (terminal error).
 
 **Ownership**: runner performs capacity checks, pre/post events, commit, record, and returns only with exit codes above.
 

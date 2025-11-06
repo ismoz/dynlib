@@ -2,6 +2,29 @@
 
 ---
 
+## [2.11.0] – 2025-11-06
+### Changed
+- Removed `REJECT` status code from the stepper/runner contract:
+  - Clarified architectural contracts: fixed-step steppers do single attempts; adaptive steppers 
+    handle internal accept/reject loops
+  - Runner never sees rejection codes; adaptive steppers (like RK45) handle retries internally 
+    and only return terminal codes
+  - Updated status enum in `src/dynlib/runtime/runner_api.py`: removed `REJECT=1`
+  - Updated all exports in `src/dynlib/__init__.py` to remove `REJECT`
+  - Simplified runner comments in `src/dynlib/compiler/codegen/runner.py`
+  - Updated wrapper imports in `src/dynlib/runtime/wrapper.py`
+  - Stepper contract now clear: return `OK` (step accepted) or terminal codes (`NAN_DETECTED`, 
+    `STEPFAIL`)
+  
+### Added
+- NaN/Inf detection in fixed-step steppers:
+  - Added finiteness checks to Euler stepper (`src/dynlib/steppers/euler.py`)
+  - Added finiteness checks to RK4 stepper (`src/dynlib/steppers/rk4.py`)
+  - Both now return `NAN_DETECTED` if proposal contains non-finite values
+  - Maintains consistency with adaptive stepper (RK45) which already had such checks
+
+---
+
 ## [2.10.2] – 2025-11-06
 ### Changed
 - Dropped the legacy `EVT_TIME` buffer entirely; logged times live in `EVT_LOG_DATA`.

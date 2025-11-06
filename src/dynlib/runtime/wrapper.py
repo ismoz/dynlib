@@ -3,7 +3,7 @@ from typing import Callable
 import numpy as np
 
 from dynlib.runtime.runner_api import (
-    OK, REJECT, STEPFAIL, NAN_DETECTED, DONE, GROW_REC, GROW_EVT, USER_BREAK,
+    OK, STEPFAIL, NAN_DETECTED, DONE, GROW_REC, GROW_EVT, USER_BREAK,
 )
 from dynlib.runtime.buffers import (
     allocate_pools, grow_rec_arrays, grow_evt_arrays,
