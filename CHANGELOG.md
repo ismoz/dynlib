@@ -2,6 +2,58 @@
 
 ---
 
+## [2.10.0] – 2025-11-06
+### Fixed
+- Event logging now properly separates `record` and `log` functionality:
+  - Previously, events only logged if BOTH `record=True` AND `log` was non-empty, silently 
+    ignoring events with `record=True` but empty `log=[]`
+  - `EVT_INDEX` was stuck at zero and log signal values were never materialized
+  - New behavior:
+    - `record=True` → logs event occurrence times to `EVT_TIME` and `EVT_CODE`
+    - `log=[signals]` → logs signal values to new `EVT_LOG_DATA` buffer (independent of `record`)
+    - Both features are now orthogonal and can be used independently or together
+  - `EVT_INDEX` now stores the log width (number of signals logged per event)
+  - Events with `log` but no `record` set `EVT_TIME=-1.0` as a sentinel
+
+### Added
+- New `EVT_LOG_DATA` buffer in `EventPools` to store logged signal values:
+  - Shape: `(cap_evt, max_log_width)` where `max_log_width` is computed from all events
+  - Values are model dtype (same as state variables)
+  - Accessible via `Results.EVT_LOG_DATA_view` property
+- Helper function `_parse_log_signal()` in `src/dynlib/compiler/codegen/emitter.py`:
+  - Supports formats: `"x"` (state), `"param:a"`, `"aux:E"`, `"t"` (time)
+  - Validates that referenced symbols exist in the model spec
+- Event log scratch buffer `evt_log_scratch` passed to runner for temporary log value storage
+
+### Changed
+- Event function signature in `src/dynlib/compiler/codegen/emitter.py`:
+  - Old: `events_phase(t, y_vec, params) -> event_code`
+  - New: `events_phase(t, y_vec, params, evt_log_scratch) -> (event_code, has_record, log_width)`
+  - Events now write log values into `evt_log_scratch` before returning
+- Runner signature in `src/dynlib/compiler/codegen/runner.py`:
+  - Added `EVT_LOG_DATA` and `evt_log_scratch` parameters
+  - Runner now copies log data from scratch buffer to `EVT_LOG_DATA[m, :]` when `log_width > 0`
+  - Records event time/code only when `has_record=True`
+- Updated `allocate_pools()` in `src/dynlib/runtime/buffers.py`:
+  - Added `max_log_width` parameter
+  - Allocates `EVT_LOG_DATA` with shape `(cap_evt, max(1, max_log_width))`
+- Updated `grow_evt_arrays()` in `src/dynlib/runtime/buffers.py`:
+  - Added `model_dtype` parameter for allocating `EVT_LOG_DATA` with correct dtype
+  - Copies existing log data during growth
+- Updated `Sim.run()` in `src/dynlib/runtime/sim.py`:
+  - Calculates `max_log_width` from event specs before calling wrapper
+- Added `EVT_LOG_DATA` to forbidden writes in `src/dynlib/compiler/codegen/validate.py`
+
+### Tests
+- Updated `test_event_logging_basic()` in `tests/integration/test_event_logging.py`:
+  - Verifies `EVT_INDEX` contains log width (not zero)
+  - Checks that `EVT_LOG_DATA` contains logged signal values
+  - Validates logged values are within expected ranges
+- Fixed `test_codegen_triplet.py` to use new event signature with scratch buffer
+- Fixed `test_buffers_growth.py` to pass `max_log_width` and `model_dtype` parameters
+
+---
+
 ## [2.9.0] – 2025-11-06
 ### Added
 - Implemented complete mod support for DSL aux and functions:

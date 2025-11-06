@@ -38,6 +38,7 @@ def run_with_wrapper(
     # capacities (can be small to force growth)
     cap_rec: int = 1024,
     cap_evt: int = 1,
+    max_log_width: int = 0,  # maximum log width across all events
 ) -> Results:
     """
     JIT-free orchestrator. Allocates banks/buffers, calls the compiled runner
@@ -71,7 +72,7 @@ def run_with_wrapper(
     # Allocate banks and pools
     banks, rec, ev = allocate_pools(
         n_state=n_state, struct=struct, model_dtype=model_dtype,
-        cap_rec=cap_rec, cap_evt=cap_evt,
+        cap_rec=cap_rec, cap_evt=cap_evt, max_log_width=max_log_width,
     )
 
     # Proposals / outs (len-1 where applicable)
@@ -79,6 +80,9 @@ def run_with_wrapper(
     t_prop  = np.zeros((1,), dtype=model_dtype)
     dt_next = np.zeros((1,), dtype=model_dtype)
     err_est = np.zeros((1,), dtype=model_dtype)
+    
+    # Event log scratch buffer
+    evt_log_scratch = np.zeros((max(1, max_log_width),), dtype=model_dtype)
 
     # Control + cursors/outs
     user_break_flag = np.zeros((1,), dtype=np.int32)
@@ -105,7 +109,8 @@ def run_with_wrapper(
             banks.iw0, banks.bw0,
             y_prop, t_prop, dt_next, err_est,
             rec.T, rec.Y, rec.STEP, rec.FLAGS,
-            ev.EVT_TIME, ev.EVT_CODE, ev.EVT_INDEX,
+            ev.EVT_TIME, ev.EVT_CODE, ev.EVT_INDEX, ev.EVT_LOG_DATA,
+            evt_log_scratch,
             i_start, step_start, int(rec.cap_rec), int(ev.cap_evt),
             user_break_flag, status_out, hint_out,
             i_out, step_out, t_out,
@@ -121,6 +126,7 @@ def run_with_wrapper(
             return Results(
                 T=rec.T, Y=rec.Y, STEP=rec.STEP, FLAGS=rec.FLAGS,
                 EVT_TIME=ev.EVT_TIME, EVT_CODE=ev.EVT_CODE, EVT_INDEX=ev.EVT_INDEX,
+                EVT_LOG_DATA=ev.EVT_LOG_DATA,
                 n=n_filled, m=m_filled,
             )
 
@@ -133,7 +139,7 @@ def run_with_wrapper(
             continue
 
         if status == GROW_EVT:
-            ev = grow_evt_arrays(ev, filled=m_filled, min_needed=m_filled + 1)
+            ev = grow_evt_arrays(ev, filled=m_filled, min_needed=m_filled + 1, model_dtype=model_dtype)
             # Keep event cursor in hint_out for re-entry
             hint_out[0] = np.int32(m_filled)
             i_start = np.int64(n_filled)
@@ -145,6 +151,7 @@ def run_with_wrapper(
             return Results(
                 T=rec.T, Y=rec.Y, STEP=rec.STEP, FLAGS=rec.FLAGS,
                 EVT_TIME=ev.EVT_TIME, EVT_CODE=ev.EVT_CODE, EVT_INDEX=ev.EVT_INDEX,
+                EVT_LOG_DATA=ev.EVT_LOG_DATA,
                 n=n_filled, m=m_filled,
             )
 

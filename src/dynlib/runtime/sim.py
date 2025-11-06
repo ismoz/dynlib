@@ -84,6 +84,12 @@ class Sim:
         
         n_state = len(self.model.spec.states)
         
+        # Calculate max_log_width from events
+        max_log_width = 0
+        for event in self.model.spec.events:
+            if event.log:
+                max_log_width = max(max_log_width, len(event.log))
+        
         # Call the wrapper
         return run_with_wrapper(
             runner=self.model.runner,
@@ -104,5 +110,6 @@ class Sim:
             params=params,
             cap_rec=cap_rec,
             cap_evt=cap_evt,
+            max_log_width=max_log_width,
         )
 

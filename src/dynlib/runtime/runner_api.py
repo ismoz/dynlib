@@ -78,6 +78,8 @@ class RunnerABI:
     EVT_TIME: str = "float64[:]"
     EVT_CODE: str = "int32[:]"
     EVT_INDEX: str = "int32[:]"
+    EVT_LOG_DATA: str = "model_dtype[:, :]"  # shape (cap_evt, max_log_width)
+    evt_log_scratch: str = "model_dtype[:]"   # scratch buffer for log values
 
     # Cursors & caps
     i_start: str = "int64"
@@ -120,7 +122,8 @@ runner(
   # recording
   T: float64[:], Y: model_dtype[:, :], STEP: int64[:], FLAGS: int32[:],
   # event log
-  EVT_TIME: float64[:], EVT_CODE: int32[:], EVT_INDEX: int32[:],
+  EVT_TIME: float64[:], EVT_CODE: int32[:], EVT_INDEX: int32[:], EVT_LOG_DATA: model_dtype[:, :],
+  evt_log_scratch: model_dtype[:],
   # cursors & caps
   i_start: int64, step_start: int64, cap_rec: int64, cap_evt: int64,
   # control/outs (len-1)
@@ -137,8 +140,14 @@ Rules:
 - Runner performs capacity checks, pre/post events, commit & record, then exits only with the codes above.
 - Stepper reads t, dt, y_curr, params, sp, ss; writes y_prop, t_prop[0], dt_next[0], err_est[0]; may mutate ss.
 - RHS: rhs(t: float64, y_vec: model_dtype[:], dy_out: model_dtype[:], params: model_dtype[:] | int64[:]) -> None.
-- Events: 'pre' on committed state before step; 'post' after commit. May only mutate states/params.
-- T/EVT_TIME are float64; Y is model dtype; STEP:int64, FLAGS:int32.
+- Events: events_phase(t, y_vec, params, evt_log_scratch) -> (event_code: int32, has_record: bool, log_width: int32)
+  - event_code: -1 if no event fired, else unique event identifier (0, 1, 2...)
+  - has_record: True if event has record=True (log to EVT_TIME/EVT_CODE)
+  - log_width: number of values written to evt_log_scratch (len(event.log))
+  - Events run 'pre' on committed state before step; 'post' after commit. May only mutate states/params.
+- EVT_INDEX stores log_width; EVT_LOG_DATA[m, :log_width] contains logged signal values
+- EVT_TIME set to -1.0 for events with log but no record
+- T/EVT_TIME are float64; Y/EVT_LOG_DATA is model dtype; STEP:int64, FLAGS:int32, EVT_CODE/EVT_INDEX:int32.
 - Work banks sp, ss, sw* are model dtype; iw0:int32, bw0:uint8.
 - t_prop is model dtype; committed t written to T as float64.
 - Growth/resume: on GROW_REC/GROW_EVT wrapper reallocates & re-enters; runner resumes seamlessly.

@@ -59,6 +59,7 @@ def test_event_logging_basic():
     evt_time = result.EVT_TIME_view
     evt_code = result.EVT_CODE_view
     evt_index = result.EVT_INDEX_view
+    evt_log_data = result.EVT_LOG_DATA_view
     
     # The decay model should trigger the reset event when x < threshold (0.5)
     # This should happen at least once during the simulation
@@ -66,7 +67,16 @@ def test_event_logging_basic():
     assert len(evt_code) > 0, "Event code log should have entries"
     assert len(evt_index) > 0, "Event index log should have entries"
     assert np.all(evt_code == 0), "Single event should emit code 0"
-    assert np.all(evt_index == 0), "Default event index should be zero-filled"
+    assert np.all(evt_index == 1), "Event index should be 1 (log width for log=['x'])"
+    
+    # Check that log data was captured
+    assert evt_log_data.shape[1] >= 1, "Log data should have at least 1 column"
+    # The logged value should be the state 'x' at event fire time
+    # Since event fires when x < threshold (0.5), and then resets x to 1.0,
+    # the logged values should be close to threshold
+    for i in range(len(evt_time)):
+        logged_x = evt_log_data[i, 0]
+        assert 0.0 <= logged_x <= 1.5, f"Logged x value should be reasonable, got {logged_x}"
     
     # All logged event times should be within simulation bounds
     assert np.all(evt_time >= 0.0), "Event times should be >= t0"

@@ -116,13 +116,16 @@ def test_events_only_mutate_states_params_and_effect_is_visible():
 
     y = np.array([1.0], dtype=np.float64)
     p = np.array([2.0], dtype=np.float64)
+    scratch = np.zeros(1, dtype=np.float64)  # event log scratch buffer
 
     # pre does nothing; post adds +1.0 to x
-    pre_code = cp.events_pre(0.0, y, p)
-    assert pre_code == -1  # non-recording event -> sentinel
+    pre_code, pre_rec, pre_log = cp.events_pre(0.0, y, p, scratch)
+    assert pre_code == -1  # no event fired
     assert y[0] == pytest.approx(1.0)
-    post_code = cp.events_post(0.0, y, p)
-    assert post_code == -1  # non-recording event -> sentinel
+    post_code, post_rec, post_log = cp.events_post(0.0, y, p, scratch)
+    assert post_code == 0  # event fired (always fires since cond is implicit True)
+    assert post_rec == False  # no record=True in event
+    assert post_log == 0  # no log items
     assert y[0] == pytest.approx(2.0)
 
 def test_aux_is_recomputed_inside_rhs_every_call():

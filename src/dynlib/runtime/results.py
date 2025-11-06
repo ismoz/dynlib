@@ -12,13 +12,14 @@ class Results:
 
     Fields:
       - T, Y, STEP, FLAGS: backing arrays (not copies)
-      - EVT_TIME, EVT_CODE, EVT_INDEX: event arrays (may be size 1 if disabled)
+      - EVT_TIME, EVT_CODE, EVT_INDEX, EVT_LOG_DATA: event arrays (may be size 1 if disabled)
       - n: number of valid records
       - m: number of valid event entries
 
     Notes:
       - All accessors return *views* limited to n/m (no copying).
       - Y has shape (n_state, n); states are columns per record index.
+      - EVT_LOG_DATA has shape (cap_evt, max_log_width); use EVT_INDEX to know how many values are valid per event.
     """
     # recording (backing arrays)
     T: np.ndarray          # float64, shape (cap_rec,)
@@ -27,9 +28,10 @@ class Results:
     FLAGS: np.ndarray      # int32,   shape (cap_rec,)
 
     # event log (backing arrays)
-    EVT_TIME: np.ndarray   # float64, shape (cap_evt,)
-    EVT_CODE: np.ndarray   # int32,   shape (cap_evt,)
-    EVT_INDEX: np.ndarray  # int32,   shape (cap_evt,)
+    EVT_TIME: np.ndarray      # float64, shape (cap_evt,)
+    EVT_CODE: np.ndarray      # int32,   shape (cap_evt,)
+    EVT_INDEX: np.ndarray     # int32,   shape (cap_evt,) - stores log_width
+    EVT_LOG_DATA: np.ndarray  # model dtype, shape (cap_evt, max_log_width)
 
     # filled lengths (cursors)
     n: int                 # filled records
@@ -64,6 +66,14 @@ class Results:
     @property
     def EVT_INDEX_view(self) -> np.ndarray:
         return self.EVT_INDEX[: self.m]
+
+    @property
+    def EVT_LOG_DATA_view(self) -> np.ndarray:
+        """
+        Return event log data view (m, max_log_width).
+        Use EVT_INDEX_view to know how many values are valid per event row.
+        """
+        return self.EVT_LOG_DATA[: self.m, :]
 
     # --------------- helpers (out of hot path) ---------------
 

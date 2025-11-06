@@ -152,6 +152,55 @@ def _legal_lhs(name: str, spec: ModelSpec) -> Tuple[str, int, str]:
         return ("param", spec.params.index(name), name)
     raise ValueError(f"Illegal assignment target in event action: {name!r} (only states/params are assignable)")
 
+def _parse_log_signal(signal: str, nmap: NameMaps, spec: ModelSpec) -> str:
+    """
+    Parse a log signal specification and return the expression to evaluate.
+    
+    Formats:
+      - "x"         → state x
+      - "param:a"   → parameter a
+      - "aux:E"     → auxiliary variable E
+      - "t"         → time (special case)
+    
+    Returns an expression string that can be lowered.
+    """
+    signal = signal.strip()
+    
+    # Special case: time
+    if signal == "t":
+        return "t"
+    
+    # Check for prefix notation
+    if ":" in signal:
+        prefix, name = signal.split(":", 1)
+        prefix = prefix.strip()
+        name = name.strip()
+        
+        if prefix == "param":
+            if name not in spec.params:
+                raise ValueError(f"Unknown parameter in log signal: {name!r}")
+            return name  # Will be resolved as parameter by lower_expr_node
+        elif prefix == "aux":
+            if name not in (spec.aux or {}):
+                raise ValueError(f"Unknown auxiliary variable in log signal: {name!r}")
+            return name  # Will be resolved as aux by lower_expr_node
+        elif prefix == "state":
+            if name not in spec.states:
+                raise ValueError(f"Unknown state in log signal: {name!r}")
+            return name
+        else:
+            raise ValueError(f"Unknown log signal prefix: {prefix!r} (use 'state:', 'param:', or 'aux:')")
+    
+    # No prefix: assume it's a state, param, or aux (in that priority order)
+    if signal in spec.states:
+        return signal
+    elif signal in spec.params:
+        return signal
+    elif signal in (spec.aux or {}):
+        return signal
+    else:
+        raise ValueError(f"Unknown signal in log specification: {signal!r}")
+
 def _compile_action_block_ast(block_lines: List[Tuple[str, str]], spec: ModelSpec, nmap: NameMaps):
     """Return a list of AST statements that mutate y_vec/params in place."""
     import ast
@@ -167,14 +216,23 @@ def _compile_action_block_ast(block_lines: List[Tuple[str, str]], spec: ModelSpe
 def _emit_events_function(spec: ModelSpec, phase: str, nmap: NameMaps):
     """
     Emit a single function:
-        def events_phase(t, y_vec, params):
-            if <cond>: <mutations> ; (in declared order)
-            Returns event_code (int) if an event fired and has logging enabled, else -1
+        def events_phase(t, y_vec, params, evt_log_scratch):
+            if <cond>: 
+                <mutations>
+                [optionally fill evt_log_scratch with log values]
+                return (event_code, has_record, log_width)
+            ...
+            return (-1, False, 0)  # no event fired
+    
+    Where:
+      - event_code: unique int identifying which event fired (0, 1, 2...)
+      - has_record: True if this event has record=True (should log to EVT_TIME/CODE)
+      - log_width: number of values written to evt_log_scratch (len(ev.log))
     """
     import ast
     body: List[ast.stmt] = []
     
-    # Assign unique event codes to events in this phase that have logging enabled
+    # Assign unique event codes to events in this phase
     event_code_counter = 0
     for ev_idx, ev in enumerate(spec.events):
         if ev.phase not in ("both", phase):
@@ -196,16 +254,43 @@ def _emit_events_function(spec: ModelSpec, phase: str, nmap: NameMaps):
         
         act_stmts = _compile_action_block_ast(actions, spec, nmap)
         
-        # If this event has record=True and log items, return its code after mutations
-        if ev.record and ev.log:
-            # Add return statement with event code after mutations
-            act_stmts.append(ast.Return(value=ast.Constant(value=event_code_counter)))
-            event_code_counter += 1
+        # Generate log assignments if this event has log items
+        log_width = len(ev.log) if ev.log else 0
+        if log_width > 0:
+            for log_idx, log_signal in enumerate(ev.log):
+                # Parse log signal: "x", "param:a", "aux:E", etc.
+                log_expr = _parse_log_signal(log_signal, nmap, spec)
+                log_node = lower_expr_node(log_expr, nmap, aux_defs=_aux_defs(spec), fn_defs=nmap.functions)
+                
+                # evt_log_scratch[log_idx] = <value>
+                assign = ast.Assign(
+                    targets=[ast.Subscript(
+                        value=ast.Name(id="evt_log_scratch", ctx=ast.Load()),
+                        slice=ast.Constant(value=log_idx),
+                        ctx=ast.Store()
+                    )],
+                    value=log_node,
+                )
+                act_stmts.append(assign)
+        
+        # Return (event_code, has_record, log_width)
+        has_record = ev.record
+        act_stmts.append(ast.Return(value=ast.Tuple(elts=[
+            ast.Constant(value=event_code_counter),
+            ast.Constant(value=has_record),
+            ast.Constant(value=log_width),
+        ], ctx=ast.Load())))
+        
+        event_code_counter += 1
         
         body.append(ast.If(test=cond_node, body=act_stmts or [ast.Pass()], orelse=[]))
     
-    # Default return -1 (no event fired with logging)
-    body.append(ast.Return(value=ast.Constant(value=-1)))
+    # Default return (-1, False, 0) - no event fired
+    body.append(ast.Return(value=ast.Tuple(elts=[
+        ast.Constant(value=-1),
+        ast.Constant(value=False),
+        ast.Constant(value=0),
+    ], ctx=ast.Load())))
 
     mod = ast.Module(
         body=[
@@ -213,9 +298,16 @@ def _emit_events_function(spec: ModelSpec, phase: str, nmap: NameMaps):
             ast.FunctionDef(
                 name=f"events_{phase}",
                 args=ast.arguments(posonlyargs=[], args=[
-                    ast.arg(arg="t"), ast.arg(arg="y_vec"), ast.arg(arg="params")
+                    ast.arg(arg="t"), 
+                    ast.arg(arg="y_vec"), 
+                    ast.arg(arg="params"),
+                    ast.arg(arg="evt_log_scratch"),
                 ], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]),
-                body=body if body else [ast.Return(value=ast.Constant(value=-1))],
+                body=body if body else [ast.Return(value=ast.Tuple(elts=[
+                    ast.Constant(value=-1),
+                    ast.Constant(value=False),
+                    ast.Constant(value=0),
+                ], ctx=ast.Load()))],
                 decorator_list=[],
             )
         ],
