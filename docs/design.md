@@ -129,7 +129,8 @@ Where they apply
 - **aux** (definitions)
 - **functions**
 - **events**
-- *(optionally) sim defaults*
+
+Mods do not modify `[sim]` defaults. Simulation settings will be handled by dedicated profiles in a future iteration.
 
 ### Mod tables & verbs
 - **Set / upsert** (create or update)
@@ -419,6 +420,5 @@ This is the whole playbook. If you stick to these contracts, you can add RK45, m
     │   └── events_logging/
     └── data/
         └── models/            # small TOML fixtures for tests
-
 
 

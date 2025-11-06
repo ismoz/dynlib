@@ -2,6 +2,15 @@
 
 ---
 
+## [2.12.1] – 2025-11-07
+### Added
+- TODO.md, ISSUES.md files.
+
+### Changed
+- Mods won't change [Sim] defaults in models. This is documented.
+
+---
+
 ## [2.12.0] – 2025-11-06
 ### Added
 - Event tagging feature for compile-time metadata and filtering:

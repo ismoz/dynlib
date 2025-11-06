@@ -184,6 +184,10 @@ def _apply_add(normal: Dict[str, Any], payload: Dict[str, Any]) -> None:
 def _apply_set(normal: Dict[str, Any], payload: Dict[str, Any]) -> None:
     if not payload:
         return
+    allowed_targets = {"states", "params", "aux", "functions"}
+    for target in payload.keys():
+        if target not in allowed_targets:
+            raise ModelLoadError(f"set.{target}: unsupported target")
     # set.states
     s = payload.get("states")
     if isinstance(s, dict):
