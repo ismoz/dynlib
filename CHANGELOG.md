@@ -2,6 +2,31 @@
 
 ---
 
+## [2.8.0] – 2025-11-06
+### Added
+- DSL block equations are now parsed (previously they were omitted).
+- Introduced `StructSpec` validation in `src/dynlib/steppers/base.py`:
+  - Ensures all sizes are non-negative integers.
+  - Validates compatibility with declared dense-output coefficients and history lengths.
+- Added `validate_name_collisions` in `src/dynlib/dsl/schema.py`:
+  - Detects duplicate equation targets across RHS and block forms.
+
+### Changed
+- Enhanced `emit_rhs_and_events` in `src/dynlib/compiler/codegen/emitter.py`:
+  - Improved error messages for invalid LHS in block equations.
+- Updated `build_spec` in `src/dynlib/dsl/spec.py`:
+  - Added stricter validation for unknown states and missing equals in equations.
+
+### Tests
+- Added unit tests in `tests/unit/test_equations_block_form.py`:
+  - Verified detection of duplicate targets and invalid LHS in block equations.
+  - Tested auxiliary variable usage and user-defined functions in block equations.
+- Added integration tests in `tests/integration/test_block_equations_sim.py`:
+  - Verified simulation correctness with mixed RHS and block equations.
+  - Tested conservation laws and stepper compatibility.
+
+---
+
 ## [2.7.1] – 2025-11-06
 ### Changed
 - Updated `_edges_for_aux_and_functions` in `src/dynlib/dsl/astcheck.py`:

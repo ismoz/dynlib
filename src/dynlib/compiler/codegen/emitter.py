@@ -2,11 +2,16 @@
 from __future__ import annotations
 from typing import Callable, Dict, List, Tuple
 from dataclasses import dataclass
+import re
 
 from dynlib.dsl.spec import ModelSpec, EventSpec
 from .rewrite import NameMaps, compile_scalar_expr, sanitize_expr, lower_expr_node
 
 __all__ = ["emit_rhs_and_events", "CompiledCallables"]
+
+# Regex patterns for derivative notation (ODE only)
+_DFUNC_PAREN = re.compile(r'^d\(\s*([A-Za-z_]\w*)\s*\)$')
+_DFUNC_FLAT = re.compile(r'^d([A-Za-z_]\w*)$')
 
 @dataclass(frozen=True)
 class CompiledCallables:
@@ -48,6 +53,8 @@ def _compile_rhs(spec: ModelSpec, nmap: NameMaps):
     """
     import ast
     body: List[ast.stmt] = []
+    
+    # Case 1: Per-state RHS form
     if spec.equations_rhs:
         for sname, expr in spec.equations_rhs.items():
             idx = nmap.state_to_ix[sname]
@@ -57,6 +64,65 @@ def _compile_rhs(spec: ModelSpec, nmap: NameMaps):
                 value=node,
             )
             body.append(assign)
+    
+    # Case 2: Block form
+    if spec.equations_block:
+        for line in sanitize_expr(spec.equations_block).splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Parse "dx = expr" or "d(x) = expr" or "x = expr" (all valid for ODE)
+            # For map: only "x = expr" is valid
+            if "=" not in line:
+                from dynlib.errors import ModelLoadError
+                raise ModelLoadError(f"Block equation line must contain '=': {line!r}")
+            
+            lhs, rhs = [p.strip() for p in line.split("=", 1)]
+            
+            # Try to match derivative notation
+            m = _DFUNC_PAREN.match(lhs) or _DFUNC_FLAT.match(lhs)
+            if m:
+                # Looks like derivative notation (d(x) or dx)
+                name = m.group(1)
+                
+                # Only treat as derivative if the name is actually a declared state
+                # This prevents 'delta' from being parsed as 'd(elta)'
+                if name in nmap.state_to_ix:
+                    # It's a real derivative
+                    if spec.kind == "map":
+                        from dynlib.errors import ModelLoadError
+                        raise ModelLoadError(
+                            f"Map models do not support derivative notation (d(x) or dx). "
+                            f"Use direct assignment (x = expr). Got: {lhs!r} in line: {line!r}"
+                        )
+                    sname = name
+                else:
+                    # Pattern matched but not a state - treat as direct assignment
+                    # This handles 'delta' matching as 'd' + 'elta' where 'elta' is not a state
+                    sname = lhs
+                    if sname not in nmap.state_to_ix:
+                        from dynlib.errors import ModelLoadError
+                        raise ModelLoadError(
+                            f"Unknown state in block equation: {sname!r}"
+                        )
+            else:
+                # Direct assignment: x = expr (valid for both ODE and map)
+                sname = lhs
+                if sname not in nmap.state_to_ix:
+                    from dynlib.errors import ModelLoadError
+                    raise ModelLoadError(
+                        f"Unknown state in block equation: {sname!r}"
+                    )
+            
+            idx = nmap.state_to_ix[sname]
+            node = lower_expr_node(rhs, nmap, aux_defs=_aux_defs(spec), fn_defs=nmap.functions)
+            assign = ast.Assign(
+                targets=[ast.Subscript(value=ast.Name(id="dy_out", ctx=ast.Load()), slice=ast.Constant(value=idx), ctx=ast.Store())],
+                value=node,
+            )
+            body.append(assign)
+    
     mod = ast.Module(
         body=[
             ast.Import(names=[ast.alias(name="math", asname=None)]),

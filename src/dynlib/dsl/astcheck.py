@@ -10,9 +10,17 @@ __all__ = [
     "validate_expr_acyclic",
     "validate_event_legality",
     "validate_functions_signature",
+    "validate_no_duplicate_equation_targets",
 ]
 
+#NOTE: emitter.py and schema.py also perform the same regex matching;
+# this module only uses the patterns to help validate equations.
+# emitter.py converts validated equations to AST.
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+# Regex patterns for derivative notation (ODE only)
+_DFUNC_PAREN = re.compile(r'^d\(\s*([A-Za-z_]\w*)\s*\)$')
+_DFUNC_FLAT = re.compile(r'^d([A-Za-z_]\w*)$')
 
 
 def collect_names(normal: Dict[str, Any]) -> Dict[str, Set[str]]:
@@ -114,3 +122,65 @@ def validate_functions_signature(normal: Dict[str, Any]) -> None:
             raise ModelLoadError(f"[functions.{name}].args must be a list of identifiers")
         if len(set(args)) != len(args):
             raise ModelLoadError(f"[functions.{name}].args must be unique")
+
+
+def validate_no_duplicate_equation_targets(normal: Dict[str, Any]) -> None:
+    """Ensure states aren't defined in both [equations.rhs] and [equations].expr forms.
+    
+    Also enforces:
+    - Map models must not use derivative notation (d(x) or dx)
+    - Derivative notation targets must refer to declared states (prevents 'delta' -> 'd(elta)')
+    """
+    equations = normal.get("equations", {})
+    model_type = normal.get("model", {}).get("type", "ode")
+    states = set(normal.get("states", {}).keys())
+    rhs_dict = equations.get("rhs")
+    rhs_targets = set(rhs_dict.keys()) if rhs_dict else set()
+    
+    block_expr = equations.get("expr")
+    if not block_expr:
+        return  # No block form, nothing to check
+    
+    block_targets: Set[str] = set()
+    # Parse block form to extract state names
+    for line in block_expr.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        
+        # Split on '=' to get LHS and RHS
+        if "=" not in line:
+            raise ModelLoadError(f"Block equation line must contain '=': {line!r}")
+        
+        lhs, rhs = [p.strip() for p in line.split("=", 1)]
+        
+        # Try to match derivative notation
+        m = _DFUNC_PAREN.match(lhs) or _DFUNC_FLAT.match(lhs)
+        if m:
+            # Looks like derivative notation, but verify the extracted name is a state
+            name = m.group(1)
+            
+            # Only treat as derivative if the name is actually a declared state
+            if name in states:
+                # For map models, derivative notation is not allowed
+                if model_type == "map":
+                    raise ModelLoadError(
+                        f"Map models do not support derivative notation (d(x) or dx). "
+                        f"Use direct assignment (x = expr). Got: {lhs!r} in line: {line!r}"
+                    )
+                block_targets.add(name)
+            else:
+                # Pattern matched but name not a state - treat as direct assignment
+                # This handles cases like 'delta' which matches 'd' + 'elta' but 'elta' is not a state
+                block_targets.add(lhs)
+        else:
+            # Direct assignment (x = expr)
+            # For both ODE and map models, this is valid
+            block_targets.add(lhs)
+    
+    # Check for overlap
+    overlap = rhs_targets & block_targets
+    if overlap:
+        raise ModelLoadError(
+            f"States defined in both [equations.rhs] and [equations].expr: {sorted(overlap)}"
+        )

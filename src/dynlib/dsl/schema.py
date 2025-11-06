@@ -1,6 +1,7 @@
 # src/dynlib/dsl/schema.py
 from __future__ import annotations
 from typing import Dict, Any, Iterable
+import re
 
 from dynlib.errors import ModelLoadError
 
@@ -9,6 +10,10 @@ __all__ = [
     "validate_tables",
     "validate_name_collisions",
 ]
+
+# Regex patterns for derivative notation (ODE only)
+_DFUNC_PAREN = re.compile(r'^d\(\s*([A-Za-z_]\w*)\s*\)$')
+_DFUNC_FLAT = re.compile(r'^d([A-Za-z_]\w*)$')
 
 
 def _require_table(doc: Dict[str, Any], key: str) -> None:
@@ -92,22 +97,53 @@ def validate_tables(doc: Dict[str, Any]) -> None:
         raise ModelLoadError("[sim] must be a table if present")
 
 
-def _targets_from_block(expr: str) -> Iterable[str]:
-    """Extract naive LHS targets from a multi-line block like:
-        dx = -a*x
-        du = v
-    This is *syntactic* and conservative; parser will re-validate later.
+def _targets_from_block(expr: str, model_type: str = "ode", states: Iterable[str] = ()) -> Iterable[str]:
+    """Extract state names from a multi-line block like:
+        dx = -a*x  (ODE: derivative notation)
+        x = v      (ODE/map: direct assignment)
+    
+    For ODE models: Parses both 'd(x)' / 'dx' -> 'x' and direct 'x = expr'.
+    For map models: Parses direct assignment 'x = expr'.
+    
+    This is used at schema validation time for duplicate detection. The stricter
+    derivative notation validation happens later in emitter.py where we have full context.
+    
+    If states are provided and model_type is ODE, validates that derivative targets
+    refer to declared states (to prevent 'delta' from being parsed as 'd(elta)').
     """
+    states_set = set(states)
     targets: list[str] = []
+    
     for line in expr.splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        if "=" in line:
-            lhs = line.split("=", 1)[0].strip()
-            # allow patterns like 'dx' or 'x'
-            if lhs:
+        if "=" not in line:
+            continue
+        
+        lhs = line.split("=", 1)[0].strip()
+        
+        # Try to parse as derivative notation (for both ODE and map, but validate for ODE)
+        m = _DFUNC_PAREN.match(lhs) or _DFUNC_FLAT.match(lhs)
+        if m:
+            name = m.group(1)
+            # If we have states info and this is ODE, verify it's a real state
+            # This prevents "delta" from matching as "d(elta)" 
+            if states_set and name in states_set:
+                targets.append(name)
+            elif not states_set:
+                # No states info yet - accept tentatively
+                targets.append(name)
+            else:
+                # Matched derivative pattern but name not in states
+                # For map models, this is an error (derivative notation not allowed)
+                # For ODE models, might be a typo or might be direct assignment
+                # Fall through to treat as direct assignment
                 targets.append(lhs)
+        else:
+            # Direct assignment (no derivative notation)
+            targets.append(lhs)
+    
     return targets
 
 
@@ -116,15 +152,17 @@ def validate_name_collisions(doc: Dict[str, Any]) -> None:
 
     - If both are present, the union of targets must not duplicate the same state.
     - Targets must exist in [states].
+    - Derivative notation (dx/d(x)) only allowed for ODE models and only for declared states.
     """
     states = doc.get("states", {})
+    model_type = doc.get("model", {}).get("type", "ode")
     eq = doc.get("equations", {}) if isinstance(doc.get("equations"), dict) else {}
 
     rhs = eq.get("rhs") if isinstance(eq.get("rhs"), dict) else None
     expr = eq.get("expr") if isinstance(eq.get("expr"), str) else None
 
     rhs_targets = set(rhs.keys()) if rhs else set()
-    block_targets = set(_targets_from_block(expr)) if expr else set()
+    block_targets = set(_targets_from_block(expr, model_type=model_type, states=states.keys())) if expr else set()
 
     dup = rhs_targets.intersection(block_targets)
     if dup:

@@ -72,11 +72,13 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
         validate_expr_acyclic,
         validate_event_legality,
         validate_functions_signature,
+        validate_no_duplicate_equation_targets,
     )
     
     validate_expr_acyclic(normal)
     validate_event_legality(normal)
     validate_functions_signature(normal)
+    validate_no_duplicate_equation_targets(normal)
     
     model = normal["model"]
     kind = model["type"]

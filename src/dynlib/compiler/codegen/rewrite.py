@@ -68,7 +68,8 @@ class _NameLowerer(ast.NodeTransformer):
             return node
         # Inline aux by substituting its expression AST
         if node.id in self.aux_defs:
-            return ast.copy_location(ast.fix_missing_locations(ast.copy_location(self._clone(self.aux_defs[node.id]), node)), node)
+            cloned = self._clone(self.aux_defs[node.id])
+            return self.visit(cloned)  # continue lowering the inlined aux
         # Allow math/builtins symbols to pass through (resolved at module scope)
         return node
     
