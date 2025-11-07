@@ -2,6 +2,13 @@
 
 ---
 
+## [2.12.5] – 2025-11-07
+### Changed
+- Removed unused `src/dynlib/utils/arrays.py` and `utils` folder because user inputs are always
+  copied with `np.array()` and this file is not useful right now.
+
+---
+
 ## [2.12.4] – 2025-11-07
 ### Changed
 - Updated `validate_stepper_function` in `src/dynlib/compiler/codegen/validate.py` to include

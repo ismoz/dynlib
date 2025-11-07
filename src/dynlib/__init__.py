@@ -12,9 +12,6 @@ from .steppers.base import (
 )
 from .steppers.registry import register, get_stepper, registry
 
-from .utils.arrays import (
-    require_c_contig, require_dtype, require_len1, carve_view,
-)
 
 __all__ = [
     # Core entry points
