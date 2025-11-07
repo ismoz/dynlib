@@ -1,14 +1,12 @@
 # src/dynlib/runtime/sim.py
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import Optional
 import numpy as np
 
 from .model import Model
 from .wrapper import run_with_wrapper
 from .results import Results
-
-if TYPE_CHECKING:
-    from typing import Optional
+from .results_api import ResultsView
 
 __all__ = ["Sim"]
 
@@ -21,6 +19,8 @@ class Sim:
     """
     def __init__(self, model: Model):
         self.model = model
+        self._raw_results: Optional[Results] = None
+        self._results_view: Optional[ResultsView] = None
 
     def dry_run(self) -> bool:
         """Tiny helper to assert callability."""
@@ -45,7 +45,7 @@ class Sim:
         params: Optional[np.ndarray] = None,
         cap_rec: int = 1024,
         cap_evt: int = 1,
-    ) -> Results:
+    ) -> None:
         """
         Run the simulation using the compiled model.
         
@@ -60,9 +60,6 @@ class Sim:
             params: Parameters (default from spec.param_vals)
             cap_rec: Initial recording buffer capacity
             cap_evt: Initial event log capacity
-        
-        Returns:
-            Results object with T, Y, STEP, FLAGS, and event log data
         """
         # Use defaults from spec.sim if not provided
         sim_defaults = self.model.spec.sim
@@ -91,7 +88,7 @@ class Sim:
                 max_log_width = max(max_log_width, len(event.log))
         
         # Call the wrapper
-        return run_with_wrapper(
+        result = run_with_wrapper(
             runner=self.model.runner,
             stepper=self.model.stepper,
             rhs=self.model.rhs,
@@ -112,4 +109,18 @@ class Sim:
             cap_evt=cap_evt,
             max_log_width=max_log_width,
         )
+        self._raw_results = result
+        self._results_view = None
 
+    def raw_results(self) -> Results:
+        """Return the latest raw Results façade (raises if run() not yet called)."""
+        if self._raw_results is None:
+            raise RuntimeError("No simulation results available; call run() first.")
+        return self._raw_results
+
+    def results(self) -> ResultsView:
+        """Return a cached ResultsView wrapper over the latest run."""
+        if self._results_view is None:
+            raw = self.raw_results()
+            self._results_view = ResultsView(raw, self.model.spec)
+        return self._results_view

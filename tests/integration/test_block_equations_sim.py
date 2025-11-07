@@ -30,7 +30,8 @@ def _run_inline_model(model_toml: str):
     )
     
     sim = Sim(model)
-    return sim.run()
+    sim.run()
+    return sim.raw_results()
 
 
 def test_block_form_exponential_decay():

@@ -65,7 +65,8 @@ def test_euler_decay_analytic():
     sim = Sim(model)
     
     # Run simulation
-    results = sim.run()
+    sim.run()
+    results = sim.raw_results()
     
     # Extract final state
     t_final = results.T[results.n - 1]
@@ -103,7 +104,8 @@ def test_euler_with_event():
     sim = Sim(model)
     
     # Run simulation
-    results = sim.run()
+    sim.run()
+    results = sim.raw_results()
     
     # With the reset event, x should never stay below threshold for long
     # After reset, it jumps back to 1.0
@@ -138,7 +140,8 @@ def test_euler_growth_triggered():
     sim = Sim(model)
     
     # Run with very small capacity (should force growth)
-    results = sim.run(cap_rec=4, record_every_step=1)
+    sim.run(cap_rec=4, record_every_step=1)
+    results = sim.raw_results()
     
     # Should have recorded more than 4 points (since t_end=2.0, dt=0.1 → ~20 steps)
     assert results.n > 4, f"Expected growth to allow >4 records, got {results.n}"
@@ -160,12 +163,14 @@ def test_jit_on_off_parity():
     # Build and run with JIT enabled
     model_jit = load_model_from_toml(model_path, jit=True)
     sim_jit = Sim(model_jit)
-    results_jit = sim_jit.run()
+    sim_jit.run()
+    results_jit = sim_jit.raw_results()
     
     # Build and run with JIT disabled
     model_no_jit = load_model_from_toml(model_path, jit=False)
     sim_no_jit = Sim(model_no_jit)
-    results_no_jit = sim_no_jit.run()
+    sim_no_jit.run()
+    results_no_jit = sim_no_jit.raw_results()
     
     # Results should be identical
     assert results_jit.n == results_no_jit.n, "Record counts differ"

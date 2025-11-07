@@ -2,6 +2,22 @@
 
 ---
 
+## [2.13.0] – 2025-11-07
+### Added
+- Introduced `Sim.results` and `Sim.raw_results` methods for accessing simulation results. The 
+  first one returns new `ResultsView` object while the latter returns old low-level `Results` object. 
+- Added `EventAccessor` and `EventGroupView` in `src/dynlib/runtime/results_api.py` for grouped 
+  event access.
+
+### Changed
+- Updated `Sim.run` in `src/dynlib/runtime/sim.py` to return `None` and store results internally.
+
+### Fixed
+- Updated tests for the new `ResultsView` API.
+- Added `test_sim_results_api.py` test for testing the new `ResultsView` API.
+
+---
+
 ## [2.12.5] – 2025-11-07
 ### Changed
 - Removed unused `src/dynlib/utils/arrays.py` and `utils` folder because user inputs are always

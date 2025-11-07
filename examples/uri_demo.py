@@ -57,7 +57,8 @@ def demo_inline_model():
     )
     
     sim = Sim(model)
-    results = sim.run()
+    sim.run()
+    results = sim.raw_results()
     
     print(f"Simulation ran {results.n} steps")
     print(f"Initial x: {results.Y[0, 0]:.6f}")

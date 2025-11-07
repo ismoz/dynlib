@@ -54,7 +54,8 @@ def test_event_logging_basic():
     sim = Sim(model)
     
     # Run simulation with reasonable event buffer capacity
-    result = sim.run(cap_evt=100)
+    sim.run(cap_evt=100)
+    result = sim.raw_results()
     
     # Check that event log has entries
     evt_code = result.EVT_CODE_view
@@ -97,7 +98,8 @@ def test_event_logging_no_log_field():
     sim = Sim(model)
     
     # Run simulation
-    result = sim.run()
+    sim.run()
+    result = sim.raw_results()
     
     # Event log should be empty (or minimal)
     evt_code = result.EVT_CODE_view
@@ -115,7 +117,8 @@ def test_event_logging_multiple_fires():
     sim = Sim(model)
     
     # Run with longer simulation to ensure multiple resets
-    result = sim.run(t_end=10.0, cap_evt=100)
+    sim.run(t_end=10.0, cap_evt=100)
+    result = sim.raw_results()
     
     evt_code = result.EVT_CODE_view
     evt_log_data = result.EVT_LOG_DATA_view
@@ -140,7 +143,8 @@ def test_event_logging_captures_state():
     model = load_model_from_toml(model_path, jit=True)
     sim = Sim(model)
     
-    result = sim.run(t_end=3.0, cap_evt=100)
+    sim.run(t_end=3.0, cap_evt=100)
+    result = sim.raw_results()
     
     evt_code = result.EVT_CODE_view
     evt_log_data = result.EVT_LOG_DATA_view

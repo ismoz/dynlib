@@ -112,7 +112,8 @@ stepper = "euler"
     )
     
     sim = Sim(model)
-    results = sim.run()
+    sim.run()
+    results = sim.raw_results()
     
     assert results.n > 0
     assert results.T[0] == 0.0
@@ -526,7 +527,8 @@ def test_load_existing_decay_model():
     )
     
     sim = Sim(model)
-    results = sim.run()
+    sim.run()
+    results = sim.raw_results()
     
     assert results.n > 0
     assert results.T[0] == 0.0

@@ -63,7 +63,8 @@ def test_rk4_accuracy():
     sim = Sim(model)
     
     # Run simulation
-    results = sim.run()
+    sim.run()
+    results = sim.raw_results()
     
     # Extract final state
     t_final = results.T[results.n - 1]
@@ -119,7 +120,8 @@ def test_rk4_order_convergence():
     )
     
     sim_coarse = Sim(model_coarse)
-    results_coarse = sim_coarse.run(t_end=t_end, dt=0.2)
+    sim_coarse.run(t_end=t_end, dt=0.2)
+    results_coarse = sim_coarse.raw_results()
     # Find the index where T is closest to t_end
     idx_coarse = np.argmin(np.abs(results_coarse.T[:results_coarse.n] - t_end))
     x_coarse = results_coarse.Y[0, idx_coarse]
@@ -141,7 +143,8 @@ def test_rk4_order_convergence():
     )
     
     sim_fine = Sim(model_fine)
-    results_fine = sim_fine.run(t_end=t_end, dt=0.1)
+    sim_fine.run(t_end=t_end, dt=0.1)
+    results_fine = sim_fine.raw_results()
     idx_fine = np.argmin(np.abs(results_fine.T[:results_fine.n] - t_end))
     x_fine = results_fine.Y[0, idx_fine]
     err_fine = abs(x_fine - x_analytic)
@@ -167,7 +170,8 @@ def test_rk45_adaptive_accuracy():
     sim = Sim(model)
     
     # Run simulation
-    results = sim.run()
+    sim.run()
+    results = sim.raw_results()
     
     # Extract final state
     t_final = results.T[results.n - 1]
@@ -240,10 +244,12 @@ def test_rk45_step_adaptation():
     
     # Run both with same initial dt
     sim_rk45 = Sim(model_rk45)
-    results_rk45 = sim_rk45.run(t_end=2.0, dt=0.1, record_every_step=1)
+    sim_rk45.run(t_end=2.0, dt=0.1, record_every_step=1)
+    results_rk45 = sim_rk45.raw_results()
     
     sim_euler = Sim(model_euler)
-    results_euler = sim_euler.run(t_end=2.0, dt=0.1, record_every_step=1)
+    sim_euler.run(t_end=2.0, dt=0.1, record_every_step=1)
+    results_euler = sim_euler.raw_results()
     
     # RK45 should take different number of steps (adaptive)
     # For smooth exponential decay, RK45 might take fewer actual internal steps
@@ -276,12 +282,14 @@ def test_rk4_jit_parity():
     # Build and run with JIT enabled
     model_jit = load_model_from_toml(model_path, jit=True)
     sim_jit = Sim(model_jit)
-    results_jit = sim_jit.run()
+    sim_jit.run()
+    results_jit = sim_jit.raw_results()
     
     # Build and run with JIT disabled
     model_no_jit = load_model_from_toml(model_path, jit=False)
     sim_no_jit = Sim(model_no_jit)
-    results_no_jit = sim_no_jit.run()
+    sim_no_jit.run()
+    results_no_jit = sim_no_jit.raw_results()
     
     # Results should be identical
     assert results_jit.n == results_no_jit.n, "Record counts differ"
@@ -311,12 +319,14 @@ def test_rk45_jit_parity():
     # Build and run with JIT enabled
     model_jit = load_model_from_toml(model_path, jit=True)
     sim_jit = Sim(model_jit)
-    results_jit = sim_jit.run()
+    sim_jit.run()
+    results_jit = sim_jit.raw_results()
     
     # Build and run with JIT disabled
     model_no_jit = load_model_from_toml(model_path, jit=False)
     sim_no_jit = Sim(model_no_jit)
-    results_no_jit = sim_no_jit.run()
+    sim_no_jit.run()
+    results_no_jit = sim_no_jit.raw_results()
     
     # Results should be identical (adaptive decisions should be deterministic)
     assert results_jit.n == results_no_jit.n, "Record counts differ"
