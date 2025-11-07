@@ -19,14 +19,17 @@ __all__ = [
     "load_config",
     "resolve_uri",
     "parse_uri",
+    "resolve_cache_root",
 ]
 
 
 @dataclass(frozen=True)
 class PathConfig:
-    """Configuration for model path resolution."""
+    """Configuration for model path resolution and cache behavior."""
     # Map of tag name -> list of directory roots
     tags: Dict[str, List[str]]
+    # Optional cache root for JIT artifacts
+    cache_root: Optional[str] = None
 
 
 def _get_config_path() -> Path:
@@ -106,6 +109,34 @@ def _parse_env_model_path() -> Dict[str, List[str]]:
     return result
 
 
+def _default_cache_root() -> Path:
+    """Return the platform-specific default cache root."""
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Caches" / "dynlib"
+    if sys.platform == "win32":
+        local = os.environ.get("LOCALAPPDATA")
+        if local:
+            base = Path(local)
+        else:
+            base = Path.home() / "AppData" / "Local"
+        return base / "dynlib" / "Cache"
+    # Linux / Unix fallback uses XDG_CACHE_HOME when available
+    xdg_cache = os.environ.get("XDG_CACHE_HOME")
+    if xdg_cache:
+        base = Path(xdg_cache).expanduser()
+    else:
+        base = Path.home() / ".cache"
+    return base / "dynlib"
+
+
+def resolve_cache_root(config: Optional[PathConfig] = None) -> Path:
+    """Resolve the cache root based on config or platform defaults."""
+    cfg = config or load_config()
+    if cfg.cache_root:
+        return Path(cfg.cache_root).expanduser().resolve()
+    return _default_cache_root().expanduser().resolve()
+
+
 def load_config() -> PathConfig:
     """
     Load configuration from file and environment.
@@ -121,6 +152,8 @@ def load_config() -> PathConfig:
     # Start with empty tags
     tags: Dict[str, List[str]] = {}
     
+    cache_root: Optional[str] = None
+
     # Load from config file if it exists
     if config_path.exists():
         try:
@@ -156,6 +189,21 @@ def load_config() -> PathConfig:
                     )
             
             tags[tag] = list(roots)
+
+        # Optional cache_root can appear either as a top-level key or within a [cache] table
+        top_level_cache = data.get("cache_root")
+        if top_level_cache is not None:
+            if not isinstance(top_level_cache, str):
+                raise ConfigError("cache_root must be a string path in config")
+            cache_root = top_level_cache
+        else:
+            cache_section = data.get("cache")
+            if isinstance(cache_section, dict):
+                cache_value = cache_section.get("root")
+                if cache_value is not None:
+                    if not isinstance(cache_value, str):
+                        raise ConfigError("[cache].root must be a string path")
+                    cache_root = cache_value
     
     # Parse environment override (prepend to existing tags)
     env_tags = _parse_env_model_path()
@@ -164,7 +212,7 @@ def load_config() -> PathConfig:
         # Prepend env roots so they win on first match
         tags[tag] = env_roots + existing
     
-    return PathConfig(tags=tags)
+    return PathConfig(tags=tags, cache_root=cache_root)
 
 
 def parse_uri(uri: str) -> Tuple[str, Optional[str]]:

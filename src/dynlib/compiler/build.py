@@ -10,11 +10,11 @@ from dynlib.dsl.parser import parse_model_v2
 from dynlib.steppers.registry import get_stepper
 from dynlib.steppers.base import StructSpec
 from dynlib.compiler.codegen.emitter import emit_rhs_and_events, CompiledCallables
-from dynlib.compiler.codegen.runner import get_runner
+from dynlib.compiler.codegen import runner as runner_codegen
 from dynlib.compiler.codegen.validate import validate_stepper_function, report_validation_issues
 from dynlib.compiler.jit.compile import maybe_jit_triplet, jit_compile
 from dynlib.compiler.jit.cache import JITCache, CacheKey
-from dynlib.compiler.paths import resolve_uri, load_config, PathConfig
+from dynlib.compiler.paths import resolve_uri, load_config, PathConfig, resolve_cache_root
 from dynlib.compiler.mods import apply_mods_v2, ModSpec
 from dynlib.errors import ModelLoadError, StepperKindMismatchError
 
@@ -45,18 +45,22 @@ class FullModel:
 
 _cache = JITCache()
 
+def _structsig_from_struct(struct: StructSpec) -> Tuple[int, ...]:
+    return (
+        struct.sp_size, struct.ss_size,
+        struct.sw0_size, struct.sw1_size, struct.sw2_size, struct.sw3_size,
+        struct.iw0_size, struct.bw0_size,
+        int(bool(struct.use_history)), int(bool(struct.use_f_history)),
+        int(bool(struct.dense_output)), int(bool(struct.needs_jacobian)),
+        -1 if struct.embedded_order is None else int(struct.embedded_order),
+        int(bool(struct.stiff_ok)),
+    )
+
+
 def _structsig_from_stepper(stepper_name: str) -> Tuple[int, ...]:
     # StructSpec signature is a tuple of sizes; we only need it for the cache key.
     spec = get_stepper(stepper_name).struct_spec()
-    return (
-        spec.sp_size, spec.ss_size,
-        spec.sw0_size, spec.sw1_size, spec.sw2_size, spec.sw3_size,
-        spec.iw0_size, spec.bw0_size,
-        int(bool(spec.use_history)), int(bool(spec.use_f_history)),
-        int(bool(spec.dense_output)), int(bool(spec.needs_jacobian)),
-        -1 if spec.embedded_order is None else int(spec.embedded_order),
-        int(bool(spec.stiff_ok)),
-    )
+    return _structsig_from_struct(spec)
 
 def build_callables(spec: ModelSpec, *, stepper_name: str, jit: bool, model_dtype: str = "float64") -> CompiledPieces:
     """
@@ -263,6 +267,7 @@ def build(
     mods: Optional[List[str]] = None,
     jit: bool = True,
     model_dtype: str = "float64",
+    disk_cache: bool = True,
     config: Optional[PathConfig] = None,
     validate_stepper: bool = True,
 ) -> FullModel:
@@ -283,6 +288,7 @@ def build(
         mods: List of mod URIs to apply (same URI schemes as model).
             Mods are applied in order after loading the base model.
         jit: Enable JIT compilation (default True)
+        disk_cache: Enable persistent runner cache on disk (default True)
         model_dtype: Model dtype string (default "float64")
         config: PathConfig for URI resolution (loads default if None)
         validate_stepper: Enable build-time stepper validation (default True)
@@ -297,12 +303,15 @@ def build(
         StepperKindMismatchError: If stepper kind doesn't match model kind
         StepperValidationError: If stepper validation fails
     """
+    # Always resolve a config so cache_root resolution stays in sync with path lookup
+    config_in_use = config or load_config()
+
     # If model is already a ModelSpec, use it directly
     if isinstance(model, ModelSpec):
         spec = model
     else:
         # Load from URI
-        spec = load_model_from_uri(model, mods=mods, config=config)
+        spec = load_model_from_uri(model, mods=mods, config=config_in_use)
     
     # Use spec's default stepper if not specified
     if stepper_name is None:
@@ -320,6 +329,7 @@ def build(
         )
     
     struct = stepper_spec.struct_spec()
+    structsig = _structsig_from_struct(struct)
     
     # Build RHS and events
     pieces = build_callables(spec, stepper_name=stepper_name, jit=jit, model_dtype=model_dtype)
@@ -333,7 +343,16 @@ def build(
         report_validation_issues(issues, stepper_name, strict=False)
     
     # Get runner function (optionally JIT-compiled)
-    runner_fn = get_runner(jit=jit)
+    if jit and disk_cache:
+        cache_root = resolve_cache_root(config_in_use)
+        runner_codegen.configure_runner_disk_cache(
+            spec_hash=pieces.spec_hash,
+            stepper_name=stepper_name,
+            structsig=structsig,
+            model_dtype=model_dtype,
+            cache_root=cache_root,
+        )
+    runner_fn = runner_codegen.get_runner(jit=jit, disk_cache=disk_cache)
     
     # Apply JIT to stepper if enabled (using centralized helper)
     stepper_fn = jit_compile(stepper_fn, jit=jit)

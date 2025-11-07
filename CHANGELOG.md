@@ -2,6 +2,23 @@
 
 ---
 
+## [2.14.0] – 2025-11-07
+### Added
+- Introduced opt-in disk-backed runner caching via `build(..., disk_cache=...)`, including
+  configurable cache roots, deterministic digesting, and automatic regeneration on corruption.
+  - `cache_root=True`: persistent on-disk cache.
+  - `cache_root=False`: in-memory (per-process) JIT only; no files written.
+  - Config defines the cache root. If not available platform defaults are used:
+      Linux: ${XDG_CACHE_HOME:-~/.cache}/dynlib
+      macOS: ~/Library/Caches/dynlib
+      Windows: %LOCALAPPDATA%\dynlib\Cache
+
+### Tests
+- Added `tests/unit/test_runner_diskcache.py` to cover materialization, reuse, recovery, and
+  fallback scenarios for the new cache layer.
+
+---
+
 ## [2.13.2] – 2025-11-07
 ### Fixed
 - The runner was dropping records when buffer growth was triggered. Enhanced `runner` function
