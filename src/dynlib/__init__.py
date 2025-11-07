@@ -12,10 +12,13 @@ from .steppers.base import (
 )
 from .steppers.registry import register, get_stepper, registry
 
+from .compiler.build import build
+from .runtime.sim import Sim
+
 
 __all__ = [
     # Core entry points
-    "build", "run", "plot",
+    "build", "Sim", "plot",
     # Status codes (for advanced use)
     "Status", "OK", "STEPFAIL", "NAN_DETECTED", "DONE", "GROW_REC", "GROW_EVT", "USER_BREAK",
     # Results

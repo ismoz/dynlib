@@ -151,6 +151,34 @@ def test_euler_growth_triggered():
     assert results.Y[0, 0] == pytest.approx(1.0)
 
 
+def test_euler_growth_matches_reference():
+    """
+    Forcing buffer growth must not change the recorded trajectory.
+    """
+    data_dir = Path(__file__).parent.parent / "data" / "models"
+    model_path = data_dir / "decay.toml"
+
+    model = load_model_from_toml(model_path, jit=True)
+
+    # Reference run with plenty of capacity (no growth expected)
+    sim_ref = Sim(model)
+    sim_ref.run(cap_rec=128, record_every_step=1)
+    res_ref = sim_ref.raw_results()
+
+    # Force multiple growth cycles
+    sim_small = Sim(model)
+    sim_small.run(cap_rec=3, record_every_step=1)
+    res_small = sim_small.raw_results()
+
+    assert res_small.n == res_ref.n, "Record counts diverged when forcing growth"
+    np.testing.assert_allclose(
+        res_small.T_view, res_ref.T_view, rtol=0, atol=1e-12, err_msg="Times differ after growth"
+    )
+    np.testing.assert_allclose(
+        res_small.Y_view, res_ref.Y_view, rtol=0, atol=1e-12, err_msg="States differ after growth"
+    )
+
+
 def test_jit_on_off_parity():
     """
     Test that JIT on/off produces identical results (per guardrails).

@@ -100,10 +100,14 @@ def run_with_wrapper(
     # Recording at t0 is part of the **runner** discipline; wrapper just passes flags
     rec_every = int(record_every_step) if record else 0  # runner may treat 0 as "no record except explicit"
 
+    # Track the committed (t, dt) so re-entries resume from the correct point.
+    t_curr = float(t0)
+    dt_curr = float(dt_init)
+
     # Attempt/re-entry loop
     while True:
         status = runner(
-            float(t0), float(t_end), float(dt_init),
+            t_curr, float(t_end), dt_curr,
             int(max_steps), int(n_state), int(rec_every),
             y_curr, y_prev, params,
             banks.sp, banks.ss, banks.sw0, banks.sw1, banks.sw2, banks.sw3,
@@ -140,6 +144,11 @@ def run_with_wrapper(
             # Re-enter: update cursors/caps
             i_start = np.int64(n_filled)
             step_start = np.int64(step_curr)
+            t_curr = float(t_out[0])
+            if step_curr > 0:
+                dt_candidate = float(dt_next[0])
+                if dt_candidate != 0.0:
+                    dt_curr = dt_candidate
             continue
 
         if status_value == GROW_EVT:
@@ -148,6 +157,11 @@ def run_with_wrapper(
             hint_out[0] = np.int32(m_filled)
             i_start = np.int64(n_filled)
             step_start = np.int64(step_curr)
+            t_curr = float(t_out[0])
+            if step_curr > 0:
+                dt_candidate = float(dt_next[0])
+                if dt_candidate != 0.0:
+                    dt_curr = dt_candidate
             continue
 
         if status_value in (USER_BREAK, STEPFAIL, NAN_DETECTED):

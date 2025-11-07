@@ -2,6 +2,22 @@
 
 ---
 
+## [2.13.1] – 2025-11-07
+### Fixed
+- Buffer reallocation was resetting the wrapper time value. Refactored `run_with_wrapper` in 
+  `src/dynlib/runtime/wrapper.py` to track committed time and step size for re-entries, 
+  ensuring that reallocation does not corrupt recording.
+
+### Added
+- Added `Sim` to `__all__` in `src/dynlib/__init__.py` for better accessibility.
+- Added `izhikevich.py` example in `examples/` demonstrating neuron spiking behavior.
+
+### Tests
+- `test_euler_growth_matches_reference` in `tests/integration/test_euler_basic.py` now ensures 
+  buffer growth does not alter recorded trajectories.
+
+---
+
 ## [2.13.0] – 2025-11-07
 ### Added
 - Introduced `Sim.results` and `Sim.raw_results` methods for accessing simulation results. The 
