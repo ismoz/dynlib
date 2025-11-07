@@ -9,6 +9,7 @@ __all__ = [
     "ConfigError",
     "PathTraversalError",
     "AmbiguousModelError",
+    "StepperKindMismatchError",
 ]
 
 class DynlibError(Exception):
@@ -52,6 +53,8 @@ class PathTraversalError(DynlibError):
         super().__init__(msg)
 
 
+
+
 class AmbiguousModelError(DynlibError):
     """Raised when a model URI matches multiple files (e.g., extensionless)."""
     def __init__(self, uri: str, matches: List[str]):
@@ -62,4 +65,15 @@ class AmbiguousModelError(DynlibError):
         for m in matches:
             msg += f"  - {m}\n"
         msg += "Please use an explicit filename."
+        super().__init__(msg)
+
+
+class StepperKindMismatchError(DynlibError):
+    """Raised when stepper kind doesn't match model kind."""
+    def __init__(self, stepper_name: str, stepper_kind: str, model_kind: str):
+        self.stepper_name = stepper_name
+        self.stepper_kind = stepper_kind
+        self.model_kind = model_kind
+        msg = f"Stepper '{stepper_name}' (kind='{stepper_kind}') is incompatible with model kind '{model_kind}'\n"
+        msg += f"Please choose a stepper that supports '{model_kind}' models."
         super().__init__(msg)

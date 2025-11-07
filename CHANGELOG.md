@@ -2,6 +2,16 @@
 
 ---
 
+## [2.12.3] – 2025-11-07
+### Added
+- Introduced `StepperKindMismatchError` to handle mismatched stepper and model kinds.
+
+### Changed
+- Updated `build` function to validate stepper kind against model kind and raise 
+  `StepperKindMismatchError` if incompatible.
+
+---
+
 ## [2.12.2] – 2025-11-07
 ### Changed
 - Removed `priority` field from `ModSpec` in `src/dynlib/compiler/mods.py`.

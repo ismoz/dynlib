@@ -16,7 +16,7 @@ from dynlib.compiler.jit.compile import maybe_jit_triplet, jit_compile
 from dynlib.compiler.jit.cache import JITCache, CacheKey
 from dynlib.compiler.paths import resolve_uri, load_config, PathConfig
 from dynlib.compiler.mods import apply_mods_v2, ModSpec
-from dynlib.errors import ModelLoadError
+from dynlib.errors import ModelLoadError, StepperKindMismatchError
 
 __all__ = ["CompiledPieces", "build_callables", "FullModel", "build", "load_model_from_uri"]
 
@@ -294,6 +294,7 @@ def build(
         ModelNotFoundError: If URI cannot be resolved
         ModelLoadError: If parsing/validation fails
         ConfigError: If config is invalid or TAG is unknown
+        StepperKindMismatchError: If stepper kind doesn't match model kind
         StepperValidationError: If stepper validation fails
     """
     # If model is already a ModelSpec, use it directly
@@ -309,6 +310,15 @@ def build(
     
     # Get stepper spec
     stepper_spec = get_stepper(stepper_name)
+    
+    # Validate stepper kind matches model kind (guardrails check)
+    if stepper_spec.meta.kind != spec.kind:
+        raise StepperKindMismatchError(
+            stepper_name=stepper_name,
+            stepper_kind=stepper_spec.meta.kind,
+            model_kind=spec.kind
+        )
+    
     struct = stepper_spec.struct_spec()
     
     # Build RHS and events
