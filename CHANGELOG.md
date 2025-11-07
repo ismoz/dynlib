@@ -2,6 +2,22 @@
 
 ---
 
+## [2.12.4] – 2025-11-07
+### Changed
+- Updated `validate_stepper_function` in `src/dynlib/compiler/codegen/validate.py` to include
+ `StructSpec` validation.
+- Enhanced `report_validation_issues` to handle warnings and errors more effectively.
+- Modified `build` function in `src/dynlib/compiler/build.py` to pass `StructSpec` to 
+  `validate_stepper_function`.
+
+### Added
+- Introduced `test_stepper_guardrails.py` in `tests/unit/` to validate `StructSpec` sizes, 
+  persistence flags, and bank assignments.
+- Added new validation rules for `iw0` and `bw0` banks to reject float assignments.
+- Added warnings for ephemeral banks being read before write.
+
+---
+
 ## [2.12.3] – 2025-11-07
 ### Added
 - Introduced `StepperKindMismatchError` to handle mismatched stepper and model kinds.

@@ -329,7 +329,7 @@ def build(
     
     # Validate stepper if requested (build-time guardrails check)
     if validate_stepper:
-        issues = validate_stepper_function(stepper_fn, stepper_name)
+        issues = validate_stepper_function(stepper_fn, stepper_name, struct_spec=struct)
         report_validation_issues(issues, stepper_name, strict=False)
     
     # Get runner function (optionally JIT-compiled)
