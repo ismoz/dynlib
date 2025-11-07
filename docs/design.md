@@ -176,12 +176,11 @@ Inside each mod:
 name = "drive_low"
 group = "drive"      # bucket
 exclusive = true     # at most ONE mod from this group may be active
-priority = 0         # optional tie-break (higher wins) if multiple provided
 ```
 
 ### Build rules:
 - If multiple active mods share a group and any has `exclusive=true`: error (unless only one is active).
-- Otherwise, apply in the given list order (last-wins for conflicting keys).
+- When `exclusive=false`, multiple mods in the same group may run; they apply strictly in the caller-provided order.
 
 ### Application order (deterministic)
 1. Parse base TOML → ModelSpec.
@@ -420,5 +419,4 @@ This is the whole playbook. If you stick to these contracts, you can add RK45, m
     │   └── events_logging/
     └── data/
         └── models/            # small TOML fixtures for tests
-
 

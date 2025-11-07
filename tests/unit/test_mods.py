@@ -71,11 +71,20 @@ def test_mods_remove_nonexistent_event_raises():
 
 def test_mods_group_exclusive_conflict_raises():
     normal = base_normal()
-    m1 = ModSpec(name="B", group="G", exclusive=True, priority=10, add={"events": {"eB": {"phase": "pre", "cond": "1", "action": "x=0"}}})
-    m2 = ModSpec(name="A", group="G", exclusive=True, priority=5, add={"events": {"eA": {"phase": "pre", "cond": "1", "action": "x=0"}}})
+    m1 = ModSpec(name="B", group="G", exclusive=True, add={"events": {"eB": {"phase": "pre", "cond": "1", "action": "x=0"}}})
+    m2 = ModSpec(name="A", group="G", exclusive=True, add={"events": {"eA": {"phase": "pre", "cond": "1", "action": "x=0"}}})
 
-    with pytest.raises(ModelLoadError, match="exclusive group 'G' activates multiple mods"):
+    with pytest.raises(ModelLoadError, match="group 'G' allows only one active mod"):
         apply_mods_v2(normal, [m1, m2])
+
+
+def test_mods_group_exclusive_blocked_even_with_non_exclusive_partner():
+    normal = base_normal()
+    exclusive = ModSpec(name="solo", group="G", exclusive=True, add={"events": {"eB": {"phase": "pre", "cond": "1", "action": "x=0"}}})
+    non_exclusive = ModSpec(name="helper", group="G", exclusive=False, add={"events": {"eA": {"phase": "pre", "cond": "1", "action": "x=0"}}})
+
+    with pytest.raises(ModelLoadError, match="group 'G' allows only one active mod"):
+        apply_mods_v2(normal, [exclusive, non_exclusive])
 
 
 def test_mods_group_single_exclusive_preserves_order():

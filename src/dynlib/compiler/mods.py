@@ -16,7 +16,6 @@ class ModSpec:
     name: str
     group: str | None = None
     exclusive: bool = False
-    priority: int = 0
     # verbs payloads are normalized dicts mirroring parser output shapes
     remove: Dict[str, Any] | None = None
     replace: Dict[str, Any] | None = None
@@ -234,27 +233,28 @@ def apply_mods_v2(normal: Dict[str, Any], selected: List[ModSpec]) -> Dict[str, 
         else:
             passthrough.append(m)
 
-    # Resolve exclusives per group; non-exclusive keep all.
-    winners: Dict[str, ModSpec] = {}
+    # Enforce exclusivity per group
+    exclusive_groups: Dict[str, List[ModSpec]] = {}
     for g, mods in by_group.items():
-        exclusives = [m for m in mods if m.exclusive]
-        if len(exclusives) > 1:
-            names = ", ".join(sorted(m.name for m in exclusives))
+        has_exclusive = any(m.exclusive for m in mods)
+        if has_exclusive and len(mods) > 1:
+            names = ", ".join(sorted(m.name for m in mods))
             raise ModelLoadError(
-                f"exclusive group '{g}' activates multiple mods: {names}"
+                f"group '{g}' allows only one active mod but received: {names}"
             )
-        if exclusives:
-            winners[g] = exclusives[0]
+        if has_exclusive:
+            exclusive_groups[g] = mods
 
     # Final order strictly follows caller order of 'selected',
-    # dropping losers from exclusive groups.
+    # dropping groups blocked by exclusivity violations (already raised).
     final_order: List[ModSpec] = []
     for m in selected:
         if m.group is None:
             final_order.append(m)
         else:
-            if m.group in winners:
-                if winners[m.group] is m:
+            if m.group in exclusive_groups:
+                # exclusive group validated above; only the sole member is appended
+                if exclusive_groups[m.group][0] is m:
                     final_order.append(m)
             else:
                 # non-exclusive group: keep original caller order

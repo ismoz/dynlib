@@ -188,7 +188,6 @@ def _parse_mod_spec(name: str, mod_data: Dict[str, Any]) -> ModSpec:
         name=name,
         group=mod_data.get("group"),
         exclusive=mod_data.get("exclusive", False),
-        priority=mod_data.get("priority", 0),
         remove=mod_data.get("remove"),
         replace=mod_data.get("replace"),
         add=mod_data.get("add"),

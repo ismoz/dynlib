@@ -177,7 +177,6 @@ names = ["reset"]
 name = "drive_low"
 group = "drive"
 exclusive = true
-priority = 0
 ```
 **Application order**: remove → replace → add → set (per selected mod list order). Then validate → codegen/JIT.
 

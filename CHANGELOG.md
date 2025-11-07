@@ -2,6 +2,18 @@
 
 ---
 
+## [2.12.2] – 2025-11-07
+### Changed
+- Removed `priority` field from `ModSpec` in `src/dynlib/compiler/mods.py`.
+- Updated exclusivity handling in `apply_mods_v2` to enforce stricter group rules.
+- Improved error messages for exclusivity conflicts in `src/dynlib/compiler/mods.py`.
+
+### Tests
+- Removed priority fields from `tests/unit/test_mods.py` .
+- Updated `test_mods_group_exclusive_conflict_raises` to validate stricter exclusivity rules.
+
+---
+
 ## [2.12.1] – 2025-11-07
 ### Added
 - TODO.md, ISSUES.md files.
