@@ -2,6 +2,15 @@
 
 ---
 
+## [2.13.2] – 2025-11-07
+### Fixed
+- The runner was dropping records when buffer growth was triggered. Enhanced `runner` function
+  in `src/dynlib/compiler/codegen/runner.py`:
+  - Added logic to handle pending steps before growth.
+  - Improved recording mechanism for steps during re-entries.
+
+---
+
 ## [2.13.1] – 2025-11-07
 ### Fixed
 - Buffer reallocation was resetting the wrapper time value. Refactored `run_with_wrapper` in 

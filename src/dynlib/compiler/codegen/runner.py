@@ -99,6 +99,25 @@ def runner(
     
     # Main integration loop
     while step < max_steps and t < t_end:
+        # Check if we need to record a pending step from before growth
+        # This happens when step_start > i_start (we've advanced steps but not recorded)
+        if step > 0 and record_every_step > 0 and (step % record_every_step == 0) and step == step_start:
+            # Re-entering after GROW_REC: attempt the pending record first
+            if i >= cap_rec:
+                # Still not enough space (should not happen with geometric growth)
+                i_out[0] = i
+                step_out[0] = step
+                t_out[0] = t
+                status_out[0] = GROW_REC
+                hint_out[0] = m
+                return GROW_REC
+            
+            T[i] = t
+            for k in range(n_state):
+                Y[k, i] = y_curr[k]
+            STEP[i] = step
+            FLAGS[i] = OK
+            i += 1
         # 1. Pre-events on committed state
         event_code_pre, log_width_pre = events_pre(t, y_curr, params, evt_log_scratch)
         
