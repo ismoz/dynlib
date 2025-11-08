@@ -33,9 +33,10 @@ u = u + d
 """
 '''
 
-model = build(DSL, stepper_name="euler")
+model = build(DSL, stepper_name="euler", jit=False, model_dtype="float32")
 sim = Sim(model)
-sim.run(t_end=600.0, dt=0.1, cap_rec=10000)
+sim.run(t_end=600.0, dt=0.01, cap_rec=10000)
+
 res = sim.results()
 
 series.plot(x=res.t, y=res["v"], label="Membrane Potential (v)")

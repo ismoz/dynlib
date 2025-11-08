@@ -8,6 +8,10 @@ See design.md "Model Paths / Registry" for the full specification.
 from __future__ import annotations
 import os
 import sys
+import tempfile
+import uuid
+import warnings
+import contextlib
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
@@ -21,6 +25,8 @@ __all__ = [
     "parse_uri",
     "resolve_cache_root",
 ]
+
+_CACHE_ROOT_FALLBACK_WARNED = False
 
 
 @dataclass(frozen=True)
@@ -129,12 +135,58 @@ def _default_cache_root() -> Path:
     return base / "dynlib"
 
 
+def _ensure_writable_dir(root: Path) -> bool:
+    """Return True if *root* can be created and written to."""
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return False
+    probe = root / f".dynlib-write-test-{uuid.uuid4().hex}"
+    try:
+        with open(probe, "wb") as fh:
+            fh.write(b"0")
+        probe.unlink()
+    except OSError:
+        with contextlib.suppress(FileNotFoundError):
+            probe.unlink()
+        return False
+    return True
+
+
+def _warn_cache_root_fallback(primary: Path, fallback: Path) -> None:
+    global _CACHE_ROOT_FALLBACK_WARNED
+    if _CACHE_ROOT_FALLBACK_WARNED:
+        return
+    _CACHE_ROOT_FALLBACK_WARNED = True
+    warnings.warn(
+        f"dynlib cache root {primary} is not writable; using {fallback} instead",
+        RuntimeWarning,
+        stacklevel=3,
+    )
+
+
+def _warn_cache_root_unwritable(primary: Path) -> None:
+    warnings.warn(
+        f"dynlib cache root {primary} is not writable; falling back to in-memory JIT",
+        RuntimeWarning,
+        stacklevel=3,
+    )
+
+
 def resolve_cache_root(config: Optional[PathConfig] = None) -> Path:
     """Resolve the cache root based on config or platform defaults."""
     cfg = config or load_config()
     if cfg.cache_root:
         return Path(cfg.cache_root).expanduser().resolve()
-    return _default_cache_root().expanduser().resolve()
+    primary = _default_cache_root().expanduser().resolve()
+    if _ensure_writable_dir(primary):
+        return primary
+    fallback = (Path(tempfile.gettempdir()) / "dynlib-cache").expanduser().resolve()
+    if _ensure_writable_dir(fallback):
+        _warn_cache_root_fallback(primary, fallback)
+        return fallback
+    _warn_cache_root_unwritable(primary)
+    return primary
 
 
 def load_config() -> PathConfig:

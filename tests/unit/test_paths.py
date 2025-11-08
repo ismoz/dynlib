@@ -19,6 +19,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch
 import tempfile
+import warnings
 
 from dynlib.compiler.paths import (
     PathConfig,
@@ -27,6 +28,7 @@ from dynlib.compiler.paths import (
     parse_uri,
     _get_config_path,
     _parse_env_model_path,
+    resolve_cache_root,
 )
 from dynlib.errors import (
     ModelNotFoundError,
@@ -459,3 +461,54 @@ def test_resolve_uri_expandvars(tmp_path, monkeypatch):
     
     resolved, _ = resolve_uri("$MY_DIR/model.toml")
     assert resolved == str(model_file.resolve())
+
+
+def test_resolve_cache_root_fallback(monkeypatch, tmp_path):
+    """When default cache root is unwritable we fall back to tmp."""
+    cfg_file = tmp_path / "cfg.toml"
+    cfg_file.write_text("[paths]\n")
+    monkeypatch.setenv("DYNLIB_CONFIG", str(cfg_file))
+    from dynlib.compiler import paths as paths_mod
+
+    primary = Path("/unwritable/primary")
+    fallback_base = tmp_path / "fallback"
+    fallback_dir = (fallback_base / "dynlib-cache").resolve()
+
+    monkeypatch.setattr(paths_mod, "_default_cache_root", lambda: primary)
+    monkeypatch.setattr(paths_mod.tempfile, "gettempdir", lambda: str(fallback_base))
+    monkeypatch.setattr(paths_mod, "_CACHE_ROOT_FALLBACK_WARNED", False, raising=False)
+
+    calls = []
+
+    def fake_ensure(path: Path) -> bool:
+        calls.append(path)
+        return path == fallback_dir
+
+    monkeypatch.setattr(paths_mod, "_ensure_writable_dir", fake_ensure)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        root = resolve_cache_root(PathConfig(tags={}))
+
+    assert root == fallback_dir
+    assert calls == [primary.resolve(), fallback_dir]
+    # Should warn about fallback choice
+    assert any("not writable" in str(w.message) for w in caught)
+
+
+def test_resolve_cache_root_primary_used_when_writable(monkeypatch, tmp_path):
+    cfg_file = tmp_path / "cfg.toml"
+    cfg_file.write_text("[paths]\n")
+    monkeypatch.setenv("DYNLIB_CONFIG", str(cfg_file))
+    from dynlib.compiler import paths as paths_mod
+
+    primary = Path("/preferred/cache")
+    monkeypatch.setattr(paths_mod, "_default_cache_root", lambda: primary)
+    monkeypatch.setattr(paths_mod, "_CACHE_ROOT_FALLBACK_WARNED", False, raising=False)
+
+    def fake_ensure(path: Path) -> bool:
+        return True
+
+    monkeypatch.setattr(paths_mod, "_ensure_writable_dir", fake_ensure)
+    root = resolve_cache_root(PathConfig(tags={}))
+    assert root == primary.resolve()

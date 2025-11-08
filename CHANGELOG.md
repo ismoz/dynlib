@@ -2,6 +2,26 @@
 
 ---
 
+## [2.14.1] – 2025-11-08
+### Added
+- Introduced `Timer` utility in `src/dynlib/utils/timer.py` for measuring execution time.
+- Added `izhikevich_benchmark.py` to observe build and run times with and without JIT and disk
+  caching.
+
+### Changed
+- Enhanced `build` function in `src/dynlib/compiler/build.py` to support warm-up for JIT runners.
+  So `build()` also causes numba compilation instead of lazy compilation after `run()` call.
+- Improved error handling in `src/dynlib/compiler/codegen/runner.py` for disk cache unavailability.
+
+### Fixed
+- Updated `resolve_cache_root` in `src/dynlib/compiler/paths.py` to handle unwritable cache 
+  directories gracefully. Cache root resolution now probes writability and falls back to a temp 
+  directory when the platform default cannot be written to (such as sandboxed environments), 
+  ensuring disk caching actually speeds up repeated builds instead of silently falling back to 
+  in-memory JIT. 
+
+---
+
 ## [2.14.0] – 2025-11-07
 ### Added
 - Introduced opt-in disk-backed runner caching via `build(..., disk_cache=...)`, including

@@ -445,6 +445,8 @@ class _RunnerDiskCache:
             return None
         try:
             return self._import_runner(module_path)
+        except _DiskCacheUnavailable:
+            raise
         except Exception:
             # Corrupt cache: delete and allow rebuild
             self._delete_cache_dir()
@@ -457,6 +459,13 @@ class _RunnerDiskCache:
         module = importlib.util.module_from_spec(spec)
         try:
             spec.loader.exec_module(module)  # type: ignore[attr-defined]
+        except RuntimeError as exc:
+            message = str(exc)
+            if "cannot cache function" in message:
+                raise _DiskCacheUnavailable(
+                    f"Numba cannot cache runner under {module_path.parent}: {message}"
+                ) from exc
+            raise
         except Exception:
             with contextlib.suppress(KeyError):
                 del sys.modules[self.module_name]

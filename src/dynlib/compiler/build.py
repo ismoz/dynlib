@@ -44,6 +44,8 @@ class FullModel:
     model_dtype: np.dtype
 
 _cache = JITCache()
+_stepper_cache: Dict[str, Callable] = {}  # Cache compiled steppers by cache key hash
+
 
 def _structsig_from_struct(struct: StructSpec) -> Tuple[int, ...]:
     return (
@@ -65,6 +67,7 @@ def _structsig_from_stepper(stepper_name: str) -> Tuple[int, ...]:
 def build_callables(spec: ModelSpec, *, stepper_name: str, jit: bool, model_dtype: str = "float64") -> CompiledPieces:
     """
     produce (rhs, events_pre, events_post) with optional JIT.
+    Also caches the stepper if jit=True to avoid recompilation.
     """
     s_hash = compute_spec_hash(spec)
     structsig = _structsig_from_stepper(stepper_name)
@@ -79,6 +82,8 @@ def build_callables(spec: ModelSpec, *, stepper_name: str, jit: bool, model_dtyp
     cached = _cache.get(key)
     if cached is not None and cached.get("jit") == bool(jit):
         tri = cached["triplet"]
+        # Also return cached stepper if available
+        stepper_cached = cached.get("stepper")
         return CompiledPieces(spec, stepper_name, tri[0], tri[1], tri[2], s_hash)
 
     cc: CompiledCallables = emit_rhs_and_events(spec)
@@ -87,6 +92,79 @@ def build_callables(spec: ModelSpec, *, stepper_name: str, jit: bool, model_dtyp
     _cache.put(key, {"triplet": (rhs_j, pre_j, post_j), "jit": bool(jit)})
 
     return CompiledPieces(spec, stepper_name, rhs_j, pre_j, post_j, s_hash)
+
+
+def _warmup_jit_runner(
+    runner: Callable,
+    stepper: Callable,
+    rhs: Callable,
+    events_pre: Callable,
+    events_post: Callable,
+    struct: StructSpec,
+    spec: ModelSpec,
+    model_dtype: str,
+) -> None:
+    """
+    Warm up JIT-compiled runner by calling it once with minimal inputs.
+    This triggers Numba compilation at build time instead of at first runtime call.
+    
+    This warmup ALSO compiles the stepper, rhs, and events functions when they
+    are called by the runner, ensuring everything is warmed up.
+    """
+    from dynlib.runtime.buffers import allocate_pools
+    
+    dtype_np = np.dtype(model_dtype)
+    n_state = len(spec.states)
+    
+    # Allocate minimal banks and buffers for warmup
+    banks, rec, ev = allocate_pools(
+        n_state=n_state,
+        struct=struct,
+        model_dtype=dtype_np,
+        cap_rec=2,      # Minimal capacity
+        cap_evt=1,
+        max_log_width=1,
+    )
+    
+    # Create minimal arrays for warmup call
+    y_curr = np.array(list(spec.state_ic), dtype=dtype_np)
+    y_prev = np.array(list(spec.state_ic), dtype=dtype_np)
+    params = np.array(list(spec.param_vals), dtype=dtype_np)
+    
+    y_prop = np.zeros((n_state,), dtype=dtype_np)
+    t_prop = np.zeros((1,), dtype=dtype_np)
+    dt_next = np.zeros((1,), dtype=dtype_np)
+    err_est = np.zeros((1,), dtype=dtype_np)
+    evt_log_scratch = np.zeros((1,), dtype=dtype_np)
+    
+    user_break_flag = np.zeros((1,), dtype=np.int32)
+    status_out = np.zeros((1,), dtype=np.int32)
+    hint_out = np.zeros((1,), dtype=np.int32)
+    i_out = np.zeros((1,), dtype=np.int64)
+    step_out = np.zeros((1,), dtype=np.int64)
+    t_out = np.zeros((1,), dtype=np.float64)
+    
+    # Warmup call: run for a single tiny step
+    try:
+        runner(
+            0.0, 0.1, 0.1,  # t0, t_end, dt_init
+            100, n_state, 0,  # max_steps, n_state, record_every_step (0 = no recording)
+            y_curr, y_prev, params,
+            banks.sp, banks.ss, banks.sw0, banks.sw1, banks.sw2, banks.sw3,
+            banks.iw0, banks.bw0,
+            y_prop, t_prop, dt_next, err_est,
+            rec.T, rec.Y, rec.STEP, rec.FLAGS,
+            ev.EVT_CODE, ev.EVT_INDEX, ev.EVT_LOG_DATA,
+            evt_log_scratch,
+            np.int64(0), np.int64(0), int(rec.cap_rec), int(ev.cap_evt),
+            user_break_flag, status_out, hint_out,
+            i_out, step_out, t_out,
+            stepper, rhs, events_pre, events_post,
+        )
+    except Exception:
+        # Warmup failure is not critical - the JIT will compile on first real call
+        # This might happen if the model has issues, but those will be caught later
+        pass
 
 
 def load_model_from_uri(
@@ -334,13 +412,25 @@ def build(
     # Build RHS and events
     pieces = build_callables(spec, stepper_name=stepper_name, jit=jit, model_dtype=model_dtype)
     
-    # Generate stepper function (returns a callable)
-    stepper_fn = stepper_spec.emit(pieces.rhs, struct, model_spec=spec)
+    # Check if stepper is cached
+    stepper_cache_key = f"{pieces.spec_hash}:{stepper_name}:{jit}"
+    stepper_fn = _stepper_cache.get(stepper_cache_key)
+    needs_warmup = stepper_fn is None  # Track if we need to warm up
     
-    # Validate stepper if requested (build-time guardrails check)
-    if validate_stepper:
-        issues = validate_stepper_function(stepper_fn, stepper_name, struct_spec=struct)
-        report_validation_issues(issues, stepper_name, strict=False)
+    if stepper_fn is None:
+        # Generate stepper function (returns a callable)
+        stepper_fn = stepper_spec.emit(pieces.rhs, struct, model_spec=spec)
+        
+        # Validate stepper if requested (build-time guardrails check)
+        if validate_stepper:
+            issues = validate_stepper_function(stepper_fn, stepper_name, struct_spec=struct)
+            report_validation_issues(issues, stepper_name, strict=False)
+        
+        # Apply JIT to stepper if enabled (using centralized helper)
+        stepper_fn = jit_compile(stepper_fn, jit=jit)
+        
+        # Cache the compiled stepper
+        _stepper_cache[stepper_cache_key] = stepper_fn
     
     # Get runner function (optionally JIT-compiled)
     if jit and disk_cache:
@@ -354,8 +444,13 @@ def build(
         )
     runner_fn = runner_codegen.get_runner(jit=jit, disk_cache=disk_cache)
     
-    # Apply JIT to stepper if enabled (using centralized helper)
-    stepper_fn = jit_compile(stepper_fn, jit=jit)
+    # Warm up JIT-compiled functions to trigger compilation at build time
+    # Always warmup when jit=True to ensure stepper/rhs/events are compiled
+    if jit:
+        _warmup_jit_runner(
+            runner_fn, stepper_fn, pieces.rhs, pieces.events_pre, pieces.events_post,
+            struct, spec, model_dtype
+        )
     
     dtype_np = np.dtype(model_dtype)
     
