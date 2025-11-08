@@ -2,6 +2,22 @@
 
 ---
 
+## [2.14.2] – 2025-11-08
+### Added
+- Previously only runners were cached. Added disk caching support for stepper and triplet functions
+  in `runner.py`. This way all jittable parts are cached. This improved build times but compilation 
+  cost is unavoidable. Use numba for long simulations or simulations / analyses that call `run()` 
+  repeatedly. Use disk cache only for fixed models.
+
+### Changed
+- Enhanced `build_callables` in `src/dynlib/compiler/build.py` to include disk caching for RHS and 
+  event functions.
+- Improved `emit_rhs_and_events` in `src/dynlib/compiler/codegen/emitter.py` to return source code 
+  for RHS and events.
+- Refactored `jit_compile` in `src/dynlib/compiler/jit/compile.py` to support disk caching.
+
+---
+
 ## [2.14.1] – 2025-11-08
 ### Added
 - Introduced `Timer` utility in `src/dynlib/utils/timer.py` for measuring execution time.

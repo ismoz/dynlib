@@ -59,7 +59,15 @@ from dynlib.runtime.runner_api import (
 # Import centralized JIT compilation helper
 from dynlib.compiler.jit.compile import jit_compile
 
-__all__ = ["runner", "get_runner", "configure_runner_disk_cache"]
+__all__ = [
+    "runner",
+    "get_runner",
+    "configure_runner_disk_cache",
+    "configure_triplet_disk_cache",
+    "configure_stepper_disk_cache",
+    "consume_callable_disk_cache_request",
+    "last_runner_cache_hit",
+]
 
 try:
     import numba  # type: ignore
@@ -313,13 +321,29 @@ class _RunnerDiskCacheRequest:
     cache_root: Path
 
 
+@dataclass(frozen=True)
+class _CallableDiskCacheRequest:
+    family: str            # "triplet" or "stepper"
+    component: str
+    function_name: str
+    spec_hash: str
+    stepper_name: str
+    structsig: Tuple[int, ...]
+    model_dtype: str
+    cache_root: Path
+    source: str
+
+
 class _DiskCacheUnavailable(RuntimeError):
     pass
 
 
 _pending_cache_request: Optional[_RunnerDiskCacheRequest] = None
+_pending_callable_cache_request: Optional[_CallableDiskCacheRequest] = None
 _inproc_runner_cache: Dict[str, Callable] = {}
+_inproc_callable_cache: Dict[Tuple[str, str], Callable] = {}
 _warned_reasons: set[str] = set()
+_last_runner_cache_hit: bool = False
 
 
 def configure_runner_disk_cache(
@@ -348,6 +372,65 @@ def _consume_cache_request() -> Optional[_RunnerDiskCacheRequest]:
     return req
 
 
+def configure_triplet_disk_cache(
+    *,
+    component: str,
+    spec_hash: str,
+    stepper_name: str,
+    structsig: Tuple[int, ...],
+    model_dtype: str,
+    cache_root: Path,
+    source: str,
+    function_name: Optional[str] = None,
+) -> None:
+    """Store disk cache context for the next RHS/events JIT build."""
+    global _pending_callable_cache_request
+    _pending_callable_cache_request = _CallableDiskCacheRequest(
+        family="triplet",
+        component=component,
+        function_name=function_name or component,
+        spec_hash=spec_hash,
+        stepper_name=stepper_name,
+        structsig=tuple(int(x) for x in structsig),
+        model_dtype=str(model_dtype),
+        cache_root=Path(cache_root).expanduser().resolve(),
+        source=source,
+    )
+
+
+def configure_stepper_disk_cache(
+    *,
+    spec_hash: str,
+    stepper_name: str,
+    structsig: Tuple[int, ...],
+    model_dtype: str,
+    cache_root: Path,
+    source: str,
+    function_name: str,
+) -> None:
+    """Store disk cache context for the next stepper JIT build."""
+    global _pending_callable_cache_request
+    _pending_callable_cache_request = _CallableDiskCacheRequest(
+        family="stepper",
+        component="stepper",
+        function_name=function_name,
+        spec_hash=spec_hash,
+        stepper_name=stepper_name,
+        structsig=tuple(int(x) for x in structsig),
+        model_dtype=str(model_dtype),
+        cache_root=Path(cache_root).expanduser().resolve(),
+        source=source,
+    )
+
+
+def consume_callable_disk_cache_request() -> Optional[_CallableDiskCacheRequest]:
+    """Consume pending callable disk cache request (triplet/stepper)."""
+    global _pending_callable_cache_request
+    req = _pending_callable_cache_request
+    _pending_callable_cache_request = None
+    return req
+
+
 def get_runner(*, jit: bool = True, disk_cache: bool = True) -> Callable:
     """
     Get the runner function, optionally JIT-compiled.
@@ -366,15 +449,18 @@ def get_runner(*, jit: bool = True, disk_cache: bool = True) -> Callable:
         - If jit=True and numba not installed: warns and returns pure Python runner
         - If jit=True and numba installed but compilation fails: raises RuntimeError
     """
+    global _last_runner_cache_hit
+    _last_runner_cache_hit = False
+
     if not jit:
         return runner
 
     if not disk_cache:
-        return jit_compile(runner, jit=True)
+        return jit_compile(runner, jit=True).fn
 
     if not _NUMBA_AVAILABLE:
         # No disk cache support without numba
-        return jit_compile(runner, jit=True)
+        return jit_compile(runner, jit=True).fn
 
     request = _consume_cache_request()
     if request is None:
@@ -384,11 +470,13 @@ def get_runner(*, jit: bool = True, disk_cache: bool = True) -> Callable:
 
     cache = _RunnerDiskCache(request)
     try:
-        cached = cache.get_or_build()
+        cached, from_disk = cache.get_or_build()
+        _last_runner_cache_hit = from_disk
         return cached
     except _DiskCacheUnavailable as exc:
         _warn_disk_cache_disabled(str(exc))
-        return jit_compile(runner, jit=True)
+        _last_runner_cache_hit = False
+        return jit_compile(runner, jit=True).fn
 
 
 class _RunnerDiskCache:
@@ -412,32 +500,34 @@ class _RunnerDiskCache:
         )
         self.module_name = f"dynlib_runner_{self.digest}"
 
-    def get_or_build(self) -> Callable:
+    def get_or_build(self) -> Tuple[Callable, bool]:
         cached = _inproc_runner_cache.get(self.digest)
         module_path = self.cache_dir / "runner_mod.py"
         if cached is not None:
             if module_path.exists():
-                return cached
+                return cached, True
             # Disk copy missing for this root: attempt to materialize, but keep
             # using the already-compiled in-process runner instance.
             self._materialize()
-            return cached
-        runner_fn = self._load_or_build()
+            return cached, False
+        runner_fn, from_disk = self._load_or_build()
         _inproc_runner_cache[self.digest] = runner_fn
-        return runner_fn
+        return runner_fn, from_disk
 
-    def _load_or_build(self) -> Callable:
+    def _load_or_build(self) -> Tuple[Callable, bool]:
         regen_attempted = False
+        built = False
         while True:
             runner_fn = self._try_import()
             if runner_fn is not None:
-                return runner_fn
+                return runner_fn, not built
             if regen_attempted:
                 raise _DiskCacheUnavailable(
                     f"runner cache at {self.cache_dir} is corrupt and could not be rebuilt"
                 )
             self._materialize()
             regen_attempted = True
+            built = True
 
     def _try_import(self) -> Optional[Callable]:
         module_path = self.cache_dir / "runner_mod.py"
@@ -559,6 +649,308 @@ class _RunnerDiskCache:
         }
 
 
+class JitTripletCache:
+    def __init__(self, request: _CallableDiskCacheRequest):
+        self.request = request
+        self.component = request.component
+        self.function_name = request.function_name
+        self.source = request.source
+        self.stepper_token = _sanitize_token(request.stepper_name)
+        self.dtype_token = _dtype_token(request.model_dtype)
+        self.platform_token = _platform_triple()
+        self.payload = self._build_digest_payload()
+        self.digest = _hash_payload(self.payload)
+        shard = self.digest[:2]
+        self.cache_dir = (
+            request.cache_root
+            / "jit"
+            / "triplets"
+            / self.stepper_token
+            / self.dtype_token
+            / self.platform_token
+            / shard
+            / self.digest
+        )
+        self.module_name = f"dynlib_{self.component}_{self.digest}"
+
+    def get_or_build(self) -> Tuple[Callable, str, bool]:
+        key = (self.component, self.digest)
+        module_path = self._module_path()
+        cached = _inproc_callable_cache.get(key)
+        if cached is not None and module_path.exists():
+            return cached, self.digest, True
+        fn, hit = self._load_or_build(module_path)
+        _inproc_callable_cache[key] = fn
+        return fn, self.digest, hit
+
+    def _module_path(self) -> Path:
+        return self.cache_dir / f"{self.component}_mod.py"
+
+    def _load_or_build(self, module_path: Path) -> Tuple[Callable, bool]:
+        regen_attempted = False
+        built = False
+        while True:
+            fn = self._try_import(module_path)
+            if fn is not None:
+                return fn, not built
+            if regen_attempted:
+                raise _DiskCacheUnavailable(
+                    f"{self.component} cache at {self.cache_dir} is corrupt and could not be rebuilt"
+                )
+            self._materialize(module_path)
+            regen_attempted = True
+            built = True
+
+    def _try_import(self, module_path: Path) -> Optional[Callable]:
+        if not module_path.exists():
+            return None
+        spec = importlib.util.spec_from_file_location(self.module_name, module_path)
+        if spec is None or spec.loader is None:
+            self._delete_cache_dir()
+            return None
+        module = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(module)  # type: ignore[attr-defined]
+        except Exception:
+            with contextlib.suppress(KeyError):
+                del sys.modules[self.module_name]
+            self._delete_cache_dir()
+            return None
+        sys.modules[self.module_name] = module
+        fn = getattr(module, self.function_name, None)
+        if fn is None:
+            self._delete_cache_dir()
+            return None
+        return fn
+
+    def _materialize(self, module_path: Path) -> None:
+        parent = self.cache_dir.parent
+        try:
+            parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise _DiskCacheUnavailable(
+                f"cannot create cache directory {parent}: {exc}"
+            ) from exc
+
+        lock_path = parent / f".{self.cache_dir.name}.lock"
+        lock = _CacheLock(lock_path)
+        acquired = lock.acquire()
+        try:
+            if not acquired and self._wait_for_existing_builder(module_path):
+                return
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            tmp_path = module_path.with_suffix(f".tmp-{uuid.uuid4().hex[:8]}")
+            try:
+                rendered = _render_callable_module_source(self.source, self.function_name)
+                tmp_path.write_text(rendered, encoding="utf-8")
+                tmp_path.replace(module_path)
+            finally:
+                with contextlib.suppress(FileNotFoundError):
+                    tmp_path.unlink()
+            self._write_metadata(self.component)
+        except OSError as exc:
+            raise _DiskCacheUnavailable(
+                f"failed to materialize callable cache at {self.cache_dir}: {exc}"
+            ) from exc
+        finally:
+            lock.release()
+
+    def _wait_for_existing_builder(self, module_path: Path, timeout: float = 5.0) -> bool:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if module_path.exists():
+                return True
+            time.sleep(0.05)
+        return False
+
+    def _write_metadata(self, component: str) -> None:
+        meta_path = self.cache_dir / "meta.json"
+        components: set[str] = set()
+        if meta_path.exists():
+            try:
+                existing = json.loads(meta_path.read_text(encoding="utf-8"))
+                for entry in existing.get("components", []):
+                    if isinstance(entry, str):
+                        components.add(entry)
+            except Exception:
+                components = set()
+        components.add(component)
+        payload = {
+            "hash": self.digest,
+            "inputs": self.payload,
+            "components": sorted(components),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        meta_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    def _delete_cache_dir(self) -> None:
+        if not self.cache_dir.exists():
+            return
+        tombstone = self.cache_dir.with_name(
+            f"{self.cache_dir.name}.corrupt-{uuid.uuid4().hex[:6]}"
+        )
+        try:
+            self.cache_dir.replace(tombstone)
+        except OSError:
+            shutil.rmtree(self.cache_dir, ignore_errors=True)
+            return
+        shutil.rmtree(tombstone, ignore_errors=True)
+
+    def _build_digest_payload(self) -> Dict[str, object]:
+        return {
+            "spec_hash": self.request.spec_hash,
+            "stepper": self.request.stepper_name,
+            "structsig": list(self.request.structsig),
+            "model_dtype": _canonical_dtype_name(self.request.model_dtype),
+            "env": _gather_env_pins(self.platform_token),
+        }
+
+
+class _StepperDiskCache:
+    def __init__(self, request: _CallableDiskCacheRequest):
+        self.request = request
+        self.function_name = request.function_name
+        self.source = request.source
+        self.stepper_token = _sanitize_token(request.stepper_name)
+        self.dtype_token = _dtype_token(request.model_dtype)
+        self.platform_token = _platform_triple()
+        self.payload = self._build_digest_payload()
+        self.digest = _hash_payload(self.payload)
+        shard = self.digest[:2]
+        self.cache_dir = (
+            request.cache_root
+            / "jit"
+            / "steppers"
+            / self.stepper_token
+            / self.dtype_token
+            / self.platform_token
+            / shard
+            / self.digest
+        )
+        self.module_name = f"dynlib_stepper_{self.digest}"
+
+    def get_or_build(self) -> Tuple[Callable, str, bool]:
+        key = ("stepper", self.digest)
+        module_path = self._module_path()
+        cached = _inproc_callable_cache.get(key)
+        if cached is not None and module_path.exists():
+            return cached, self.digest, True
+        fn, hit = self._load_or_build(module_path)
+        _inproc_callable_cache[key] = fn
+        return fn, self.digest, hit
+
+    def _module_path(self) -> Path:
+        return self.cache_dir / "stepper_mod.py"
+
+    def _load_or_build(self, module_path: Path) -> Tuple[Callable, bool]:
+        regen_attempted = False
+        built = False
+        while True:
+            fn = self._try_import(module_path)
+            if fn is not None:
+                return fn, not built
+            if regen_attempted:
+                raise _DiskCacheUnavailable(
+                    f"stepper cache at {self.cache_dir} is corrupt and could not be rebuilt"
+                )
+            self._materialize(module_path)
+            regen_attempted = True
+            built = True
+
+    def _try_import(self, module_path: Path) -> Optional[Callable]:
+        if not module_path.exists():
+            return None
+        spec = importlib.util.spec_from_file_location(self.module_name, module_path)
+        if spec is None or spec.loader is None:
+            self._delete_cache_dir()
+            return None
+        module = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(module)  # type: ignore[attr-defined]
+        except Exception:
+            with contextlib.suppress(KeyError):
+                del sys.modules[self.module_name]
+            self._delete_cache_dir()
+            return None
+        sys.modules[self.module_name] = module
+        fn = getattr(module, "stepper", None)
+        if fn is None:
+            self._delete_cache_dir()
+            return None
+        return fn
+
+    def _materialize(self, module_path: Path) -> None:
+        parent = self.cache_dir.parent
+        try:
+            parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise _DiskCacheUnavailable(
+                f"cannot create cache directory {parent}: {exc}"
+            ) from exc
+
+        lock_path = parent / f".{self.cache_dir.name}.lock"
+        lock = _CacheLock(lock_path)
+        acquired = lock.acquire()
+        try:
+            if not acquired and self._wait_for_existing_builder(module_path):
+                return
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            tmp_path = module_path.with_suffix(f".tmp-{uuid.uuid4().hex[:8]}")
+            try:
+                rendered = _render_stepper_module_source(self.source, self.function_name)
+                tmp_path.write_text(rendered, encoding="utf-8")
+                tmp_path.replace(module_path)
+            finally:
+                with contextlib.suppress(FileNotFoundError):
+                    tmp_path.unlink()
+            self._write_metadata()
+        except OSError as exc:
+            raise _DiskCacheUnavailable(
+                f"failed to materialize stepper cache at {self.cache_dir}: {exc}"
+            ) from exc
+        finally:
+            lock.release()
+
+    def _wait_for_existing_builder(self, module_path: Path, timeout: float = 5.0) -> bool:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if module_path.exists():
+                return True
+            time.sleep(0.05)
+        return False
+
+    def _write_metadata(self) -> None:
+        meta_path = self.cache_dir / "meta.json"
+        payload = {
+            "hash": self.digest,
+            "inputs": self.payload,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        meta_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    def _delete_cache_dir(self) -> None:
+        if not self.cache_dir.exists():
+            return
+        tombstone = self.cache_dir.with_name(
+            f"{self.cache_dir.name}.corrupt-{uuid.uuid4().hex[:6]}"
+        )
+        try:
+            self.cache_dir.replace(tombstone)
+        except OSError:
+            shutil.rmtree(self.cache_dir, ignore_errors=True)
+            return
+        shutil.rmtree(tombstone, ignore_errors=True)
+
+    def _build_digest_payload(self) -> Dict[str, object]:
+        return {
+            "spec_hash": self.request.spec_hash,
+            "stepper": self.request.stepper_name,
+            "structsig": list(self.request.structsig),
+            "model_dtype": _canonical_dtype_name(self.request.model_dtype),
+            "env": _gather_env_pins(self.platform_token),
+        }
+
+
 class _CacheLock:
     def __init__(self, path: Path):
         self.path = path
@@ -607,6 +999,43 @@ def _render_runner_module_source() -> str:
         """
     ).strip()
     return f"{header}\n\n{decorated}\n"
+
+
+def _render_callable_module_source(source: str, function_name: str) -> str:
+    body = textwrap.dedent(source).strip()
+    header = "\n".join(
+        [
+            "# Auto-generated by dynlib.compiler.codegen.runner (triplet cache)",
+            "from __future__ import annotations",
+            "from numba import njit",
+        ]
+    )
+    footer = [
+        f"_{function_name}_py = {function_name}",
+        f"{function_name} = njit(cache=True)(_{function_name}_py)",
+        f"__all__ = [\"{function_name}\"]",
+    ]
+    sections = [header, body, "\n".join(footer)]
+    return "\n\n".join(part for part in sections if part).strip() + "\n"
+
+
+def _render_stepper_module_source(source: str, function_name: str) -> str:
+    body = textwrap.dedent(source).strip()
+    header = "\n".join(
+        [
+            "# Auto-generated by dynlib.compiler.codegen.runner (stepper cache)",
+            "from __future__ import annotations",
+            "from numba import njit",
+            "from dynlib.runtime.runner_api import OK, STEPFAIL, NAN_DETECTED",
+        ]
+    )
+    footer = [
+        f"_stepper_py = {function_name}",
+        "stepper = njit(cache=True)(_stepper_py)",
+        "__all__ = [\"stepper\"]",
+    ]
+    sections = [header, body, "\n".join(footer)]
+    return "\n\n".join(part for part in sections if part).strip() + "\n"
 
 
 def _platform_triple() -> str:
@@ -671,3 +1100,7 @@ def _warn_disk_cache_disabled(reason: str) -> None:
         RuntimeWarning,
         stacklevel=3,
     )
+
+
+def last_runner_cache_hit() -> bool:
+    return _last_runner_cache_hit

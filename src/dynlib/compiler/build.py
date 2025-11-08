@@ -28,6 +28,8 @@ class CompiledPieces:
     events_pre: callable
     events_post: callable
     spec_hash: str
+    triplet_digest: Optional[str] = None
+    triplet_from_disk: bool = False
 
 @dataclass(frozen=True)
 class FullModel:
@@ -43,8 +45,20 @@ class FullModel:
     spec_hash: str
     model_dtype: np.dtype
 
+@dataclass
+class _StepperCacheEntry:
+    fn: Callable
+    digest: Optional[str]
+    from_disk: bool
+
+
 _cache = JITCache()
-_stepper_cache: Dict[str, Callable] = {}  # Cache compiled steppers by cache key hash
+_stepper_cache: Dict[str, _StepperCacheEntry] = {}
+
+
+def _dispatcher_compiled(fn: Callable) -> bool:
+    signatures = getattr(fn, "signatures", None)
+    return bool(signatures)
 
 
 def _structsig_from_struct(struct: StructSpec) -> Tuple[int, ...]:
@@ -64,7 +78,67 @@ def _structsig_from_stepper(stepper_name: str) -> Tuple[int, ...]:
     spec = get_stepper(stepper_name).struct_spec()
     return _structsig_from_struct(spec)
 
-def build_callables(spec: ModelSpec, *, stepper_name: str, jit: bool, model_dtype: str = "float64") -> CompiledPieces:
+
+class _TripletCacheContext:
+    def __init__(
+        self,
+        *,
+        spec_hash: str,
+        stepper_name: str,
+        structsig: Tuple[int, ...],
+        model_dtype: str,
+        cache_root: Path,
+        sources: Dict[str, str],
+    ):
+        self.spec_hash = spec_hash
+        self.stepper_name = stepper_name
+        self.structsig = structsig
+        self.model_dtype = model_dtype
+        self.cache_root = cache_root
+        self.sources = sources
+
+    def configure(self, component: str) -> None:
+        source = self.sources.get(component)
+        if source is None:
+            raise RuntimeError(f"No source available for component '{component}'")
+        runner_codegen.configure_triplet_disk_cache(
+            component=component,
+            spec_hash=self.spec_hash,
+            stepper_name=self.stepper_name,
+            structsig=self.structsig,
+            model_dtype=self.model_dtype,
+            cache_root=self.cache_root,
+            source=source,
+            function_name=component,
+        )
+
+
+def _render_stepper_source(stepper_fn: Callable) -> str:
+    import inspect
+    import textwrap
+
+    source = textwrap.dedent(inspect.getsource(stepper_fn)).strip()
+    freevars = stepper_fn.__code__.co_freevars
+    closure = stepper_fn.__closure__ or ()
+    assignments = []
+    for name, cell in zip(freevars, closure):
+        value = cell.cell_contents
+        assignments.append(f"{name} = {repr(value)}")
+    prefix = "\n".join(assignments)
+    if prefix:
+        return f"{prefix}\n\n{source}\n"
+    return f"{source}\n"
+
+
+def build_callables(
+    spec: ModelSpec,
+    *,
+    stepper_name: str,
+    jit: bool,
+    model_dtype: str = "float64",
+    cache_root: Optional[Path] = None,
+    disk_cache: bool = True,
+) -> CompiledPieces:
     """
     produce (rhs, events_pre, events_post) with optional JIT.
     Also caches the stepper if jit=True to avoid recompilation.
@@ -82,16 +156,70 @@ def build_callables(spec: ModelSpec, *, stepper_name: str, jit: bool, model_dtyp
     cached = _cache.get(key)
     if cached is not None and cached.get("jit") == bool(jit):
         tri = cached["triplet"]
-        # Also return cached stepper if available
-        stepper_cached = cached.get("stepper")
-        return CompiledPieces(spec, stepper_name, tri[0], tri[1], tri[2], s_hash)
+        meta = cached.get("triplet_meta", {})
+        return CompiledPieces(
+            spec,
+            stepper_name,
+            tri[0],
+            tri[1],
+            tri[2],
+            s_hash,
+            triplet_digest=meta.get("digest"),
+            triplet_from_disk=meta.get("from_disk", False),
+        )
 
     cc: CompiledCallables = emit_rhs_and_events(spec)
-    rhs_j, pre_j, post_j = maybe_jit_triplet(cc.rhs, cc.events_pre, cc.events_post, jit=jit)
+    use_disk_cache = bool(jit and disk_cache and cache_root is not None)
 
-    _cache.put(key, {"triplet": (rhs_j, pre_j, post_j), "jit": bool(jit)})
+    cache_context = None
+    if use_disk_cache:
+        assert cache_root is not None
+        cache_context = _TripletCacheContext(
+            spec_hash=s_hash,
+            stepper_name=stepper_name,
+            structsig=structsig,
+            model_dtype=model_dtype,
+            cache_root=cache_root,
+            sources={
+                "rhs": cc.rhs_source,
+                "events_pre": cc.events_pre_source,
+                "events_post": cc.events_post_source,
+            },
+        )
 
-    return CompiledPieces(spec, stepper_name, rhs_j, pre_j, post_j, s_hash)
+    rhs_art, pre_art, post_art = maybe_jit_triplet(
+        cc.rhs,
+        cc.events_pre,
+        cc.events_post,
+        jit=jit,
+        cache=use_disk_cache,
+        cache_setup=cache_context.configure if cache_context else None,
+    )
+
+    triplet_digest = rhs_art.cache_digest or pre_art.cache_digest or post_art.cache_digest
+    triplet_from_disk = rhs_art.cache_hit and pre_art.cache_hit and post_art.cache_hit
+
+    rhs_fn, pre_fn, post_fn = rhs_art.fn, pre_art.fn, post_art.fn
+
+    _cache.put(
+        key,
+        {
+            "triplet": (rhs_fn, pre_fn, post_fn),
+            "jit": bool(jit),
+            "triplet_meta": {"digest": triplet_digest, "from_disk": triplet_from_disk},
+        },
+    )
+
+    return CompiledPieces(
+        spec,
+        stepper_name,
+        rhs_fn,
+        pre_fn,
+        post_fn,
+        s_hash,
+        triplet_digest=triplet_digest,
+        triplet_from_disk=triplet_from_disk,
+    )
 
 
 def _warmup_jit_runner(
@@ -408,45 +536,73 @@ def build(
     
     struct = stepper_spec.struct_spec()
     structsig = _structsig_from_struct(struct)
+
+    cache_root_path: Optional[Path] = None
+    if jit and disk_cache:
+        cache_root_path = resolve_cache_root(config_in_use)
     
     # Build RHS and events
-    pieces = build_callables(spec, stepper_name=stepper_name, jit=jit, model_dtype=model_dtype)
+    pieces = build_callables(
+        spec,
+        stepper_name=stepper_name,
+        jit=jit,
+        model_dtype=model_dtype,
+        cache_root=cache_root_path,
+        disk_cache=disk_cache,
+    )
     
-    # Check if stepper is cached
     stepper_cache_key = f"{pieces.spec_hash}:{stepper_name}:{jit}"
-    stepper_fn = _stepper_cache.get(stepper_cache_key)
-    needs_warmup = stepper_fn is None  # Track if we need to warm up
+    stepper_entry = _stepper_cache.get(stepper_cache_key)
+    stepper_from_disk = False
     
-    if stepper_fn is None:
-        # Generate stepper function (returns a callable)
-        stepper_fn = stepper_spec.emit(pieces.rhs, struct, model_spec=spec)
+    if stepper_entry is None:
+        stepper_py = stepper_spec.emit(pieces.rhs, struct, model_spec=spec)
         
-        # Validate stepper if requested (build-time guardrails check)
         if validate_stepper:
-            issues = validate_stepper_function(stepper_fn, stepper_name, struct_spec=struct)
+            issues = validate_stepper_function(stepper_py, stepper_name, struct_spec=struct)
             report_validation_issues(issues, stepper_name, strict=False)
         
-        # Apply JIT to stepper if enabled (using centralized helper)
-        stepper_fn = jit_compile(stepper_fn, jit=jit)
-        
-        # Cache the compiled stepper
-        _stepper_cache[stepper_cache_key] = stepper_fn
+        stepper_source = _render_stepper_source(stepper_py)
+        stepper_disk_cache = bool(jit and disk_cache and cache_root_path is not None)
+        if stepper_disk_cache and cache_root_path is not None:
+            runner_codegen.configure_stepper_disk_cache(
+                spec_hash=pieces.spec_hash,
+                stepper_name=stepper_name,
+                structsig=structsig,
+                model_dtype=model_dtype,
+                cache_root=cache_root_path,
+                source=stepper_source,
+                function_name=stepper_py.__name__,
+            )
+        compiled = jit_compile(stepper_py, jit=jit, cache=stepper_disk_cache)
+        stepper_entry = _StepperCacheEntry(
+            fn=compiled.fn,
+            digest=compiled.cache_digest,
+            from_disk=compiled.cache_hit,
+        )
+        _stepper_cache[stepper_cache_key] = stepper_entry
+    
+    stepper_fn = stepper_entry.fn
+    stepper_from_disk = stepper_entry.from_disk
     
     # Get runner function (optionally JIT-compiled)
-    if jit and disk_cache:
-        cache_root = resolve_cache_root(config_in_use)
+    if jit and disk_cache and cache_root_path is not None:
         runner_codegen.configure_runner_disk_cache(
             spec_hash=pieces.spec_hash,
             stepper_name=stepper_name,
             structsig=structsig,
             model_dtype=model_dtype,
-            cache_root=cache_root,
+            cache_root=cache_root_path,
         )
     runner_fn = runner_codegen.get_runner(jit=jit, disk_cache=disk_cache)
     
-    # Warm up JIT-compiled functions to trigger compilation at build time
-    # Always warmup when jit=True to ensure stepper/rhs/events are compiled
-    if jit:
+    def _all_compiled() -> bool:
+        return all(
+            _dispatcher_compiled(obj)
+            for obj in (runner_fn, stepper_fn, pieces.rhs, pieces.events_pre, pieces.events_post)
+        )
+
+    if jit and not _all_compiled():
         _warmup_jit_runner(
             runner_fn, stepper_fn, pieces.rhs, pieces.events_pre, pieces.events_post,
             struct, spec, model_dtype

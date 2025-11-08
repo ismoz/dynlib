@@ -18,6 +18,9 @@ class CompiledCallables:
     rhs: Callable
     events_pre: Callable
     events_post: Callable
+    rhs_source: str
+    events_pre_source: str
+    events_post_source: str
 
 def _state_param_maps(spec: ModelSpec) -> Tuple[Dict[str, int], Dict[str, int]]:
     s2i = {name: i for i, name in enumerate(spec.states)}
@@ -141,9 +144,10 @@ def _compile_rhs(spec: ModelSpec, nmap: NameMaps):
         type_ignores=[],
     )
     ast.fix_missing_locations(mod)
+    module_source = ast.unparse(mod)
     ns: Dict[str, object] = {}
     exec(compile(mod, "<dsl-rhs>", "exec"), ns, ns)
-    return ns["rhs"]
+    return ns["rhs"], module_source
 
 def _legal_lhs(name: str, spec: ModelSpec) -> Tuple[str, int, str]:
     if name in spec.states:
@@ -312,14 +316,22 @@ def _emit_events_function(spec: ModelSpec, phase: str, nmap: NameMaps):
         type_ignores=[],
     )
     ast.fix_missing_locations(mod)
+    module_source = ast.unparse(mod)
     ns: Dict[str, object] = {}
     exec(compile(mod, f"<dsl-events-{phase}>", "exec"), ns, ns)
-    return ns[f"events_{phase}"]
+    return ns[f"events_{phase}"], module_source
 
 def emit_rhs_and_events(spec: ModelSpec) -> CompiledCallables:
     nmap = _build_name_maps(spec)
-    rhs = _compile_rhs(spec, nmap)
-    events_pre = _emit_events_function(spec, "pre", nmap)
-    events_post = _emit_events_function(spec, "post", nmap)
+    rhs_fn, rhs_src = _compile_rhs(spec, nmap)
+    events_pre_fn, events_pre_src = _emit_events_function(spec, "pre", nmap)
+    events_post_fn, events_post_src = _emit_events_function(spec, "post", nmap)
 
-    return CompiledCallables(rhs=rhs, events_pre=events_pre, events_post=events_post)
+    return CompiledCallables(
+        rhs=rhs_fn,
+        events_pre=events_pre_fn,
+        events_post=events_post_fn,
+        rhs_source=rhs_src,
+        events_pre_source=events_pre_src,
+        events_post_source=events_post_src,
+    )

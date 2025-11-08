@@ -39,5 +39,5 @@ sim.run(t_end=600.0, dt=0.01, cap_rec=10000)
 
 res = sim.results()
 
-series.plot(x=res.t, y=res["v"], label="Membrane Potential (v)")
+series.plot(x=res.t, y=res["v"], title="Membrane Potential (v)")
 export.show()
