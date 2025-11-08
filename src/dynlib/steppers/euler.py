@@ -7,6 +7,7 @@ First real stepper. Minimal StructSpec (mostly size-1 banks).
 from __future__ import annotations
 import ast
 from typing import TYPE_CHECKING
+import numpy as np
 
 from .base import StepperMeta, StructSpec
 from dynlib.runtime.runner_api import OK, NAN_DETECTED
@@ -65,6 +66,18 @@ class EulerSpec:
             stiff_ok=False,
         )
 
+    def config_spec(self) -> type | None:
+        """Euler has no runtime-configurable parameters."""
+        return None
+    
+    def default_config(self, model_spec=None):
+        """Euler has no config."""
+        return None
+    
+    def pack_config(self, config) -> np.ndarray:
+        """Euler has no config - return empty array."""
+        return np.array([], dtype=np.float64)
+
     def emit(self, rhs_fn: Callable, struct: StructSpec, model_spec=None) -> Callable:
         """
         Generate a jittable Euler stepper function.
@@ -77,6 +90,7 @@ class EulerSpec:
                 sp: float[:], ss: float[:],
                 sw0: float[:], sw1: float[:], sw2: float[:], sw3: float[:],
                 iw0: int32[:], bw0: uint8[:],
+                stepper_config: float64[:],
                 y_prop: float[:], t_prop: float[:], dt_next: float[:], err_est: float[:]
             ) -> int32
         
@@ -92,9 +106,11 @@ class EulerSpec:
             sp, ss,
             sw0, sw1, sw2, sw3,
             iw0, bw0,
+            stepper_config,
             y_prop, t_prop, dt_next, err_est
         ):
             # Euler: y_prop = y_curr + dt * f(t, y_curr)
+            # stepper_config is ignored (Euler has no runtime config)
             n = y_curr.size
             
             # Use sw0 as scratch for dy (RHS evaluation)

@@ -2,6 +2,42 @@
 
 ---
 
+## [2.15.0] – 2025-11-09
+### Added
+- Introduced runtime stepper configuration system. Now steppers can declare their internal config 
+  values. During build process a read-only struct buffer is filled to pass these values into the 
+  steppers. `Sim.run()` can pass these values at runtime. If not provifed, then model [sim] defaults 
+  are used. If it is also not present, then internal defaults of the stepper are used. Here are the 
+  details:
+  - `config_spec()`: Returns dataclass type or None for stepper configuration.
+  - `default_config(model_spec)`: Creates default configuration with model-specific overrides.
+  - `pack_config(config)`: Packs configuration into a float64 array.
+- Added `stepper_config` parameter to `runner` ABI in `src/dynlib/runtime/runner_api.py`.
+- Enhanced `Sim.run()` in `src/dynlib/runtime/sim.py` to accept `**stepper_kwargs` for runtime 
+  overrides.
+- Added `RK45Config` dataclass in `src/dynlib/steppers/rk45.py` with runtime parameters:
+  - `atol`, `rtol` (tolerances)
+  - `safety`, `min_factor`, `max_factor` (step control)
+  - `max_tries`, `min_step` (failure thresholds)
+- Added `_build_stepper_config()` in `Sim` to construct stepper configuration arrays.
+
+### Changed
+- Updated `run_with_wrapper` in `src/dynlib/runtime/wrapper.py` to pass `stepper_config` to the 
+  runner.
+- Enhanced `_warmup_jit_runner` in `src/dynlib/compiler/build.py` to initialize `stepper_config` 
+  during warmup.
+- Refactored `RK45Spec` in `src/dynlib/steppers/rk45.py` to use `RK45Config` for runtime 
+  configuration.
+- Updated `runner` in `src/dynlib/compiler/codegen/runner.py` to accept `stepper_config` as a 
+  parameter.
+- Modified `EulerSpec` and `RK4Spec` to return `None` for `config_spec()` and handle empty 
+  configurations gracefully.
+
+### Tests
+- Added tests for runtime stepper configuration in `tests/unit/test_stepper_config.py`.
+
+---
+
 ## [2.14.2] – 2025-11-08
 ### Added
 - Previously only runners were cached. Added disk caching support for stepper and triplet functions

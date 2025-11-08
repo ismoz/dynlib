@@ -125,6 +125,8 @@ def runner(
     sp, ss,
     sw0, sw1, sw2, sw3,
     iw0, bw0,
+    # stepper configuration (read-only)
+    stepper_config,
     # proposals/outs (len-1 arrays where applicable)
     y_prop, t_prop, dt_next, err_est,
     # recording
@@ -228,6 +230,7 @@ def runner(
         step_status = stepper(
             t, dt, y_curr, rhs, params,
             sp, ss, sw0, sw1, sw2, sw3, iw0, bw0,
+            stepper_config,
             y_prop, t_prop, dt_next, err_est
         )
         

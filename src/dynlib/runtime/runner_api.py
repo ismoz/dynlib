@@ -60,6 +60,9 @@ class RunnerABI:
     iw0: str = "int32[:]"
     bw0: str = "uint8[:]"
 
+    # Stepper configuration (read-only; float64)
+    stepper_config: str = "float64[:]"
+
     # Proposals/outs (len-1 arrays; model dtype for t_prop/dt_next/err_est)
     y_prop: str = "model_dtype[:]"        # length = n_state
     t_prop: str = "model_dtype[1]"
@@ -114,6 +117,8 @@ runner(
   sp: model_dtype[:], ss: model_dtype[:],
   sw0: model_dtype[:], sw1: model_dtype[:], sw2: model_dtype[:], sw3: model_dtype[:],
   iw0: int32[:], bw0: uint8[:],
+  # stepper configuration (read-only)
+  stepper_config: float64[:],
   # proposals/outs (len-1 arrays where applicable)
   y_prop: model_dtype[:], t_prop: model_dtype[1], dt_next: model_dtype[1], err_est: model_dtype[1],
   # recording
@@ -135,7 +140,8 @@ Internal (no exit): OK=0 (step accepted, runner continues).
 
 Rules:
 - Runner performs capacity checks, pre/post events, commit & record, then exits only with the codes above.
-- Stepper reads t, dt, y_curr, params, sp, ss; writes y_prop, t_prop[0], dt_next[0], err_est[0]; may mutate ss.
+- Stepper reads t, dt, y_curr, params, sp, ss, stepper_config; writes y_prop, t_prop[0], dt_next[0], err_est[0]; may mutate ss.
+- stepper_config is a read-only float64 array containing runtime configuration (packed from stepper's config dataclass).
 - RHS: rhs(t: float64, y_vec: model_dtype[:], dy_out: model_dtype[:], params: model_dtype[:] | int64[:]) -> None.
 - Events: events_phase(t, y_vec, params, evt_log_scratch) -> (event_code: int32, log_width: int32)
   - event_code: -1 if no event fired, else unique event identifier (0, 1, 2...)

@@ -6,7 +6,9 @@ Adaptive RK method with embedded error estimation.
 Uses internal accept/reject loop until step is accepted or fails.
 """
 from __future__ import annotations
+from dataclasses import dataclass, fields
 from typing import TYPE_CHECKING
+import numpy as np
 
 from .base import StepperMeta, StructSpec
 from dynlib.runtime.runner_api import OK, NAN_DETECTED, STEPFAIL
@@ -14,7 +16,19 @@ from dynlib.runtime.runner_api import OK, NAN_DETECTED, STEPFAIL
 if TYPE_CHECKING:
     from typing import Callable
 
-__all__ = ["RK45Spec"]
+__all__ = ["RK45Spec", "RK45Config"]
+
+
+@dataclass
+class RK45Config:
+    """Runtime configuration for RK45 stepper."""
+    atol: float = 1e-8
+    rtol: float = 1e-5
+    safety: float = 0.9
+    min_factor: float = 0.2
+    max_factor: float = 10.0
+    max_tries: int = 10
+    min_step: float = 1e-12
 
 
 class RK45Spec:
@@ -73,12 +87,82 @@ class RK45Spec:
             stiff_ok=False,
         )
 
+    def config_spec(self) -> type:
+        """Return RK45Config dataclass for runtime configuration."""
+        return RK45Config
+    
+    def default_config(self, model_spec=None) -> RK45Config:
+        """
+        Create default RK45 config, optionally reading from model_spec.
+        
+        Args:
+            model_spec: Optional ModelSpec to read atol/rtol from
+        
+        Returns:
+            RK45Config instance with defaults
+        """
+        config = RK45Config()
+        
+        # Override from model_spec if available
+        if model_spec is not None:
+            import dataclasses
+            updates = {}
+            if hasattr(model_spec.sim, 'atol'):
+                updates['atol'] = float(model_spec.sim.atol)
+            if hasattr(model_spec.sim, 'rtol'):
+                updates['rtol'] = float(model_spec.sim.rtol)
+            
+            if updates:
+                config = dataclasses.replace(config, **updates)
+        
+        return config
+    
+    def pack_config(self, config: RK45Config | None) -> np.ndarray:
+        """
+        Pack RK45Config into float64 array.
+        
+        Layout (7 floats):
+            [0] atol
+            [1] rtol
+            [2] safety
+            [3] min_factor
+            [4] max_factor
+            [5] max_tries (as float)
+            [6] min_step
+        
+        Args:
+            config: RK45Config instance (or None)
+        
+        Returns:
+            float64 array with packed values
+        """
+        if config is None:
+            config = RK45Config()
+        
+        return np.array([
+            config.atol,
+            config.rtol,
+            config.safety,
+            config.min_factor,
+            config.max_factor,
+            float(config.max_tries),
+            config.min_step,
+        ], dtype=np.float64)
+
     def emit(self, rhs_fn: Callable, struct: StructSpec, model_spec=None) -> Callable:
         """
         Generate a jittable RK45 stepper function with adaptive stepping.
         
-        Tolerances are extracted from model_spec.sim.atol and model_spec.sim.rtol
-        if provided, otherwise defaults to atol=1e-8, rtol=1e-5.
+        Runtime configuration is passed via stepper_config array (7 floats):
+            [0] atol
+            [1] rtol
+            [2] safety
+            [3] min_factor
+            [4] max_factor
+            [5] max_tries (as float)
+            [6] min_step
+        
+        If stepper_config is empty or all zeros, defaults are used from closure.
         
         Signature (per ABI):
             status = stepper(
@@ -88,6 +172,7 @@ class RK45Spec:
                 sp: float[:], ss: float[:],
                 sw0: float[:], sw1: float[:], sw2: float[:], sw3: float[:],
                 iw0: int32[:], bw0: uint8[:],
+                stepper_config: float64[:],
                 y_prop: float[:], t_prop: float[:], dt_next: float[:], err_est: float[:]
             ) -> int32
         
@@ -95,14 +180,15 @@ class RK45Spec:
             A callable Python function implementing the RK45 stepper with
             internal accept/reject loop.
         """
-        # Extract tolerances from model spec if available
-        if model_spec is not None:
-            atol = float(model_spec.sim.atol)
-            rtol = float(model_spec.sim.rtol)
-        else:
-            # Fallback defaults
-            atol = 1e-8
-            rtol = 1e-5
+        # Get defaults from model_spec (closure values for when config array is empty)
+        default_cfg = self.default_config(model_spec)
+        default_atol = default_cfg.atol
+        default_rtol = default_cfg.rtol
+        default_safety = default_cfg.safety
+        default_min_factor = default_cfg.min_factor
+        default_max_factor = default_cfg.max_factor
+        default_max_tries = default_cfg.max_tries
+        default_min_step = default_cfg.min_step
         
         # Dormand-Prince coefficients
         # Butcher tableau for DOPRI5(4)
@@ -151,11 +237,6 @@ class RK45Spec:
         bs6 = 187.0/2100.0
         bs7 = 1.0/40.0
         
-        # Safety factors for step size control
-        safety = 0.9
-        min_factor = 0.2
-        max_factor = 10.0
-        
         def rk45_stepper(
             t, dt,
             y_curr, rhs,
@@ -163,6 +244,7 @@ class RK45Spec:
             sp, ss,
             sw0, sw1, sw2, sw3,
             iw0, bw0,
+            stepper_config,
             y_prop, t_prop, dt_next, err_est
         ):
             # RK45: Dormand-Prince adaptive method (DOPRI5(4))
@@ -176,12 +258,28 @@ class RK45Spec:
             k7 = sw3[:n]                      # embedded error term
             y_stage = sp[:n]                  # intermediate state buffer
             
+            # Read runtime config with fallback to defaults
+            # Config array format: [atol, rtol, safety, min_factor, max_factor, max_tries, min_step]
+            if stepper_config.size >= 7:
+                atol = stepper_config[0]
+                rtol = stepper_config[1]
+                safety = stepper_config[2]
+                min_factor = stepper_config[3]
+                max_factor = stepper_config[4]
+                max_tries = int(stepper_config[5])
+                min_step = stepper_config[6]
+            else:
+                # Fallback to closure defaults
+                atol = default_atol
+                rtol = default_rtol
+                safety = default_safety
+                min_factor = default_min_factor
+                max_factor = default_max_factor
+                max_tries = default_max_tries
+                min_step = default_min_step
+            
             # Adaptive loop: keep trying until accept or fail
             h = dt
-            max_tries = 10
-            min_step = 1e-12
-            # Use tolerances from closure (set from model_spec or defaults)
-            # atol and rtol are already defined in outer scope
             error = 0.0  # Initialize error outside loop
             
             for attempt in range(max_tries):

@@ -1,6 +1,8 @@
 # src/dynlib/runtime/sim.py
 from __future__ import annotations
 from typing import Optional
+import dataclasses
+import warnings
 import numpy as np
 
 from .model import Model
@@ -45,6 +47,14 @@ class Sim:
         params: Optional[np.ndarray] = None,
         cap_rec: int = 1024,
         cap_evt: int = 1,
+        # Stepper-specific parameters (RK45 example)
+        atol: Optional[float] = None,
+        rtol: Optional[float] = None,
+        safety: Optional[float] = None,
+        min_factor: Optional[float] = None,
+        max_factor: Optional[float] = None,
+        max_tries: Optional[int] = None,
+        min_step: Optional[float] = None,
     ) -> None:
         """
         Run the simulation using the compiled model.
@@ -60,6 +70,23 @@ class Sim:
             params: Parameters (default from spec.param_vals)
             cap_rec: Initial recording buffer capacity
             cap_evt: Initial event log capacity
+            
+            Stepper-specific parameters (RK45):
+                atol: Absolute tolerance (overrides model_spec.sim.atol)
+                rtol: Relative tolerance (overrides model_spec.sim.rtol)
+                safety: Safety factor for step size control
+                min_factor: Minimum step size reduction factor
+                max_factor: Maximum step size increase factor
+                max_tries: Maximum number of adaptive retries
+                min_step: Minimum allowed step size
+                
+        Example:
+            sim.run(t0=0, t_end=10)  # Use defaults
+            sim.run(t0=0, t_end=10, atol=1e-10, rtol=1e-8)  # Override tolerances
+        
+        Note:
+            Stepper-specific parameters that don't apply to the current stepper
+            are silently ignored (e.g., atol/rtol for Euler).
         """
         # Use defaults from spec.sim if not provided
         sim_defaults = self.model.spec.sim
@@ -87,6 +114,26 @@ class Sim:
             if event.log:
                 max_log_width = max(max_log_width, len(event.log))
         
+        # Build stepper config from explicit stepper parameters
+        # Only pass stepper-specific parameters (not core run() parameters)
+        stepper_kwargs = {}
+        if atol is not None:
+            stepper_kwargs['atol'] = atol
+        if rtol is not None:
+            stepper_kwargs['rtol'] = rtol
+        if safety is not None:
+            stepper_kwargs['safety'] = safety
+        if min_factor is not None:
+            stepper_kwargs['min_factor'] = min_factor
+        if max_factor is not None:
+            stepper_kwargs['max_factor'] = max_factor
+        if max_tries is not None:
+            stepper_kwargs['max_tries'] = max_tries
+        if min_step is not None:
+            stepper_kwargs['min_step'] = min_step
+        
+        stepper_config = self._build_stepper_config(stepper_kwargs)
+        
         # Call the wrapper
         result = run_with_wrapper(
             runner=self.model.runner,
@@ -108,9 +155,66 @@ class Sim:
             cap_rec=cap_rec,
             cap_evt=cap_evt,
             max_log_width=max_log_width,
+            stepper_config=stepper_config,  # NEW: pass stepper config
         )
         self._raw_results = result
         self._results_view = None
+    
+    def _build_stepper_config(self, kwargs: dict) -> np.ndarray:
+        """
+        Build stepper config array from run() kwargs and model_spec.
+        
+        Priority: run() kwargs > model_spec values > stepper defaults
+        
+        Args:
+            kwargs: Dictionary of stepper-specific parameters from **stepper_kwargs
+        
+        Returns:
+            Packed float64 array for stepper configuration
+        """
+        from dynlib.steppers.registry import get_stepper
+        
+        # CRITICAL: Use the actual compiled stepper, not the spec's default
+        # The model may have been built with an explicit stepper_name override
+        stepper_name = self.model.stepper_name
+        stepper_spec = get_stepper(stepper_name)
+        
+        # Get default config (includes model_spec overrides)
+        default_config = stepper_spec.default_config(self.model.spec)
+        
+        if default_config is None:
+            # Stepper has no runtime config
+            if kwargs:
+                warnings.warn(
+                    f"Stepper '{stepper_name}' does not accept runtime parameters. "
+                    f"Ignoring: {list(kwargs.keys())}",
+                    RuntimeWarning,
+                    stacklevel=3,
+                )
+            return np.array([], dtype=np.float64)
+        
+        # Filter valid kwargs
+        valid_fields = {f.name for f in dataclasses.fields(default_config)}
+        config_updates = {k: v for k, v in kwargs.items() if k in valid_fields}
+        
+        # Warn about invalid kwargs
+        invalid = set(kwargs.keys()) - valid_fields
+        if invalid:
+            warnings.warn(
+                f"Unknown stepper parameters for '{stepper_name}': {invalid}. "
+                f"Valid parameters: {valid_fields}",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+        
+        # Apply overrides to default config
+        if config_updates:
+            final_config = dataclasses.replace(default_config, **config_updates)
+        else:
+            final_config = default_config
+        
+        # Pack to array
+        return stepper_spec.pack_config(final_config)
 
     def raw_results(self) -> Results:
         """Return the latest raw Results façade (raises if run() not yet called)."""

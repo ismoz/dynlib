@@ -231,6 +231,7 @@ def _warmup_jit_runner(
     struct: StructSpec,
     spec: ModelSpec,
     model_dtype: str,
+    stepper_spec=None,  # NEW: optional stepper spec for config
 ) -> None:
     """
     Warm up JIT-compiled runner by calling it once with minimal inputs.
@@ -272,6 +273,13 @@ def _warmup_jit_runner(
     step_out = np.zeros((1,), dtype=np.int64)
     t_out = np.zeros((1,), dtype=np.float64)
     
+    # Create stepper config (use defaults from model_spec)
+    if stepper_spec is not None:
+        default_config = stepper_spec.default_config(spec)
+        stepper_config = stepper_spec.pack_config(default_config)
+    else:
+        stepper_config = np.array([], dtype=np.float64)
+    
     # Warmup call: run for a single tiny step
     try:
         runner(
@@ -280,6 +288,7 @@ def _warmup_jit_runner(
             y_curr, y_prev, params,
             banks.sp, banks.ss, banks.sw0, banks.sw1, banks.sw2, banks.sw3,
             banks.iw0, banks.bw0,
+            stepper_config,  # NEW: stepper config
             y_prop, t_prop, dt_next, err_est,
             rec.T, rec.Y, rec.STEP, rec.FLAGS,
             ev.EVT_CODE, ev.EVT_INDEX, ev.EVT_LOG_DATA,
@@ -605,7 +614,7 @@ def build(
     if jit and not _all_compiled():
         _warmup_jit_runner(
             runner_fn, stepper_fn, pieces.rhs, pieces.events_pre, pieces.events_post,
-            struct, spec, model_dtype
+            struct, spec, model_dtype, stepper_spec  # NEW: pass stepper_spec
         )
     
     dtype_np = np.dtype(model_dtype)

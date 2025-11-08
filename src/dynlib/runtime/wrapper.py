@@ -40,6 +40,8 @@ def run_with_wrapper(
     cap_rec: int = 1024,
     cap_evt: int = 1,
     max_log_width: int = 0,  # maximum log width across all events
+    # NEW: stepper configuration
+    stepper_config: np.ndarray = None,
 ) -> Results:
     """
     JIT-free orchestrator. Allocates banks/buffers, calls the compiled runner
@@ -51,6 +53,7 @@ def run_with_wrapper(
             max_steps, n_state, record_every_step,
             y_curr, y_prev, params,
             sp, ss, sw0, sw1, sw2, sw3, iw0, bw0,
+            stepper_config,
             y_prop, t_prop, dt_next, err_est,
             T, Y, STEP, FLAGS,
             EVT_CODE, EVT_INDEX, EVT_LOG_DATA,
@@ -65,10 +68,18 @@ def run_with_wrapper(
         outside by doubling the relevant buffers, copying only filled regions,
         and re-entering with updated caps/cursors.
       - hint_out[0] is used here as the current **event log cursor m** (by convention).
+      - stepper_config is a read-only float64 array containing runtime configuration.
     """
     assert y0.shape == (n_state,)
     y_curr = np.array(y0, dtype=model_dtype, copy=True)
     y_prev = np.array(y0, dtype=model_dtype, copy=True)  # will be set by runner after first commit
+    
+    # Default stepper_config to empty array if not provided
+    if stepper_config is None:
+        stepper_config = np.array([], dtype=np.float64)
+    else:
+        # Ensure it's the right dtype
+        stepper_config = np.asarray(stepper_config, dtype=np.float64)
 
     # Allocate banks and pools
     banks, rec, ev = allocate_pools(
@@ -112,6 +123,7 @@ def run_with_wrapper(
             y_curr, y_prev, params,
             banks.sp, banks.ss, banks.sw0, banks.sw1, banks.sw2, banks.sw3,
             banks.iw0, banks.bw0,
+            stepper_config,
             y_prop, t_prop, dt_next, err_est,
             rec.T, rec.Y, rec.STEP, rec.FLAGS,
             ev.EVT_CODE, ev.EVT_INDEX, ev.EVT_LOG_DATA,
