@@ -43,20 +43,20 @@ class RunnerABI:
     dt_init: str = "float64"
     max_steps: str = "int64"
     n_state: str = "int64"
-    record_every_step: str = "int64"
+    record_interval: str = "int64"
 
     # Main state/params (model dtype for ODEs; maps may be float or int)
-    y_curr: str = "model_dtype[:]"   # length = n_state
-    y_prev: str = "model_dtype[:]"   # length = n_state
-    params: str = "model_dtype[:] | int64[:]"  # concrete single dtype per build
+    y_curr: str = "dtype[:]"   # length = n_state
+    y_prev: str = "dtype[:]"   # length = n_state
+    params: str = "dtype[:] | int64[:]"  # concrete single dtype per build
 
     # Struct banks (views; model dtype)
-    sp: str = "model_dtype[:]"
-    ss: str = "model_dtype[:]"
-    sw0: str = "model_dtype[:]"
-    sw1: str = "model_dtype[:]"
-    sw2: str = "model_dtype[:]"
-    sw3: str = "model_dtype[:]"
+    sp: str = "dtype[:]"
+    ss: str = "dtype[:]"
+    sw0: str = "dtype[:]"
+    sw1: str = "dtype[:]"
+    sw2: str = "dtype[:]"
+    sw3: str = "dtype[:]"
     iw0: str = "int32[:]"
     bw0: str = "uint8[:]"
 
@@ -64,22 +64,22 @@ class RunnerABI:
     stepper_config: str = "float64[:]"
 
     # Proposals/outs (len-1 arrays; model dtype for t_prop/dt_next/err_est)
-    y_prop: str = "model_dtype[:]"        # length = n_state
-    t_prop: str = "model_dtype[1]"
-    dt_next: str = "model_dtype[1]"
-    err_est: str = "model_dtype[1]"
+    y_prop: str = "dtype[:]"        # length = n_state
+    t_prop: str = "dtype[1]"
+    dt_next: str = "dtype[1]"
+    err_est: str = "dtype[1]"
 
     # Recording buffers
     T: str = "float64[:]"                 # committed t
-    Y: str = "model_dtype[:, :]"          # shape (cap_rec, n_state)
+    Y: str = "dtype[:, :]"          # shape (cap_rec, n_state)
     STEP: str = "int64[:]"
     FLAGS: str = "int32[:]"
 
     # Event log buffers
     EVT_CODE: str = "int32[:]"
     EVT_INDEX: str = "int32[:]"
-    EVT_LOG_DATA: str = "model_dtype[:, :]"  # shape (cap_evt, max_log_width)
-    evt_log_scratch: str = "model_dtype[:]"   # scratch buffer for log values
+    EVT_LOG_DATA: str = "dtype[:, :]"  # shape (cap_evt, max_log_width)
+    evt_log_scratch: str = "dtype[:]"   # scratch buffer for log values
 
     # Cursors & caps
     i_start: str = "int64"
@@ -110,22 +110,22 @@ FROZEN RUNNER ABI (names/order/shapes/dtypes)
 runner(
   # scalars
   t0: float64, t_end: float64, dt_init: float64,
-  max_steps: int64, n_state: int64, record_every_step: int64,
+  max_steps: int64, n_state: int64, record_interval: int64,
   # state/params
-  y_curr: model_dtype[:], y_prev: model_dtype[:], params: model_dtype[:] | int64[:],
+  y_curr: dtype[:], y_prev: dtype[:], params: dtype[:] | int64[:],
   # struct banks (views)
-  sp: model_dtype[:], ss: model_dtype[:],
-  sw0: model_dtype[:], sw1: model_dtype[:], sw2: model_dtype[:], sw3: model_dtype[:],
+  sp: dtype[:], ss: dtype[:],
+  sw0: dtype[:], sw1: dtype[:], sw2: dtype[:], sw3: dtype[:],
   iw0: int32[:], bw0: uint8[:],
   # stepper configuration (read-only)
   stepper_config: float64[:],
   # proposals/outs (len-1 arrays where applicable)
-  y_prop: model_dtype[:], t_prop: model_dtype[1], dt_next: model_dtype[1], err_est: model_dtype[1],
+  y_prop: dtype[:], t_prop: dtype[1], dt_next: dtype[1], err_est: dtype[1],
   # recording
-  T: float64[:], Y: model_dtype[:, :], STEP: int64[:], FLAGS: int32[:],
+  T: float64[:], Y: dtype[:, :], STEP: int64[:], FLAGS: int32[:],
   # event log
-  EVT_CODE: int32[:], EVT_INDEX: int32[:], EVT_LOG_DATA: model_dtype[:, :],
-  evt_log_scratch: model_dtype[:],
+  EVT_CODE: int32[:], EVT_INDEX: int32[:], EVT_LOG_DATA: dtype[:, :],
+  evt_log_scratch: dtype[:],
   # cursors & caps
   i_start: int64, step_start: int64, cap_rec: int64, cap_evt: int64,
   # control/outs (len-1)
@@ -142,7 +142,7 @@ Rules:
 - Runner performs capacity checks, pre/post events, commit & record, then exits only with the codes above.
 - Stepper reads t, dt, y_curr, params, sp, ss, stepper_config; writes y_prop, t_prop[0], dt_next[0], err_est[0]; may mutate ss.
 - stepper_config is a read-only float64 array containing runtime configuration (packed from stepper's config dataclass).
-- RHS: rhs(t: float64, y_vec: model_dtype[:], dy_out: model_dtype[:], params: model_dtype[:] | int64[:]) -> None.
+- RHS: rhs(t: float64, y_vec: dtype[:], dy_out: dtype[:], params: dtype[:] | int64[:]) -> None.
 - Events: events_phase(t, y_vec, params, evt_log_scratch) -> (event_code: int32, log_width: int32)
   - event_code: -1 if no event fired, else unique event identifier (0, 1, 2...)
   - log_width: number of values written to evt_log_scratch (len(event.log))

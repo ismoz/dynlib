@@ -108,7 +108,7 @@ stepper = "euler"
         stepper=full_model.stepper,
         runner=full_model.runner,
         spec_hash=full_model.spec_hash,
-        model_dtype=full_model.model_dtype,
+        dtype=full_model.dtype,
     )
     
     sim = Sim(model)
@@ -523,7 +523,7 @@ def test_load_existing_decay_model():
         stepper=full_model.stepper,
         runner=full_model.runner,
         spec_hash=full_model.spec_hash,
-        model_dtype=full_model.model_dtype,
+        dtype=full_model.dtype,
     )
     
     sim = Sim(model)

@@ -31,7 +31,7 @@ def load_model_from_toml(path: Path, jit: bool = True) -> Model:
     spec = build_spec(normal)
     
     # Build with the spec's default stepper
-    full_model = build(spec, stepper_name=spec.sim.stepper, jit=jit)
+    full_model = build(spec, stepper=spec.sim.stepper, jit=jit)
     
     # Convert FullModel to Model (legacy compat)
     from dynlib.runtime.model import Model as LegacyModel
@@ -45,7 +45,7 @@ def load_model_from_toml(path: Path, jit: bool = True) -> Model:
         stepper=full_model.stepper,
         runner=full_model.runner,
         spec_hash=full_model.spec_hash,
-        model_dtype=full_model.model_dtype,
+        dtype=full_model.dtype,
     )
 
 
@@ -103,7 +103,7 @@ def test_rk4_order_convergence():
         data = tomllib.load(f)
     normal = parse_model_v2(data)
     spec = build_spec(normal)
-    full_model_coarse = build(spec, stepper_name="rk4", jit=True)
+    full_model_coarse = build(spec, stepper="rk4", jit=True)
     
     from dynlib.runtime.model import Model as LegacyModel
     model_coarse = LegacyModel(
@@ -116,7 +116,7 @@ def test_rk4_order_convergence():
         stepper=full_model_coarse.stepper,
         runner=full_model_coarse.runner,
         spec_hash=full_model_coarse.spec_hash,
-        model_dtype=full_model_coarse.model_dtype,
+        dtype=full_model_coarse.dtype,
     )
     
     sim_coarse = Sim(model_coarse)
@@ -128,7 +128,7 @@ def test_rk4_order_convergence():
     err_coarse = abs(x_coarse - x_analytic)
     
     # Run with dt = 0.1 (fine) - rebuild model to avoid any caching
-    full_model_fine = build(spec, stepper_name="rk4", jit=True)
+    full_model_fine = build(spec, stepper="rk4", jit=True)
     model_fine = LegacyModel(
         spec=full_model_fine.spec,
         stepper_name=full_model_fine.stepper_name,
@@ -139,7 +139,7 @@ def test_rk4_order_convergence():
         stepper=full_model_fine.stepper,
         runner=full_model_fine.runner,
         spec_hash=full_model_fine.spec_hash,
-        model_dtype=full_model_fine.model_dtype,
+        dtype=full_model_fine.dtype,
     )
     
     sim_fine = Sim(model_fine)
@@ -206,7 +206,7 @@ def test_rk45_step_adaptation():
         data = tomllib.load(f)
     normal = parse_model_v2(data)
     spec = build_spec(normal)
-    full_model = build(spec, stepper_name="rk45", jit=True)
+    full_model = build(spec, stepper="rk45", jit=True)
     
     from dynlib.runtime.model import Model as LegacyModel
     model_rk45 = LegacyModel(
@@ -219,7 +219,7 @@ def test_rk45_step_adaptation():
         stepper=full_model.stepper,
         runner=full_model.runner,
         spec_hash=full_model.spec_hash,
-        model_dtype=full_model.model_dtype,
+        dtype=full_model.dtype,
     )
     
     # Load Euler model for comparison
@@ -227,7 +227,7 @@ def test_rk45_step_adaptation():
         data_euler = tomllib.load(f)
     normal_euler = parse_model_v2(data_euler)
     spec_euler = build_spec(normal_euler)
-    full_model_euler = build(spec_euler, stepper_name="euler", jit=True)
+    full_model_euler = build(spec_euler, stepper="euler", jit=True)
     
     model_euler = LegacyModel(
         spec=full_model_euler.spec,
@@ -239,16 +239,16 @@ def test_rk45_step_adaptation():
         stepper=full_model_euler.stepper,
         runner=full_model_euler.runner,
         spec_hash=full_model_euler.spec_hash,
-        model_dtype=full_model_euler.model_dtype,
+        dtype=full_model_euler.dtype,
     )
     
     # Run both with same initial dt
     sim_rk45 = Sim(model_rk45)
-    sim_rk45.run(t_end=2.0, dt=0.1, record_every_step=1)
+    sim_rk45.run(t_end=2.0, dt=0.1, record_interval=1)
     results_rk45 = sim_rk45.raw_results()
     
     sim_euler = Sim(model_euler)
-    sim_euler.run(t_end=2.0, dt=0.1, record_every_step=1)
+    sim_euler.run(t_end=2.0, dt=0.1, record_interval=1)
     results_euler = sim_euler.raw_results()
     
     # RK45 should take different number of steps (adaptive)

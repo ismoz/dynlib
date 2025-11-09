@@ -50,7 +50,7 @@ rtol = 1e-4
         stepper=full_model.stepper,
         runner=full_model.runner,
         spec_hash=full_model.spec_hash,
-        model_dtype=full_model.model_dtype,
+        dtype=full_model.dtype,
     )
     
     sim = Sim(model)
@@ -142,7 +142,7 @@ record = true
         stepper=full_model.stepper,
         runner=full_model.runner,
         spec_hash=full_model.spec_hash,
-        model_dtype=full_model.model_dtype,
+        dtype=full_model.dtype,
     )
     sim = Sim(model)
     
@@ -207,7 +207,7 @@ rtol = 1e-5
         stepper=full_model.stepper,
         runner=full_model.runner,
         spec_hash=full_model.spec_hash,
-        model_dtype=full_model.model_dtype,
+        dtype=full_model.dtype,
     )
     sim = Sim(model)
     

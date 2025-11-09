@@ -27,7 +27,7 @@ def load_model_from_toml(path: Path, jit: bool = True) -> Model:
     spec = build_spec(normal)
     
     # Build with the spec's default stepper
-    full_model = build(spec, stepper_name=spec.sim.stepper, jit=jit)
+    full_model = build(spec, stepper=spec.sim.stepper, jit=jit)
     
     # Convert FullModel to Model (legacy compat)
     return Model(
@@ -40,7 +40,7 @@ def load_model_from_toml(path: Path, jit: bool = True) -> Model:
         stepper=full_model.stepper,
         runner=full_model.runner,
         spec_hash=full_model.spec_hash,
-        model_dtype=full_model.model_dtype,
+        dtype=full_model.dtype,
     )
 
 

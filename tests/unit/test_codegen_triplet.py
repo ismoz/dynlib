@@ -91,8 +91,8 @@ def _build_spec():
 
 def test_rhs_eval_jit_parity():
     spec = _build_spec()
-    cp0 = build_callables(spec, stepper_name="euler", jit=False, model_dtype="float64")
-    cp1 = build_callables(spec, stepper_name="euler", jit=True,  model_dtype="float64")
+    cp0 = build_callables(spec, stepper_name="euler", jit=False, dtype="float64")
+    cp1 = build_callables(spec, stepper_name="euler", jit=True,  dtype="float64")
 
     y = np.array([1.0], dtype=np.float64)
     p = np.array([2.0], dtype=np.float64)
@@ -112,7 +112,7 @@ def test_rhs_eval_jit_parity():
 
 def test_events_only_mutate_states_params_and_effect_is_visible():
     spec = _build_spec()
-    cp = build_callables(spec, stepper_name="euler", jit=False, model_dtype="float64")
+    cp = build_callables(spec, stepper_name="euler", jit=False, dtype="float64")
 
     y = np.array([1.0], dtype=np.float64)
     p = np.array([2.0], dtype=np.float64)
@@ -129,7 +129,7 @@ def test_events_only_mutate_states_params_and_effect_is_visible():
 
 def test_aux_is_recomputed_inside_rhs_every_call():
     spec = _build_spec()
-    cp = build_callables(spec, stepper_name="euler", jit=False, model_dtype="float64")
+    cp = build_callables(spec, stepper_name="euler", jit=False, dtype="float64")
 
     y = np.array([3.0], dtype=np.float64)
     p = np.array([2.0], dtype=np.float64)

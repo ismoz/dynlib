@@ -24,7 +24,7 @@ def run_with_wrapper(
     events_pre: Callable[..., None],
     events_post: Callable[..., None],
     struct: StructSpec,
-    model_dtype: np.dtype,
+    dtype: np.dtype,
     n_state: int,
     # sim config
     t0: float,
@@ -32,9 +32,9 @@ def run_with_wrapper(
     dt_init: float,
     max_steps: int,
     record: bool,
-    record_every_step: int,
+    record_interval: int,
     # initial state/params
-    y0: np.ndarray,
+    ic: np.ndarray,
     params: np.ndarray,
     # capacities (can be small to force growth)
     cap_rec: int = 1024,
@@ -50,7 +50,7 @@ def run_with_wrapper(
     Runner ABI (frozen) — summarized here (see runner_api.py for full doc):
         status = runner(
             t0, t_end, dt_init,
-            max_steps, n_state, record_every_step,
+            max_steps, n_state, record_interval,
             y_curr, y_prev, params,
             sp, ss, sw0, sw1, sw2, sw3, iw0, bw0,
             stepper_config,
@@ -70,9 +70,9 @@ def run_with_wrapper(
       - hint_out[0] is used here as the current **event log cursor m** (by convention).
       - stepper_config is a read-only float64 array containing runtime configuration.
     """
-    assert y0.shape == (n_state,)
-    y_curr = np.array(y0, dtype=model_dtype, copy=True)
-    y_prev = np.array(y0, dtype=model_dtype, copy=True)  # will be set by runner after first commit
+    assert ic.shape == (n_state,)
+    y_curr = np.array(ic, dtype=dtype, copy=True)
+    y_prev = np.array(ic, dtype=dtype, copy=True)  # will be set by runner after first commit
     
     # Default stepper_config to empty array if not provided
     if stepper_config is None:
@@ -83,18 +83,18 @@ def run_with_wrapper(
 
     # Allocate banks and pools
     banks, rec, ev = allocate_pools(
-        n_state=n_state, struct=struct, model_dtype=model_dtype,
+        n_state=n_state, struct=struct, dtype=dtype,
         cap_rec=cap_rec, cap_evt=cap_evt, max_log_width=max_log_width,
     )
 
     # Proposals / outs (len-1 where applicable)
-    y_prop  = np.zeros((n_state,), dtype=model_dtype)
-    t_prop  = np.zeros((1,), dtype=model_dtype)
-    dt_next = np.zeros((1,), dtype=model_dtype)
-    err_est = np.zeros((1,), dtype=model_dtype)
+    y_prop  = np.zeros((n_state,), dtype=dtype)
+    t_prop  = np.zeros((1,), dtype=dtype)
+    dt_next = np.zeros((1,), dtype=dtype)
+    err_est = np.zeros((1,), dtype=dtype)
     
     # Event log scratch buffer
-    evt_log_scratch = np.zeros((max(1, max_log_width),), dtype=model_dtype)
+    evt_log_scratch = np.zeros((max(1, max_log_width),), dtype=dtype)
 
     # Control + cursors/outs
     user_break_flag = np.zeros((1,), dtype=np.int32)
@@ -109,7 +109,7 @@ def run_with_wrapper(
     step_start = np.int64(0)
 
     # Recording at t0 is part of the **runner** discipline; wrapper just passes flags
-    rec_every = int(record_every_step) if record else 0  # runner may treat 0 as "no record except explicit"
+    rec_every = int(record_interval) if record else 0  # runner may treat 0 as "no record except explicit"
 
     # Track the committed (t, dt) so re-entries resume from the correct point.
     t_curr = float(t0)
@@ -164,7 +164,7 @@ def run_with_wrapper(
             continue
 
         if status_value == GROW_EVT:
-            ev = grow_evt_arrays(ev, filled=m_filled, min_needed=m_filled + 1, model_dtype=model_dtype)
+            ev = grow_evt_arrays(ev, filled=m_filled, min_needed=m_filled + 1, dtype=dtype)
             # Keep event cursor in hint_out for re-entry
             hint_out[0] = np.int32(m_filled)
             i_start = np.int64(n_filled)

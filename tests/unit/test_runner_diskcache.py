@@ -35,7 +35,7 @@ t0 = 0.0
 t_end = 0.1
 dt = 0.05
 record = true
-record_every_step = 1
+record_interval = 1
 stepper = "euler"
 
 [states]
@@ -66,7 +66,7 @@ def _to_runtime(full) -> Model:
         stepper=full.stepper,
         runner=full.runner,
         spec_hash=full.spec_hash,
-        model_dtype=full.model_dtype,
+        dtype=full.dtype,
     )
 
 
@@ -104,7 +104,7 @@ from dynlib.runtime.sim import Sim
 
 MODEL = tomllib.loads({MODEL_SRC!r})
 spec = build_spec(parse_model_v2(MODEL))
-full = build(spec, stepper_name='euler', jit=True, disk_cache=True)
+full = build(spec, stepper='euler', jit=True, disk_cache=True)
 model = Model(
     spec=full.spec,
     stepper_name=full.stepper_name,
@@ -115,7 +115,7 @@ model = Model(
     stepper=full.stepper,
     runner=full.runner,
     spec_hash=full.spec_hash,
-    model_dtype=full.model_dtype,
+    dtype=full.dtype,
 )
 Sim(model).run(max_steps=4)
 """
@@ -138,7 +138,7 @@ def _run_subprocess_build():
 
 def test_disk_cache_materializes(tmp_path, monkeypatch):
     cache_root = _configure_cache(monkeypatch, tmp_path)
-    full = build(_build_spec(), stepper_name="euler", jit=True, disk_cache=True)
+    full = build(_build_spec(), stepper="euler", jit=True, disk_cache=True)
     _run_sim(full)
 
     digest_dir = _single_cache_dir(cache_root)
@@ -150,7 +150,7 @@ def test_disk_cache_materializes(tmp_path, monkeypatch):
 
 def test_disk_cache_cross_process_reuse(tmp_path, monkeypatch):
     cache_root = _configure_cache(monkeypatch, tmp_path)
-    full = build(_build_spec(), stepper_name="euler", jit=True, disk_cache=True)
+    full = build(_build_spec(), stepper="euler", jit=True, disk_cache=True)
     _run_sim(full)
 
     digest_dir = _single_cache_dir(cache_root)
@@ -164,7 +164,7 @@ def test_disk_cache_cross_process_reuse(tmp_path, monkeypatch):
 
 def test_disk_cache_recovers_from_corruption(tmp_path, monkeypatch):
     cache_root = _configure_cache(monkeypatch, tmp_path)
-    full = build(_build_spec(), stepper_name="euler", jit=True, disk_cache=True)
+    full = build(_build_spec(), stepper="euler", jit=True, disk_cache=True)
     _run_sim(full)
 
     digest_dir = _single_cache_dir(cache_root)
@@ -172,7 +172,7 @@ def test_disk_cache_recovers_from_corruption(tmp_path, monkeypatch):
     runner_mod.write_text("raise RuntimeError('corrupt cache')\n", encoding="utf-8")
 
     _run_subprocess_build()
-    rebuilt = build(_build_spec(), stepper_name="euler", jit=True, disk_cache=True)
+    rebuilt = build(_build_spec(), stepper="euler", jit=True, disk_cache=True)
     _run_sim(rebuilt)
 
     contents = runner_mod.read_text(encoding="utf-8")
@@ -183,10 +183,10 @@ def test_env_pin_changes_create_new_digest(tmp_path, monkeypatch):
     cache_root = _configure_cache(monkeypatch, tmp_path)
     base_spec = _build_spec()
 
-    model_f64 = build(base_spec, stepper_name="euler", jit=True, disk_cache=True, model_dtype="float64")
+    model_f64 = build(base_spec, stepper="euler", jit=True, disk_cache=True, dtype="float64")
     _run_sim(model_f64)
 
-    model_f32 = build(base_spec, stepper_name="euler", jit=True, disk_cache=True, model_dtype="float32")
+    model_f32 = build(base_spec, stepper="euler", jit=True, disk_cache=True, dtype="float32")
     _run_sim(model_f32)
 
     digest_dirs = {path.parent for path in cache_root.glob("jit/runners/**/runner_mod.py")}
@@ -208,7 +208,7 @@ def test_disk_cache_fallback_when_unwritable(tmp_path, monkeypatch, request):
 
     spec = _build_spec()
     with pytest.warns(RuntimeWarning, match="disk runner cache disabled"):
-        full = build(spec, stepper_name="euler", jit=True, disk_cache=True)
+        full = build(spec, stepper="euler", jit=True, disk_cache=True)
     _run_sim(full)
 
     assert not cache_root.exists(), "cache root should remain absent when unwritable"
@@ -218,10 +218,10 @@ def test_disk_cache_disabled_creates_no_files(tmp_path, monkeypatch):
     cache_root = _configure_cache(monkeypatch, tmp_path)
     spec = _build_spec()
 
-    full = build(spec, stepper_name="euler", jit=True, disk_cache=False)
+    full = build(spec, stepper="euler", jit=True, disk_cache=False)
     _run_sim(full)
     assert not (cache_root / "jit").exists()
 
-    second = build(spec, stepper_name="euler", jit=True, disk_cache=False)
+    second = build(spec, stepper="euler", jit=True, disk_cache=False)
     _run_sim(second)
     assert not (cache_root / "jit").exists()

@@ -31,7 +31,7 @@ def load_model_from_toml(path: Path, jit: bool = True) -> Model:
     spec = build_spec(normal)
     
     # Build with the spec's default stepper
-    full_model = build(spec, stepper_name=spec.sim.stepper, jit=jit)
+    full_model = build(spec, stepper=spec.sim.stepper, jit=jit)
     
     # Convert FullModel to Model (legacy compat)
     from dynlib.runtime.model import Model as LegacyModel
@@ -45,7 +45,7 @@ def load_model_from_toml(path: Path, jit: bool = True) -> Model:
         stepper=full_model.stepper,
         runner=full_model.runner,
         spec_hash=full_model.spec_hash,
-        model_dtype=full_model.model_dtype,
+        dtype=full_model.dtype,
     )
 
 
@@ -140,7 +140,7 @@ def test_euler_growth_triggered():
     sim = Sim(model)
     
     # Run with very small capacity (should force growth)
-    sim.run(cap_rec=4, record_every_step=1)
+    sim.run(cap_rec=4, record_interval=1)
     results = sim.raw_results()
     
     # Should have recorded more than 4 points (since t_end=2.0, dt=0.1 → ~20 steps)
@@ -162,12 +162,12 @@ def test_euler_growth_matches_reference():
 
     # Reference run with plenty of capacity (no growth expected)
     sim_ref = Sim(model)
-    sim_ref.run(cap_rec=128, record_every_step=1)
+    sim_ref.run(cap_rec=128, record_interval=1)
     res_ref = sim_ref.raw_results()
 
     # Force multiple growth cycles
     sim_small = Sim(model)
-    sim_small.run(cap_rec=3, record_every_step=1)
+    sim_small.run(cap_rec=3, record_interval=1)
     res_small = sim_small.raw_results()
 
     assert res_small.n == res_ref.n, "Record counts diverged when forcing growth"

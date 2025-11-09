@@ -133,7 +133,7 @@ def _resolve_unary_map_k(
                     raise KeyError(f"Unknown state '{nm}'.")
                 tgt = obj._state_index[nm]
 
-        y_base = obj.y0
+        y_base = obj.ic
         p_ns = obj.p
 
         # apply fixed overrides (states/params; supports prefixes)

@@ -2,6 +2,17 @@
 
 ---
 
+## [2.15.2] – 2025-11-09
+### Changed
+- Renamed `run()` args: 
+  - `y0` -> `ic` 
+  - `record_every_step` -> `record_interval`
+- Renamed `build()` args:
+  - `stepper_name` -> `stepper`
+  - `model_dtype` -> `dtype`
+
+---
+
 ## [2.15.1] – 2025-11-09
 ### Changed
 - Forgot to add `**stepper_kwargs` in the previous version. Refactored `Sim.run()` in `sim.py` to 
@@ -383,7 +394,7 @@
   - Added `max_log_width` parameter
   - Allocates `EVT_LOG_DATA` with shape `(cap_evt, max(1, max_log_width))`
 - Updated `grow_evt_arrays()` in `src/dynlib/runtime/buffers.py`:
-  - Added `model_dtype` parameter for allocating `EVT_LOG_DATA` with correct dtype
+  - Added `dtype` parameter for allocating `EVT_LOG_DATA` with correct dtype
   - Copies existing log data during growth
 - Updated `Sim.run()` in `src/dynlib/runtime/sim.py`:
   - Calculates `max_log_width` from event specs before calling wrapper
@@ -395,7 +406,7 @@
   - Checks that `EVT_LOG_DATA` contains logged signal values
   - Validates logged values are within expected ranges
 - Fixed `test_codegen_triplet.py` to use new event signature with scratch buffer
-- Fixed `test_buffers_growth.py` to pass `max_log_width` and `model_dtype` parameters
+- Fixed `test_buffers_growth.py` to pass `max_log_width` and `dtype` parameters
 
 ---
 

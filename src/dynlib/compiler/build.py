@@ -43,7 +43,7 @@ class FullModel:
     stepper: Callable
     runner: Callable
     spec_hash: str
-    model_dtype: np.dtype
+    dtype: np.dtype
 
 @dataclass
 class _StepperCacheEntry:
@@ -86,14 +86,14 @@ class _TripletCacheContext:
         spec_hash: str,
         stepper_name: str,
         structsig: Tuple[int, ...],
-        model_dtype: str,
+        dtype: str,
         cache_root: Path,
         sources: Dict[str, str],
     ):
         self.spec_hash = spec_hash
         self.stepper_name = stepper_name
         self.structsig = structsig
-        self.model_dtype = model_dtype
+        self.dtype = dtype
         self.cache_root = cache_root
         self.sources = sources
 
@@ -106,7 +106,7 @@ class _TripletCacheContext:
             spec_hash=self.spec_hash,
             stepper_name=self.stepper_name,
             structsig=self.structsig,
-            model_dtype=self.model_dtype,
+            dtype=self.dtype,
             cache_root=self.cache_root,
             source=source,
             function_name=component,
@@ -135,7 +135,7 @@ def build_callables(
     *,
     stepper_name: str,
     jit: bool,
-    model_dtype: str = "float64",
+    dtype: str = "float64",
     cache_root: Optional[Path] = None,
     disk_cache: bool = True,
 ) -> CompiledPieces:
@@ -149,7 +149,7 @@ def build_callables(
         spec_hash=s_hash,
         stepper=stepper_name,
         structsig=structsig,
-        model_dtype=model_dtype,
+        dtype=dtype,
         version_pins=("dynlib=2",),
     )
 
@@ -178,7 +178,7 @@ def build_callables(
             spec_hash=s_hash,
             stepper_name=stepper_name,
             structsig=structsig,
-            model_dtype=model_dtype,
+            dtype=dtype,
             cache_root=cache_root,
             sources={
                 "rhs": cc.rhs_source,
@@ -230,7 +230,7 @@ def _warmup_jit_runner(
     events_post: Callable,
     struct: StructSpec,
     spec: ModelSpec,
-    model_dtype: str,
+    dtype: str,
     stepper_spec=None,  # NEW: optional stepper spec for config
 ) -> None:
     """
@@ -242,14 +242,14 @@ def _warmup_jit_runner(
     """
     from dynlib.runtime.buffers import allocate_pools
     
-    dtype_np = np.dtype(model_dtype)
+    dtype_np = np.dtype(dtype)
     n_state = len(spec.states)
     
     # Allocate minimal banks and buffers for warmup
     banks, rec, ev = allocate_pools(
         n_state=n_state,
         struct=struct,
-        model_dtype=dtype_np,
+        dtype=dtype_np,
         cap_rec=2,      # Minimal capacity
         cap_evt=1,
         max_log_width=1,
@@ -284,7 +284,7 @@ def _warmup_jit_runner(
     try:
         runner(
             0.0, 0.1, 0.1,  # t0, t_end, dt_init
-            100, n_state, 0,  # max_steps, n_state, record_every_step (0 = no recording)
+            100, n_state, 0,  # max_steps, n_state, record_interval (0 = no recording)
             y_curr, y_prev, params,
             banks.sp, banks.ss, banks.sw0, banks.sw1, banks.sw2, banks.sw3,
             banks.iw0, banks.bw0,
@@ -478,10 +478,10 @@ def _load_mod_from_uri(mod_uri: str, config: PathConfig) -> ModSpec:
 def build(
     model: Union[ModelSpec, str],
     *,
-    stepper_name: Optional[str] = None,
+    stepper: Optional[str] = None,
     mods: Optional[List[str]] = None,
     jit: bool = True,
-    model_dtype: str = "float64",
+    dtype: str = "float64",
     disk_cache: bool = True,
     config: Optional[PathConfig] = None,
     validate_stepper: bool = True,
@@ -504,7 +504,7 @@ def build(
             Mods are applied in order after loading the base model.
         jit: Enable JIT compilation (default True)
         disk_cache: Enable persistent runner cache on disk (default True)
-        model_dtype: Model dtype string (default "float64")
+        dtype: Model dtype string (default "float64")
         config: PathConfig for URI resolution (loads default if None)
         validate_stepper: Enable build-time stepper validation (default True)
     
@@ -529,6 +529,7 @@ def build(
         spec = load_model_from_uri(model, mods=mods, config=config_in_use)
     
     # Use spec's default stepper if not specified
+    stepper_name = stepper
     if stepper_name is None:
         stepper_name = spec.sim.stepper
     
@@ -555,7 +556,7 @@ def build(
         spec,
         stepper_name=stepper_name,
         jit=jit,
-        model_dtype=model_dtype,
+        dtype=dtype,
         cache_root=cache_root_path,
         disk_cache=disk_cache,
     )
@@ -578,7 +579,7 @@ def build(
                 spec_hash=pieces.spec_hash,
                 stepper_name=stepper_name,
                 structsig=structsig,
-                model_dtype=model_dtype,
+                dtype=dtype,
                 cache_root=cache_root_path,
                 source=stepper_source,
                 function_name=stepper_py.__name__,
@@ -600,7 +601,7 @@ def build(
             spec_hash=pieces.spec_hash,
             stepper_name=stepper_name,
             structsig=structsig,
-            model_dtype=model_dtype,
+            dtype=dtype,
             cache_root=cache_root_path,
         )
     runner_fn = runner_codegen.get_runner(jit=jit, disk_cache=disk_cache)
@@ -614,10 +615,10 @@ def build(
     if jit and not _all_compiled():
         _warmup_jit_runner(
             runner_fn, stepper_fn, pieces.rhs, pieces.events_pre, pieces.events_post,
-            struct, spec, model_dtype, stepper_spec  # NEW: pass stepper_spec
+            struct, spec, dtype, stepper_spec  # NEW: pass stepper_spec
         )
     
-    dtype_np = np.dtype(model_dtype)
+    dtype_np = np.dtype(dtype)
     
     return FullModel(
         spec=spec,
@@ -629,5 +630,5 @@ def build(
         stepper=stepper_fn,
         runner=runner_fn,
         spec_hash=pieces.spec_hash,
-        model_dtype=dtype_np,
+        dtype=dtype_np,
     )

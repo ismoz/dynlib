@@ -118,7 +118,7 @@ _DYNLIB_VERSION = _discover_dynlib_version()
 def runner(
     # scalars
     t0, t_end, dt_init,
-    max_steps, n_state, record_every_step,
+    max_steps, n_state, record_interval,
     # state/params
     y_curr, y_prev, params,
     # struct banks (views)
@@ -160,8 +160,8 @@ def runner(
     # On first call, hint_out[0] is 0; on re-entry after GROW_EVT, it contains the saved m
     m = int(hint_out[0])     # event log cursor (resume from hint)
     
-    # Recording at t0 (if record_every_step > 0)
-    if record_every_step > 0 and step == 0:
+    # Recording at t0 (if record_interval > 0)
+    if record_interval > 0 and step == 0:
         # Record initial condition
         if i >= cap_rec:
             # Need growth before recording
@@ -183,7 +183,7 @@ def runner(
     while step < max_steps and t < t_end:
         # Check if we need to record a pending step from before growth
         # This happens when step_start > i_start (we've advanced steps but not recorded)
-        if step > 0 and record_every_step > 0 and (step % record_every_step == 0) and step == step_start:
+        if step > 0 and record_interval > 0 and (step % record_interval == 0) and step == step_start:
             # Re-entering after GROW_REC: attempt the pending record first
             if i >= cap_rec:
                 # Still not enough space (should not happen with geometric growth)
@@ -275,8 +275,8 @@ def runner(
             EVT_INDEX[m] = log_width_post  # Store width for interpretation
             m += 1
         
-        # 6. Record (if enabled and step matches record_every_step)
-        if record_every_step > 0 and (step % record_every_step == 0):
+        # 6. Record (if enabled and step matches record_interval)
+        if record_interval > 0 and (step % record_interval == 0):
             if i >= cap_rec:
                 # Need growth
                 i_out[0] = i
@@ -320,7 +320,7 @@ class _RunnerDiskCacheRequest:
     spec_hash: str
     stepper_name: str
     structsig: Tuple[int, ...]
-    model_dtype: str
+    dtype: str
     cache_root: Path
 
 
@@ -332,7 +332,7 @@ class _CallableDiskCacheRequest:
     spec_hash: str
     stepper_name: str
     structsig: Tuple[int, ...]
-    model_dtype: str
+    dtype: str
     cache_root: Path
     source: str
 
@@ -354,7 +354,7 @@ def configure_runner_disk_cache(
     spec_hash: str,
     stepper_name: str,
     structsig: Tuple[int, ...],
-    model_dtype: str,
+    dtype: str,
     cache_root: Path,
 ) -> None:
     """Store the cache context for the next disk-backed runner build."""
@@ -363,7 +363,7 @@ def configure_runner_disk_cache(
         spec_hash=spec_hash,
         stepper_name=stepper_name,
         structsig=tuple(int(x) for x in structsig),
-        model_dtype=str(model_dtype),
+        dtype=str(dtype),
         cache_root=Path(cache_root).expanduser().resolve(),
     )
 
@@ -381,7 +381,7 @@ def configure_triplet_disk_cache(
     spec_hash: str,
     stepper_name: str,
     structsig: Tuple[int, ...],
-    model_dtype: str,
+    dtype: str,
     cache_root: Path,
     source: str,
     function_name: Optional[str] = None,
@@ -395,7 +395,7 @@ def configure_triplet_disk_cache(
         spec_hash=spec_hash,
         stepper_name=stepper_name,
         structsig=tuple(int(x) for x in structsig),
-        model_dtype=str(model_dtype),
+        dtype=str(dtype),
         cache_root=Path(cache_root).expanduser().resolve(),
         source=source,
     )
@@ -406,7 +406,7 @@ def configure_stepper_disk_cache(
     spec_hash: str,
     stepper_name: str,
     structsig: Tuple[int, ...],
-    model_dtype: str,
+    dtype: str,
     cache_root: Path,
     source: str,
     function_name: str,
@@ -420,7 +420,7 @@ def configure_stepper_disk_cache(
         spec_hash=spec_hash,
         stepper_name=stepper_name,
         structsig=tuple(int(x) for x in structsig),
-        model_dtype=str(model_dtype),
+        dtype=str(dtype),
         cache_root=Path(cache_root).expanduser().resolve(),
         source=source,
     )
@@ -486,7 +486,7 @@ class _RunnerDiskCache:
     def __init__(self, request: _RunnerDiskCacheRequest):
         self.request = request
         self.stepper_token = _sanitize_token(request.stepper_name)
-        self.dtype_token = _dtype_token(request.model_dtype)
+        self.dtype_token = _dtype_token(request.dtype)
         self.platform_token = _platform_triple()
         self.payload = self._build_digest_payload()
         self.digest = _hash_payload(self.payload)
@@ -647,7 +647,7 @@ class _RunnerDiskCache:
             "spec_hash": self.request.spec_hash,
             "stepper": self.request.stepper_name,
             "structsig": list(self.request.structsig),
-            "model_dtype": _canonical_dtype_name(self.request.model_dtype),
+            "dtype": _canonical_dtype_name(self.request.dtype),
             "env": _gather_env_pins(self.platform_token),
         }
 
@@ -659,7 +659,7 @@ class JitTripletCache:
         self.function_name = request.function_name
         self.source = request.source
         self.stepper_token = _sanitize_token(request.stepper_name)
-        self.dtype_token = _dtype_token(request.model_dtype)
+        self.dtype_token = _dtype_token(request.dtype)
         self.platform_token = _platform_triple()
         self.payload = self._build_digest_payload()
         self.digest = _hash_payload(self.payload)
@@ -804,7 +804,7 @@ class JitTripletCache:
             "spec_hash": self.request.spec_hash,
             "stepper": self.request.stepper_name,
             "structsig": list(self.request.structsig),
-            "model_dtype": _canonical_dtype_name(self.request.model_dtype),
+            "dtype": _canonical_dtype_name(self.request.dtype),
             "env": _gather_env_pins(self.platform_token),
         }
 
@@ -815,7 +815,7 @@ class _StepperDiskCache:
         self.function_name = request.function_name
         self.source = request.source
         self.stepper_token = _sanitize_token(request.stepper_name)
-        self.dtype_token = _dtype_token(request.model_dtype)
+        self.dtype_token = _dtype_token(request.dtype)
         self.platform_token = _platform_triple()
         self.payload = self._build_digest_payload()
         self.digest = _hash_payload(self.payload)
@@ -949,7 +949,7 @@ class _StepperDiskCache:
             "spec_hash": self.request.spec_hash,
             "stepper": self.request.stepper_name,
             "structsig": list(self.request.structsig),
-            "model_dtype": _canonical_dtype_name(self.request.model_dtype),
+            "dtype": _canonical_dtype_name(self.request.dtype),
             "env": _gather_env_pins(self.platform_token),
         }
 

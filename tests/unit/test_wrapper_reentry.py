@@ -89,17 +89,17 @@ def test_wrapper_reentry_calls_and_cursors():
         iw0_size=1, bw0_size=1
     )
     
-    y0 = np.array([1.0], dtype=np.float64)
+    ic = np.array([1.0], dtype=np.float64)
     params = np.array([2.0], dtype=np.float64)
     fake_runner = _RunnerScript()
 
     res = run_with_wrapper(
         runner=fake_runner,
         stepper=_stepper, rhs=_rhs, events_pre=_events_pre, events_post=_events_post,
-        struct=struct, model_dtype=np.float64, n_state=1,
+        struct=struct, dtype=np.float64, n_state=1,
         t0=0.0, t_end=1.0, dt_init=0.1, max_steps=100,
-        record=True, record_every_step=1,
-        y0=y0, params=params,
+        record=True, record_interval=1,
+        ic=ic, params=params,
         cap_rec=1, cap_evt=1,
     )
 
@@ -136,17 +136,17 @@ def test_wrapper_warns_and_sets_status_on_failure():
         iw0_size=1, bw0_size=1
     )
 
-    y0 = np.array([1.0], dtype=np.float64)
+    ic = np.array([1.0], dtype=np.float64)
     params = np.array([2.0], dtype=np.float64)
 
     with pytest.warns(RuntimeWarning, match="STEPFAIL"):
         res = run_with_wrapper(
             runner=_FailingRunner(),
             stepper=_stepper, rhs=_rhs, events_pre=_events_pre, events_post=_events_post,
-            struct=struct, model_dtype=np.float64, n_state=1,
+            struct=struct, dtype=np.float64, n_state=1,
             t0=0.0, t_end=1.0, dt_init=0.1, max_steps=10,
-            record=True, record_every_step=1,
-            y0=y0, params=params,
+            record=True, record_interval=1,
+            ic=ic, params=params,
             cap_rec=1, cap_evt=1,
         )
 

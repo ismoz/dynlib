@@ -24,7 +24,7 @@ class Model:
         stepper: Compiled stepper callable
         runner: Compiled runner callable
         spec_hash: Content hash of the spec
-        model_dtype: NumPy dtype for the model
+        dtype: NumPy dtype for the model
     """
     spec: ModelSpec
     stepper_name: str
@@ -35,5 +35,5 @@ class Model:
     stepper: Callable
     runner: Callable
     spec_hash: str
-    model_dtype: np.dtype
+    dtype: np.dtype
 

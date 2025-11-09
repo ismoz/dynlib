@@ -22,7 +22,7 @@ def _load_decay_model(jit: bool = True) -> Model:
         data = tomllib.load(fh)
 
     spec = build_spec(parse_model_v2(data))
-    full_model = build(spec, stepper_name=spec.sim.stepper, jit=jit)
+    full_model = build(spec, stepper=spec.sim.stepper, jit=jit)
     return Model(
         spec=full_model.spec,
         stepper_name=full_model.stepper_name,
@@ -33,7 +33,7 @@ def _load_decay_model(jit: bool = True) -> Model:
         stepper=full_model.stepper,
         runner=full_model.runner,
         spec_hash=full_model.spec_hash,
-        model_dtype=full_model.model_dtype,
+        dtype=full_model.dtype,
     )
 
 

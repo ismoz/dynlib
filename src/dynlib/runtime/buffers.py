@@ -33,7 +33,7 @@ class RecordingPools:
     FLAGS: np.ndarray      # int32
     cap_rec: int
     n_state: int
-    model_dtype: np.dtype
+    dtype: np.dtype
 
 
 @dataclass(frozen=True)
@@ -43,7 +43,7 @@ class EventPools:
     Shapes:
       - EVT_CODE:  (cap_evt,) int32   — event identifier (runner-defined)
       - EVT_INDEX: (cap_evt,) int32   — index into log data row
-      - EVT_LOG_DATA: (cap_evt, max_log_width) model_dtype — logged signal values
+      - EVT_LOG_DATA: (cap_evt, max_log_width) dtype — logged signal values
     """
     EVT_CODE: np.ndarray      # int32
     EVT_INDEX: np.ndarray     # int32
@@ -68,7 +68,7 @@ class WorkBanks:
     # int / byte banks
     iw0: np.ndarray        # int32
     bw0: np.ndarray        # uint8
-    model_dtype: np.dtype
+    dtype: np.dtype
 
 
 # ---- Allocation --------------------------------------------------------------
@@ -85,7 +85,7 @@ def allocate_pools(
     *,
     n_state: int,
     struct: StructSpec,          # StructSpec with sizes
-    model_dtype: np.dtype,
+    dtype: np.dtype,
     cap_rec: int,
     cap_evt: int,
     max_log_width: int = 0,      # maximum log width across all events
@@ -109,30 +109,30 @@ def allocate_pools(
     sspec = struct
 
     # Model-dtype work banks: lane counts (size * n_state)
-    sp  = _zeros((sspec.sp_size * n_state,),  model_dtype)
-    ss  = _zeros((sspec.ss_size * n_state,),  model_dtype)
-    sw0 = _zeros((sspec.sw0_size * n_state,), model_dtype)
-    sw1 = _zeros((sspec.sw1_size * n_state,), model_dtype)
-    sw2 = _zeros((sspec.sw2_size * n_state,), model_dtype)
-    sw3 = _zeros((sspec.sw3_size * n_state,), model_dtype)
+    sp  = _zeros((sspec.sp_size * n_state,),  dtype)
+    ss  = _zeros((sspec.ss_size * n_state,),  dtype)
+    sw0 = _zeros((sspec.sw0_size * n_state,), dtype)
+    sw1 = _zeros((sspec.sw1_size * n_state,), dtype)
+    sw2 = _zeros((sspec.sw2_size * n_state,), dtype)
+    sw3 = _zeros((sspec.sw3_size * n_state,), dtype)
     
     # Int/byte banks: raw element counts
     iw0 = _zeros((sspec.iw0_size,), np.int32)
     bw0 = _zeros((sspec.bw0_size,), np.uint8)
 
-    banks = WorkBanks(sp, ss, sw0, sw1, sw2, sw3, iw0, bw0, model_dtype)
+    banks = WorkBanks(sp, ss, sw0, sw1, sw2, sw3, iw0, bw0, dtype)
 
     # Recording pools
     T     = _zeros((cap_rec,), np.float64)
-    Y     = _zeros((n_state, cap_rec), model_dtype)
+    Y     = _zeros((n_state, cap_rec), dtype)
     STEP  = _zeros((cap_rec,), np.int64)
     FLAGS = _zeros((cap_rec,), np.int32)
-    rec   = RecordingPools(T, Y, STEP, FLAGS, cap_rec, n_state, model_dtype)
+    rec   = RecordingPools(T, Y, STEP, FLAGS, cap_rec, n_state, dtype)
 
     # Event pools (cap_evt may be 1 if disabled; max_log_width may be 0 if no logging)
     EVT_CODE     = _zeros((cap_evt,), np.int32)
     EVT_INDEX    = _zeros((cap_evt,), np.int32)
-    EVT_LOG_DATA = _zeros((cap_evt, max(1, max_log_width)), model_dtype)  # at least (cap_evt, 1) for numba
+    EVT_LOG_DATA = _zeros((cap_evt, max(1, max_log_width)), dtype)  # at least (cap_evt, 1) for numba
     ev           = EventPools(EVT_CODE, EVT_INDEX, EVT_LOG_DATA, cap_evt, max_log_width)
 
     return banks, rec, ev
@@ -166,7 +166,7 @@ def grow_rec_arrays(
     new_cap = _next_cap(rec.cap_rec, min_needed)
 
     T_new     = _zeros((new_cap,), np.float64)
-    Y_new     = _zeros((rec.n_state, new_cap), rec.model_dtype)
+    Y_new     = _zeros((rec.n_state, new_cap), rec.dtype)
     STEP_new  = _zeros((new_cap,), np.int64)
     FLAGS_new = _zeros((new_cap,), np.int32)
 
@@ -176,7 +176,7 @@ def grow_rec_arrays(
         STEP_new[:filled] = rec.STEP[:filled]
         FLAGS_new[:filled] = rec.FLAGS[:filled]
 
-    return RecordingPools(T_new, Y_new, STEP_new, FLAGS_new, new_cap, rec.n_state, rec.model_dtype)
+    return RecordingPools(T_new, Y_new, STEP_new, FLAGS_new, new_cap, rec.n_state, rec.dtype)
 
 
 def grow_evt_arrays(
@@ -184,7 +184,7 @@ def grow_evt_arrays(
     *,
     filled: int,           # number of filled event slots (0..filled-1 valid)
     min_needed: int,       # required capacity (e.g., filled+1)
-    model_dtype: np.dtype, # needed for EVT_LOG_DATA
+    dtype: np.dtype, # needed for EVT_LOG_DATA
 ) -> EventPools:
     """
     Grow event log arrays to at least min_needed capacity.
@@ -197,7 +197,7 @@ def grow_evt_arrays(
 
     EVT_CODE_new     = _zeros((new_cap,), np.int32)
     EVT_INDEX_new    = _zeros((new_cap,), np.int32)
-    EVT_LOG_DATA_new = _zeros((new_cap, max(1, ev.max_log_width)), model_dtype)
+    EVT_LOG_DATA_new = _zeros((new_cap, max(1, ev.max_log_width)), dtype)
 
     if filled > 0:
         EVT_CODE_new[:filled]     = ev.EVT_CODE[:filled]

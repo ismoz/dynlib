@@ -42,8 +42,8 @@ class Sim:
         dt: Optional[float] = None,
         max_steps: int = 100000,
         record: Optional[bool] = None,
-        record_every_step: int = 1,
-        y0: Optional[np.ndarray] = None,
+        record_interval: int = 1, # in steps
+        ic: Optional[np.ndarray] = None,
         params: Optional[np.ndarray] = None,
         cap_rec: int = 1024,
         cap_evt: int = 1,
@@ -58,8 +58,8 @@ class Sim:
             dt: Initial time step (default from spec.sim.dt)
             max_steps: Maximum number of steps
             record: Enable recording (default from spec.sim.record)
-            record_every_step: Record every N steps (1 = every step)
-            y0: Initial state (default from spec.state_ic)
+            record_interval: Record every N steps (1 = every step)
+            ic: Initial state (default from spec.state_ic)
             params: Parameters (default from spec.param_vals)
             cap_rec: Initial recording buffer capacity
             cap_evt: Initial event log capacity
@@ -97,15 +97,15 @@ class Sim:
         record = record if record is not None else sim_defaults.record
         
         # Initial state and params
-        if y0 is None:
-            y0 = np.array(self.model.spec.state_ic, dtype=self.model.model_dtype)
+        if ic is None:
+            ic = np.array(self.model.spec.state_ic, dtype=self.model.dtype)
         else:
-            y0 = np.array(y0, dtype=self.model.model_dtype)
+            ic = np.array(ic, dtype=self.model.dtype)
         
         if params is None:
-            params = np.array(self.model.spec.param_vals, dtype=self.model.model_dtype)
+            params = np.array(self.model.spec.param_vals, dtype=self.model.dtype)
         else:
-            params = np.array(params, dtype=self.model.model_dtype)
+            params = np.array(params, dtype=self.model.dtype)
         
         n_state = len(self.model.spec.states)
         
@@ -126,15 +126,15 @@ class Sim:
             events_pre=self.model.events_pre,
             events_post=self.model.events_post,
             struct=self.model.struct,
-            model_dtype=self.model.model_dtype,
+            dtype=self.model.dtype,
             n_state=n_state,
             t0=t0,
             t_end=t_end,
             dt_init=dt,
             max_steps=max_steps,
             record=record,
-            record_every_step=record_every_step,
-            y0=y0,
+            record_interval=record_interval,
+            ic=ic,
             params=params,
             cap_rec=cap_rec,
             cap_evt=cap_evt,

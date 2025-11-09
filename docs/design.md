@@ -10,7 +10,7 @@
 #### Runner ← Wrapper
 Arguments are fixed: scalars + ndarrays only (no `None`/Optionals/objects).
 
-- **Scalars**: `t0`, `t_end`, `dt_init`, `max_steps`, `n_state`, `record_every_step`.
+- **Scalars**: `t0`, `t_end`, `dt_init`, `max_steps`, `n_state`, `record_interval`.
 - **State/params**: `y_curr[n_state]`, `y_prev[n_state]`, `params[P]`.
 - **Struct banks (workspace)**
   - Float64/Float32 (model primary dtype): `sw0[:]`, `sw1[:]`, `sw2[:]`, `sw3[:]`

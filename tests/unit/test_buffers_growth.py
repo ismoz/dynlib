@@ -14,7 +14,7 @@ class _DummyStepper(StepperSpec):
 def test_grow_rec_copies_filled_region():
     n_state = 3
     struct_spec = StructSpec(0,0,0,0,0,0, 0,0)
-    banks, rec, ev = allocate_pools(n_state=n_state, struct=struct_spec, model_dtype=np.float64, cap_rec=2, cap_evt=1, max_log_width=0)
+    banks, rec, ev = allocate_pools(n_state=n_state, struct=struct_spec, dtype=np.float64, cap_rec=2, cap_evt=1, max_log_width=0)
 
     # Fill two records
     rec.T[:2] = [0.0, 0.1]
@@ -33,10 +33,10 @@ def test_grow_evt_copies_filled_region():
     # cap_evt=1 -> grow to 2 then 4
     n_state = 1
     struct_spec = StructSpec(0,0,0,0,0,0, 0,0)
-    _, rec, ev = allocate_pools(n_state=n_state, struct=struct_spec, model_dtype=np.float64, cap_rec=1, cap_evt=2, max_log_width=0)
+    _, rec, ev = allocate_pools(n_state=n_state, struct=struct_spec, dtype=np.float64, cap_rec=1, cap_evt=2, max_log_width=0)
     ev.EVT_CODE[:2] = [7, 8]
     ev.EVT_INDEX[:2] = [1, 2]
-    ev2 = grow_evt_arrays(ev, filled=2, min_needed=3, model_dtype=np.float64)
+    ev2 = grow_evt_arrays(ev, filled=2, min_needed=3, dtype=np.float64)
     assert ev2.cap_evt == 4
     np.testing.assert_array_equal(ev2.EVT_CODE[:2], [7, 8])
     np.testing.assert_array_equal(ev2.EVT_INDEX[:2], [1, 2])

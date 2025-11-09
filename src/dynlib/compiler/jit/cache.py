@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Tuple
 
 # Tiny in-process cache for compiled callables (rhs/events).
-# Keyed by (spec_hash, stepper_name, structspec_signature, model_dtype, version_pins)
+# Keyed by (spec_hash, stepper_name, structspec_signature, dtype, version_pins)
 
 __all__ = ["CacheKey", "JITCache"]
 
@@ -13,7 +13,7 @@ class CacheKey:
     spec_hash: str
     stepper: str
     structsig: Tuple[int, ...]   # sizes from StructSpec (immutable)
-    model_dtype: str
+    dtype: str
     version_pins: Tuple[str, ...]  # e.g. ("dynlib=2", "numba=0.60")
 
 class JITCache:

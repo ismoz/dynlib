@@ -26,7 +26,7 @@ def _run_inline_model(model_toml: str):
         stepper=full_model.stepper,
         runner=full_model.runner,
         spec_hash=full_model.spec_hash,
-        model_dtype=full_model.model_dtype,
+        dtype=full_model.dtype,
     )
     
     sim = Sim(model)

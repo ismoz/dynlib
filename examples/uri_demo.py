@@ -53,7 +53,7 @@ def demo_inline_model():
         stepper=full_model.stepper,
         runner=full_model.runner,
         spec_hash=full_model.spec_hash,
-        model_dtype=full_model.model_dtype,
+        dtype=full_model.dtype,
     )
     
     sim = Sim(model)
@@ -86,7 +86,7 @@ def demo_file_loading():
     print(f"Loaded from: {model_path}")
     print(f"Model kind: {full_model.spec.kind}")
     print(f"States: {full_model.spec.states}")
-    print(f"Default stepper: {full_model.stepper_name}")
+    print(f"Default stepper: {full_model.stepper}")
     print()
 
 

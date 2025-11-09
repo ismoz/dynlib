@@ -37,10 +37,10 @@ u = u + d
 T = 1.0e6
 
 with Timer("build model"):
-    model = build(DSL, stepper_name="euler", jit=False, model_dtype="float32")
+    model = build(DSL, stepper="euler", jit=False, dtype="float32")
 
 with Timer("build model jit"):
-    model_jit = build(DSL, stepper_name="euler", jit=True, model_dtype="float32")
+    model_jit = build(DSL, stepper="euler", jit=True, dtype="float32")
 
 sim = Sim(model)
 sim_jit = Sim(model_jit)

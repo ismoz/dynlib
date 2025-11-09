@@ -11,7 +11,7 @@
 runner(
   # scalars
   t0: float, t_end: float, dt_init: float,
-  max_steps: int, n_state: int, record_every_step: int,
+  max_steps: int, n_state: int, record_interval: int,
   # state/params
   y_curr: float[:], y_prev: float[:], params: float[:] | int[:],
   # struct banks (views)
