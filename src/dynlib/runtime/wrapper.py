@@ -142,12 +142,14 @@ def run_with_wrapper(
         step_curr = int(step_out[0])
 
         if status_value == DONE:
+            final_state = np.array(y_curr, copy=True)
             return Results(
                 T=rec.T, Y=rec.Y, STEP=rec.STEP, FLAGS=rec.FLAGS,
                 EVT_CODE=ev.EVT_CODE, EVT_INDEX=ev.EVT_INDEX,
                 EVT_LOG_DATA=ev.EVT_LOG_DATA,
                 n=n_filled, m=m_filled,
                 status=status_value,
+                final_state=final_state,
             )
 
         if status_value == GROW_REC:
@@ -184,11 +186,13 @@ def run_with_wrapper(
                 stacklevel=2,
             )
             # Early termination or error; return what we have (viewed via n/m)
+            final_state = np.array(y_curr, copy=True)
             return Results(
                 T=rec.T, Y=rec.Y, STEP=rec.STEP, FLAGS=rec.FLAGS,
                 EVT_CODE=ev.EVT_CODE, EVT_INDEX=ev.EVT_INDEX,
                 EVT_LOG_DATA=ev.EVT_LOG_DATA,
                 n=n_filled, m=m_filled, status=status_value,
+                final_state=final_state,
             )
 
         # Any other code is unexpected in wrapper-level exit contract.

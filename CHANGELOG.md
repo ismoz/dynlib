@@ -2,6 +2,17 @@
 
 ---
 
+## [2.15.3]
+### Added
+- `Sim.run()` accepts a `transient` warm-up duration that advances the model before recording while
+  keeping events functional and resetting the public time axis to `t0`.
+- `Results` now exposes the final committed state via `final_state_view` for scenarios that need to
+  reuse the converged state (e.g., transient warm-up, chained simulations).
+### Changed
+- `run_with_wrapper` captures the final committed state and stores it on the returned `Results`.
+
+---
+
 ## [2.15.2] – 2025-11-09
 ### Changed
 - Renamed `run()` args: 

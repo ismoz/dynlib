@@ -90,6 +90,38 @@ def test_euler_decay_analytic():
     assert results.Y[0, 0] == pytest.approx(x0)
 
 
+def test_euler_transient_warmup_reuses_state():
+    """
+    Warm-up transient should advance the state before recording and reset time.
+    """
+    data_dir = Path(__file__).parent.parent / "data" / "models"
+    model_path = data_dir / "decay.toml"
+
+    model = load_model_from_toml(model_path, jit=True)
+
+    # Reference run without transient but longer horizon (t_end + transient)
+    sim_ref = Sim(model)
+    sim_ref.run(t_end=3.0)
+    res_ref = sim_ref.raw_results()
+
+    sim_transient = Sim(model)
+    sim_transient.run(transient=1.0)
+    res_transient = sim_transient.raw_results()
+
+    # Recorded time restarted at zero
+    assert res_transient.T_view[0] == pytest.approx(0.0)
+    assert res_transient.T_view[-1] == pytest.approx(2.0)
+
+    # Drop the first second from the reference run and compare trajectories
+    start_idx = np.searchsorted(res_ref.T_view, 1.0 - 1e-12, side="left")
+    ref_t = res_ref.T_view[start_idx:] - 1.0
+    ref_y = res_ref.Y_view[:, start_idx:]
+    assert len(ref_t) == res_transient.n
+
+    np.testing.assert_allclose(res_transient.T_view, ref_t, atol=1e-12)
+    np.testing.assert_allclose(res_transient.Y_view, ref_y, atol=1e-12)
+
+
 def test_euler_with_event():
     """
     Test that events can mutate state correctly.

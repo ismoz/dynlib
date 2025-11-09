@@ -39,6 +39,7 @@ class Results:
     n: int                 # filled records
     m: int                 # filled events
     status: int            # runner exit status
+    final_state: np.ndarray  # final committed state (length = n_state)
 
     # ---------------- views ----------------
 
@@ -73,6 +74,11 @@ class Results:
         Use EVT_INDEX_view to know how many values are valid per event row.
         """
         return self.EVT_LOG_DATA[: self.m, :]
+
+    @property
+    def final_state_view(self) -> np.ndarray:
+        """View of the final committed state vector."""
+        return self.final_state
 
     # --------------- helpers (out of hot path) ---------------
 

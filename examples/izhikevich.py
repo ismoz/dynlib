@@ -35,7 +35,7 @@ u = u + d
 
 model = build(DSL, stepper="euler", jit=False, dtype="float32")
 sim = Sim(model)
-sim.run(t_end=600.0, dt=0.01, cap_rec=10000)
+sim.run(t_end=600.0, dt=0.01, transient=50.0)
 
 res = sim.results()
 

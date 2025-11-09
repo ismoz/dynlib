@@ -9,6 +9,7 @@ from .model import Model
 from .wrapper import run_with_wrapper
 from .results import Results
 from .results_api import ResultsView
+from .runner_api import Status
 
 __all__ = ["Sim"]
 
@@ -47,6 +48,7 @@ class Sim:
         params: Optional[np.ndarray] = None,
         cap_rec: int = 1024,
         cap_evt: int = 1,
+        transient: Optional[float] = None,
         **stepper_kwargs,
     ) -> None:
         """
@@ -63,6 +65,7 @@ class Sim:
             params: Parameters (default from spec.param_vals)
             cap_rec: Initial recording buffer capacity
             cap_evt: Initial event log capacity
+            transient: Optional warm-up duration before recording (no logging)
             **stepper_kwargs: Stepper-specific runtime parameters
             
         Stepper-specific parameters:
@@ -95,6 +98,9 @@ class Sim:
         t_end = t_end if t_end is not None else sim_defaults.t_end
         dt = dt if dt is not None else sim_defaults.dt
         record = record if record is not None else sim_defaults.record
+        transient = 0.0 if transient is None else float(transient)
+        if transient < 0.0:
+            raise ValueError("transient must be non-negative")
         
         # Initial state and params
         if ic is None:
@@ -118,7 +124,40 @@ class Sim:
         # Build stepper config from kwargs
         stepper_config = self._build_stepper_config(stepper_kwargs)
         
-        # Call the wrapper
+        ic_for_run = ic
+
+        if transient > 0.0:
+            warm_end = t0 + transient
+            warm_result = run_with_wrapper(
+                runner=self.model.runner,
+                stepper=self.model.stepper,
+                rhs=self.model.rhs,
+                events_pre=self.model.events_pre,
+                events_post=self.model.events_post,
+                struct=self.model.struct,
+                dtype=self.model.dtype,
+                n_state=n_state,
+                t0=t0,
+                t_end=warm_end,
+                dt_init=dt,
+                max_steps=max_steps,
+                record=False,
+                record_interval=record_interval,
+                ic=ic_for_run,
+                params=params,
+                cap_rec=max(1, cap_rec),  # ensure valid allocation
+                cap_evt=max(1, cap_evt),
+                max_log_width=max_log_width,
+                stepper_config=stepper_config,
+            )
+            if not warm_result.ok:
+                status_name = Status(warm_result.status).name
+                raise RuntimeError(
+                    f"Transient warm-up failed with status {status_name} ({warm_result.status})"
+                )
+            ic_for_run = np.array(warm_result.final_state_view, dtype=self.model.dtype, copy=True)
+
+        # Call the wrapper for the recorded run
         result = run_with_wrapper(
             runner=self.model.runner,
             stepper=self.model.stepper,
@@ -134,7 +173,7 @@ class Sim:
             max_steps=max_steps,
             record=record,
             record_interval=record_interval,
-            ic=ic,
+            ic=ic_for_run,
             params=params,
             cap_rec=cap_rec,
             cap_evt=cap_evt,
