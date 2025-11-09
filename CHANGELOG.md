@@ -2,6 +2,15 @@
 
 ---
 
+## [2.15.1] – 2025-11-09
+### Changed
+- Forgot to add `**stepper_kwargs` in the previous version. Refactored `Sim.run()` in `sim.py` to 
+  accept `**stepper_kwargs` for runtime overrides instead of explicit stepper parameters.
+- Updated `_build_stepper_config()` in `Sim` to construct stepper configuration arrays from
+  `**stepper_kwargs`.
+
+---
+
 ## [2.15.0] – 2025-11-09
 ### Added
 - Introduced runtime stepper configuration system. Now steppers can declare their internal config 

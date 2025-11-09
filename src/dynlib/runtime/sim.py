@@ -47,14 +47,7 @@ class Sim:
         params: Optional[np.ndarray] = None,
         cap_rec: int = 1024,
         cap_evt: int = 1,
-        # Stepper-specific parameters (RK45 example)
-        atol: Optional[float] = None,
-        rtol: Optional[float] = None,
-        safety: Optional[float] = None,
-        min_factor: Optional[float] = None,
-        max_factor: Optional[float] = None,
-        max_tries: Optional[int] = None,
-        min_step: Optional[float] = None,
+        **stepper_kwargs,
     ) -> None:
         """
         Run the simulation using the compiled model.
@@ -70,8 +63,12 @@ class Sim:
             params: Parameters (default from spec.param_vals)
             cap_rec: Initial recording buffer capacity
             cap_evt: Initial event log capacity
+            **stepper_kwargs: Stepper-specific runtime parameters
             
-            Stepper-specific parameters (RK45):
+        Stepper-specific parameters:
+            The available parameters depend on the stepper used by the model.
+            
+            For RK45 (adaptive):
                 atol: Absolute tolerance (overrides model_spec.sim.atol)
                 rtol: Relative tolerance (overrides model_spec.sim.rtol)
                 safety: Safety factor for step size control
@@ -79,14 +76,18 @@ class Sim:
                 max_factor: Maximum step size increase factor
                 max_tries: Maximum number of adaptive retries
                 min_step: Minimum allowed step size
+            
+            For Euler/RK4 (fixed-step):
+                No runtime parameters (stepper_kwargs ignored with warning)
                 
-        Example:
+        Examples:
             sim.run(t0=0, t_end=10)  # Use defaults
-            sim.run(t0=0, t_end=10, atol=1e-10, rtol=1e-8)  # Override tolerances
+            sim.run(t0=0, t_end=10, atol=1e-10, rtol=1e-8)  # Override RK45 tolerances
+            sim.run(max_tries=50, min_step=1e-15)  # Override RK45 retry limits
         
         Note:
             Stepper-specific parameters that don't apply to the current stepper
-            are silently ignored (e.g., atol/rtol for Euler).
+            will trigger a warning and be ignored (e.g., atol/rtol for Euler).
         """
         # Use defaults from spec.sim if not provided
         sim_defaults = self.model.spec.sim
@@ -114,24 +115,7 @@ class Sim:
             if event.log:
                 max_log_width = max(max_log_width, len(event.log))
         
-        # Build stepper config from explicit stepper parameters
-        # Only pass stepper-specific parameters (not core run() parameters)
-        stepper_kwargs = {}
-        if atol is not None:
-            stepper_kwargs['atol'] = atol
-        if rtol is not None:
-            stepper_kwargs['rtol'] = rtol
-        if safety is not None:
-            stepper_kwargs['safety'] = safety
-        if min_factor is not None:
-            stepper_kwargs['min_factor'] = min_factor
-        if max_factor is not None:
-            stepper_kwargs['max_factor'] = max_factor
-        if max_tries is not None:
-            stepper_kwargs['max_tries'] = max_tries
-        if min_step is not None:
-            stepper_kwargs['min_step'] = min_step
-        
+        # Build stepper config from kwargs
         stepper_config = self._build_stepper_config(stepper_kwargs)
         
         # Call the wrapper
