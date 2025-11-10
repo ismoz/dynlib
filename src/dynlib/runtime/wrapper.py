@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Callable
+from typing import Callable, Mapping, Dict
 import warnings
 import numpy as np
 
@@ -7,7 +7,7 @@ from dynlib.runtime.runner_api import (
     OK, STEPFAIL, NAN_DETECTED, DONE, GROW_REC, GROW_EVT, USER_BREAK, Status,
 )
 from dynlib.runtime.buffers import (
-    allocate_pools, grow_rec_arrays, grow_evt_arrays,
+    allocate_pools, grow_rec_arrays, grow_evt_arrays, WorkBanks,
 )
 from dynlib.runtime.results import Results
 from dynlib.steppers.base import StructSpec
@@ -42,6 +42,7 @@ def run_with_wrapper(
     max_log_width: int = 0,  # maximum log width across all events
     # NEW: stepper configuration
     stepper_config: np.ndarray = None,
+    workspace_seed: Mapping[str, np.ndarray] | None = None,
 ) -> Results:
     """
     JIT-free orchestrator. Allocates banks/buffers, calls the compiled runner
@@ -86,6 +87,10 @@ def run_with_wrapper(
         n_state=n_state, struct=struct, dtype=dtype,
         cap_rec=cap_rec, cap_evt=cap_evt, max_log_width=max_log_width,
     )
+
+    # Apply workspace seed (for resume scenarios) before entering runner
+    if workspace_seed:
+        _apply_workspace_seed(banks, workspace_seed)
 
     # Proposals / outs (len-1 where applicable)
     y_prop  = np.zeros((n_state,), dtype=dtype)
@@ -143,6 +148,10 @@ def run_with_wrapper(
 
         if status_value == DONE:
             final_state = np.array(y_curr, copy=True)
+            final_params = np.array(params, copy=True)
+            final_ws = _capture_workspace(banks)
+            final_dt = float(dt_next[0]) if step_curr > 0 else float(dt_curr)
+            t_final = float(t_out[0])
             return Results(
                 T=rec.T, Y=rec.Y, STEP=rec.STEP, FLAGS=rec.FLAGS,
                 EVT_CODE=ev.EVT_CODE, EVT_INDEX=ev.EVT_INDEX,
@@ -150,6 +159,11 @@ def run_with_wrapper(
                 n=n_filled, m=m_filled,
                 status=status_value,
                 final_state=final_state,
+                final_params=final_params,
+                t_final=t_final,
+                final_dt=final_dt,
+                step_count_final=step_curr,
+                final_stepper_ws=final_ws,
             )
 
         if status_value == GROW_REC:
@@ -187,13 +201,47 @@ def run_with_wrapper(
             )
             # Early termination or error; return what we have (viewed via n/m)
             final_state = np.array(y_curr, copy=True)
+            final_params = np.array(params, copy=True)
+            final_ws = _capture_workspace(banks)
+            final_dt = float(dt_next[0]) if step_curr > 0 else float(dt_curr)
+            t_final = float(t_out[0])
             return Results(
                 T=rec.T, Y=rec.Y, STEP=rec.STEP, FLAGS=rec.FLAGS,
                 EVT_CODE=ev.EVT_CODE, EVT_INDEX=ev.EVT_INDEX,
                 EVT_LOG_DATA=ev.EVT_LOG_DATA,
                 n=n_filled, m=m_filled, status=status_value,
                 final_state=final_state,
+                final_params=final_params,
+                t_final=t_final,
+                final_dt=final_dt,
+                step_count_final=step_curr,
+                final_stepper_ws=final_ws,
             )
 
         # Any other code is unexpected in wrapper-level exit contract.
         raise RuntimeError(f"Runner returned unexpected status {status_value}")
+
+
+def _apply_workspace_seed(banks: WorkBanks, seed: Mapping[str, np.ndarray]) -> None:
+    """Restore stepper workspace arrays from a snapshot."""
+    for name in ("sp", "ss", "sw0", "sw1", "sw2", "sw3", "iw0", "bw0"):
+        if name not in seed:
+            continue
+        data = np.asarray(seed[name])
+        target = getattr(banks, name)
+        if target.shape != data.shape or target.dtype != data.dtype:
+            raise ValueError(f"Workspace seed mismatch for '{name}': expected shape={target.shape}, dtype={target.dtype}, got {data.shape}/{data.dtype}")
+        if target.size == 0:
+            continue
+        target[...] = data
+
+
+def _capture_workspace(banks: WorkBanks) -> Dict[str, np.ndarray]:
+    """Capture copies of stepper workspace arrays for session state snapshots."""
+    snapshot: Dict[str, np.ndarray] = {}
+    for name in ("sp", "ss", "sw0", "sw1", "sw2", "sw3", "iw0", "bw0"):
+        data = getattr(banks, name)
+        if data.size == 0:
+            continue
+        snapshot[name] = np.array(data, copy=True)
+    return snapshot

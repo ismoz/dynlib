@@ -42,7 +42,7 @@ class EventPools:
     Event log storage (may be disabled with cap_evt==1).
     Shapes:
       - EVT_CODE:  (cap_evt,) int32   — event identifier (runner-defined)
-      - EVT_INDEX: (cap_evt,) int32   — index into log data row
+      - EVT_INDEX: (cap_evt,) int32   — owning record index (or -1 if not materialized)
       - EVT_LOG_DATA: (cap_evt, max_log_width) dtype — logged signal values
     """
     EVT_CODE: np.ndarray      # int32

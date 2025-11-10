@@ -67,7 +67,11 @@ def test_event_logging_basic():
     assert len(evt_code) > 0, "Event code log should have entries"
     assert len(evt_index) > 0, "Event index log should have entries"
     assert np.all(evt_code == 0), "Single event should emit code 0"
-    assert np.all(evt_index == 2), "Event index should be 2 (log width for log=['t', 'x'])"
+    assert np.all(evt_index >= -1), "Event indices should be -1 or non-negative record owners"
+    non_negative = evt_index[evt_index >= 0]
+    if non_negative.size:
+        assert np.all(non_negative < result.n), "Event indices must reference recorded rows"
+        assert np.all(np.diff(non_negative) >= 0), "Event indices should be non-decreasing"
     
     # Check that log data was captured
     assert evt_log_data.shape[1] >= 2, "Log data should have at least 2 columns (t and x)"

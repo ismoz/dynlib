@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 import numpy as np
 
 from dynlib.runtime.runner_api import DONE
@@ -22,7 +22,8 @@ class Results:
     Notes:
       - All accessors return *views* limited to n/m (no copying).
       - Y has shape (n_state, n); states are columns per record index.
-      - EVT_LOG_DATA has shape (cap_evt, max_log_width); use EVT_INDEX to know how many values are valid per event.
+      - EVT_LOG_DATA has shape (cap_evt, max_log_width); interpret column counts using the event definition (len(log)).
+      - EVT_INDEX stores the owning record index (0-based). Events without a materialized record use -1.
     """
     # recording (backing arrays)
     T: np.ndarray          # float64, shape (cap_rec,)
@@ -32,7 +33,7 @@ class Results:
 
     # event log (backing arrays)
     EVT_CODE: np.ndarray      # int32,   shape (cap_evt,)
-    EVT_INDEX: np.ndarray     # int32,   shape (cap_evt,) - stores log_width
+    EVT_INDEX: np.ndarray     # int32,   shape (cap_evt,) - stores record index owner (or -1)
     EVT_LOG_DATA: np.ndarray  # model dtype, shape (cap_evt, max_log_width)
 
     # filled lengths (cursors)
@@ -40,6 +41,11 @@ class Results:
     m: int                 # filled events
     status: int            # runner exit status
     final_state: np.ndarray  # final committed state (length = n_state)
+    final_params: np.ndarray  # final committed params (length = n_params)
+    t_final: float         # final committed time
+    final_dt: float        # integrator's next dt suggestion
+    step_count_final: int  # last accepted global step (relative to run)
+    final_stepper_ws: Mapping[str, np.ndarray]  # snapshot of stepper workspace
 
     # ---------------- views ----------------
 
@@ -69,16 +75,23 @@ class Results:
 
     @property
     def EVT_LOG_DATA_view(self) -> np.ndarray:
-        """
-        Return event log data view (m, max_log_width).
-        Use EVT_INDEX_view to know how many values are valid per event row.
-        """
+        """Return event log data view (m, max_log_width)."""
         return self.EVT_LOG_DATA[: self.m, :]
 
     @property
     def final_state_view(self) -> np.ndarray:
         """View of the final committed state vector."""
         return self.final_state
+
+    @property
+    def final_params_view(self) -> np.ndarray:
+        """View of the final committed parameter vector."""
+        return self.final_params
+
+    @property
+    def final_workspace_view(self) -> Mapping[str, np.ndarray]:
+        """Read-only snapshot of the stepper workspace."""
+        return self.final_stepper_ws
 
     # --------------- helpers (out of hot path) ---------------
 

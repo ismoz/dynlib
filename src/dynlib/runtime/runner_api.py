@@ -147,7 +147,7 @@ Rules:
   - event_code: -1 if no event fired, else unique event identifier (0, 1, 2...)
   - log_width: number of values written to evt_log_scratch (len(event.log))
   - Events run 'pre' on committed state before step; 'post' after commit. May only mutate states/params.
-- EVT_INDEX stores log_width; EVT_LOG_DATA[m, :log_width] contains logged signal values
+- EVT_INDEX stores the record index (0-based) that owns the event (or -1 when no record exists).
 - Time can be logged using log=["t", ...] - it appears as first column in EVT_LOG_DATA
 - T is float64; Y/EVT_LOG_DATA is model dtype; STEP:int64, FLAGS:int32, EVT_CODE/EVT_INDEX:int32.
 - Work banks sp, ss, sw* are model dtype; iw0:int32, bw0:uint8.

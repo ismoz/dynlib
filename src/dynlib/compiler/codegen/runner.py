@@ -88,13 +88,16 @@ except Exception:
 
 def _discover_dynlib_version() -> str:
     """Best-effort dynlib version lookup."""
+    version = _read_pyproject_version()
+    if version is not None:
+        return version
     try:
         return importlib_metadata.version("dynlib")
     except importlib_metadata.PackageNotFoundError:
-        return _read_pyproject_version()
+        return "0.0.0+local"
 
 
-def _read_pyproject_version() -> str:
+def _read_pyproject_version() -> Optional[str]:
     root = Path(__file__).resolve()
     for parent in root.parents:
         candidate = parent / "pyproject.toml"
@@ -109,7 +112,7 @@ def _read_pyproject_version() -> str:
         version = project.get("version")
         if isinstance(version, str):
             return version
-    return "0.0.0+local"
+    return None
 
 
 _DYNLIB_VERSION = _discover_dynlib_version()
@@ -219,7 +222,7 @@ def runner(
                 EVT_LOG_DATA[m, log_idx] = evt_log_scratch[log_idx]
             
             EVT_CODE[m] = event_code_pre
-            EVT_INDEX[m] = log_width_pre  # Store width for interpretation
+            EVT_INDEX[m] = (i - 1) if i > 0 else -1
             m += 1
         
         # 2. Clip dt to avoid overshooting t_end
@@ -272,7 +275,7 @@ def runner(
                 EVT_LOG_DATA[m, log_idx] = evt_log_scratch[log_idx]
             
             EVT_CODE[m] = event_code_post
-            EVT_INDEX[m] = log_width_post  # Store width for interpretation
+            EVT_INDEX[m] = (i - 1) if i > 0 else -1
             m += 1
         
         # 6. Record (if enabled and step matches record_interval)

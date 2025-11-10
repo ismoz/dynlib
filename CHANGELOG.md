@@ -2,6 +2,30 @@
 
 ---
 
+## [2.16.0]
+### Added
+- `Sim` now tracks an internal `SessionState` so `run(resume=True)` continues from the exact last
+  integrator conditions (time, state, params, dt, workspace).
+- Snapshot API: `create_snapshot()`, `reset()`, and `list_snapshots()` capture/restore
+  SessionState, with an auto `initial` snapshot created before the first run.
+- New helpers `session_state_summary()`, `can_resume()`, and `compat_check()` surface resume
+  diagnostics.
+- Seam-aware result stitching drops duplicate seam samples, offsets STEP/EVT indices, and asserts
+  monotone time; events referencing a dropped seam record are dropped (documented policy).
+
+### Changed
+- `Results` contract now includes `final_params_view`, `t_final`, `final_dt`, `step_count_final`, 
+  and `final_stepper_ws`. `run_with_wrapper` captures these values along with snapshots of the 
+  stepper workspace and accepts a `workspace_seed` for resume.
+- Runner redefines `EVT_INDEX` as the owning record index (or `-1` when no record exists);
+  downstream docs/tests updated accordingly.
+
+### Tests
+- Added integration coverage for resume stitching, record-off then resume, and snapshot reset in
+  `tests/integration/test_sim_session.py`.
+
+---
+
 ## [2.15.3]
 ### Added
 - `Sim.run()` accepts a `transient` warm-up duration that advances the model before recording while

@@ -35,9 +35,12 @@ u = u + d
 
 model = build(DSL, stepper="euler", jit=False, dtype="float32")
 sim = Sim(model)
-sim.run(t_end=600.0, dt=0.01, transient=50.0)
+sim.run(t_end=300.0, dt=0.01, transient=50.0)
+sim.run(t_end=600.0, resume=True)
 
 res = sim.results()
 
 series.plot(x=res.t, y=res["v"], title="Membrane Potential (v)")
 export.show()
+
+print(sim.list_snapshots())

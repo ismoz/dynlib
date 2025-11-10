@@ -23,7 +23,7 @@ runner(
   # recording
   T: float64[:], Y: float[:, :], STEP: int64[:], FLAGS: int32[:],
   # event log (present; cap may be 1 if disabled)
-  EVT_CODE: int32[:], EVT_INDEX: int32[:], EVT_LOG_DATA: float[:, :],
+  EVT_CODE: int32[:], EVT_INDEX: int32[:], EVT_LOG_DATA: float[:, :],  # EVT_INDEX stores owning record index (or -1)
   evt_log_scratch: float[:],
   # cursors & caps
   i_start: int64, step_start: int64, cap_rec: int64, cap_evt: int64,

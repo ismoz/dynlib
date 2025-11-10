@@ -19,7 +19,7 @@ Arguments are fixed: scalars + ndarrays only (no `None`/Optionals/objects).
   - *(0 lanes = unused; 1 lane = n_state; All are views carved from contiguous dtype-specific buffers allocated at init.)*
 - **Proposal/outs**: `y_prop[n_state]`, `t_prop[1]`, `dt_next[1]`, `err_est[1]`.
 - **Recording**: `T[CAP]` (float64 time), `Y[n_state, CAP]` (model dtype), `STEP[CAP]` (int64), `FLAGS[CAP]` (int32).
-- **Optional event log**: `EVT_CODE[EVTCAP]`, `EVT_INDEX[EVTCAP]`, `EVT_LOG_DATA[EVTCAP, LOGW]` *(present with minimal size if logging disabled)*.
+- **Optional event log**: `EVT_CODE[EVTCAP]`, `EVT_INDEX[EVTCAP]`, `EVT_LOG_DATA[EVTCAP, LOGW]` *(present with minimal size if logging disabled; `EVT_INDEX` stores the owning record index or -1 when no record was captured)*.
 - **Cursors & caps**: `i_start`, `step_start`, `cap_rec`, `cap_evt`.
 - **Control/outs (1-elem arrays)**: `user_break_flag`, `status_out`, `hint_out`, `i_out`, `step_out`, `t_out`.
 - **Function symbols**: `stepper`, `rhs`, `events_pre`, `events_post` *(all jittable callables; no Python objects in hot path)*.
@@ -419,4 +419,3 @@ This is the whole playbook. If you stick to these contracts, you can add RK45, m
     │   └── events_logging/
     └── data/
         └── models/            # small TOML fixtures for tests
-
