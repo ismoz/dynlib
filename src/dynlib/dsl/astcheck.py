@@ -12,6 +12,7 @@ __all__ = [
     "validate_event_tags",
     "validate_functions_signature",
     "validate_no_duplicate_equation_targets",
+    "validate_presets",
 ]
 
 #NOTE: emitter.py and schema.py also perform the same regex matching;
@@ -222,3 +223,51 @@ def validate_no_duplicate_equation_targets(normal: Dict[str, Any]) -> None:
         raise ModelLoadError(
             f"States defined in both [equations.rhs] and [equations].expr: {sorted(overlap)}"
         )
+
+
+def validate_presets(normal: Dict[str, Any]) -> None:
+    """Validate preset definitions at spec-build time.
+    
+    Checks:
+    - All param keys in preset exist in model params
+    - All state keys in preset (if present) exist in model states
+    - States follow all-or-none rule (must define all states or none)
+    
+    This catches typos early during model loading instead of waiting until runtime.
+    """
+    presets = normal.get("presets") or []
+    if not presets:
+        return
+    
+    param_names = set(normal["params"].keys())
+    state_names = set(normal["states"].keys())
+    
+    for preset in presets:
+        name = preset["name"]
+        
+        # Validate param keys
+        preset_params = set(preset["params"].keys())
+        unknown_params = preset_params - param_names
+        if unknown_params:
+            raise ModelLoadError(
+                f"[presets.{name}].params contains unknown parameter(s): {sorted(unknown_params)}. "
+                f"Valid params: {sorted(param_names)}"
+            )
+        
+        # Validate state keys (if present)
+        if preset.get("states") is not None:
+            preset_states = set(preset["states"].keys())
+            
+            # All-or-none rule: must define all states
+            if preset_states != state_names:
+                missing = state_names - preset_states
+                extra = preset_states - state_names
+                
+                msg_parts = [f"[presets.{name}].states violates all-or-none rule"]
+                if missing:
+                    msg_parts.append(f"Missing: {sorted(missing)}")
+                if extra:
+                    msg_parts.append(f"Unknown: {sorted(extra)}")
+                msg_parts.append(f"Valid states: {sorted(state_names)}")
+                
+                raise ModelLoadError(". ".join(msg_parts))

@@ -95,6 +95,56 @@ def _read_events(ev_tbl: Dict[str, Any]) -> List[Dict[str, Any]]:
     return events
 
 
+def _read_presets(presets_tbl: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Parse [presets.<name>] blocks from TOML.
+    
+    Returns a list of dicts with keys: name, params, states (optional).
+    """
+    presets: List[Dict[str, Any]] = []
+    for name, body in presets_tbl.items():
+        if not isinstance(body, dict):
+            raise ModelLoadError(f"[presets.{name}] must be a table")
+        
+        # Read params (required, must have at least one key)
+        params = body.get("params")
+        if params is None:
+            raise ModelLoadError(f"[presets.{name}] must have a 'params' table")
+        if not isinstance(params, dict):
+            raise ModelLoadError(f"[presets.{name}].params must be a table")
+        if len(params) == 0:
+            raise ModelLoadError(f"[presets.{name}].params must have at least one key")
+        
+        # Validate param values are numeric
+        for key, val in params.items():
+            if not isinstance(val, (int, float)):
+                raise ModelLoadError(
+                    f"[presets.{name}].params.{key} must be a number, got {type(val).__name__}"
+                )
+        
+        # Read states (optional, but if present must be a table)
+        states = body.get("states")
+        if states is not None:
+            if not isinstance(states, dict):
+                raise ModelLoadError(f"[presets.{name}].states must be a table if present")
+            if len(states) == 0:
+                raise ModelLoadError(f"[presets.{name}].states cannot be empty; omit it for param-only presets")
+            
+            # Validate state values are numeric
+            for key, val in states.items():
+                if not isinstance(val, (int, float)):
+                    raise ModelLoadError(
+                        f"[presets.{name}].states.{key} must be a number, got {type(val).__name__}"
+                    )
+        
+        presets.append({
+            "name": name,
+            "params": dict(params),
+            "states": dict(states) if states else None,
+        })
+    
+    return presets
+
+
 def parse_model_v2(doc: Dict[str, Any]) -> Dict[str, Any]:
     """Parse a v2 DSL TOML dict into a normalized model dict (no codegen).
 
@@ -139,6 +189,10 @@ def parse_model_v2(doc: Dict[str, Any]) -> Dict[str, Any]:
     ev_tbl = doc.get("events") or {}
     events = _read_events(ev_tbl) if ev_tbl else []
 
+    # Presets
+    presets_tbl = doc.get("presets") or {}
+    presets = _read_presets(presets_tbl) if presets_tbl else []
+
     # Sim (defaults finalized in spec.build_spec)
     sim_tbl = doc.get("sim") or {}
     if not isinstance(sim_tbl, dict):
@@ -152,5 +206,6 @@ def parse_model_v2(doc: Dict[str, Any]) -> Dict[str, Any]:
         "aux": aux_tbl,
         "functions": functions,
         "events": events,
+        "presets": presets,
         "sim": sim_tbl,
     }

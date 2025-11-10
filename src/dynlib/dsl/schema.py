@@ -92,6 +92,10 @@ def validate_tables(doc: Dict[str, Any]) -> None:
     if events is not None and not isinstance(events, dict):
         raise ModelLoadError("[events] must be a table of named event subtables")
 
+    presets = doc.get("presets")
+    if presets is not None and not isinstance(presets, dict):
+        raise ModelLoadError("[presets] must be a table of named preset subtables")
+
     sim = doc.get("sim")
     if sim is not None and not isinstance(sim, dict):
         raise ModelLoadError("[sim] must be a table if present")

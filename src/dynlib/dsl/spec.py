@@ -8,10 +8,19 @@ import hashlib
 __all__ = [
     "SimDefaults",
     "EventSpec",
+    "PresetSpec",
     "ModelSpec",
     "build_spec",
     "compute_spec_hash",
 ]
+
+
+@dataclass(frozen=True)
+class PresetSpec:
+    """A preset defined in the model DSL."""
+    name: str
+    params: Dict[str, float | int]
+    states: Dict[str, float | int] | None
 
 
 @dataclass(frozen=True)
@@ -53,6 +62,7 @@ class ModelSpec:
     events: Tuple[EventSpec, ...]
     sim: SimDefaults
     tag_index: Dict[str, Tuple[str, ...]]  # tag -> event names, compile-time only
+    presets: Tuple[PresetSpec, ...]  # inline presets from DSL
 
 
 # ---- builders ----------------------------------------------------------------
@@ -91,6 +101,7 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
         validate_event_tags,
         validate_functions_signature,
         validate_no_duplicate_equation_targets,
+        validate_presets,
     )
     
     validate_expr_acyclic(normal)
@@ -98,6 +109,7 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
     validate_event_tags(normal)
     validate_functions_signature(normal)
     validate_no_duplicate_equation_targets(normal)
+    validate_presets(normal)
     
     model = normal["model"]
     kind = model["type"]
@@ -141,6 +153,15 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
         rtol=float(sim_in.get("rtol", SimDefaults.rtol)),
     )
 
+    presets = tuple(
+        PresetSpec(
+            name=p["name"],
+            params=dict(p["params"]),
+            states=dict(p["states"]) if p.get("states") else None,
+        )
+        for p in (normal.get("presets") or [])
+    )
+
     return ModelSpec(
         kind=kind,
         label=label,
@@ -156,6 +177,7 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
         events=events,
         sim=sim,
         tag_index=_build_tag_index(events),
+        presets=presets,
     )
 
 
@@ -180,6 +202,13 @@ def _json_canon(obj: Any) -> str:
                 "events": [encode(e) for e in o.events],
                 "sim": encode(o.sim),
                 "tag_index": {k: list(v) for k, v in o.tag_index.items()},
+                "presets": [encode(p) for p in o.presets],
+            }
+        if isinstance(o, PresetSpec):
+            return {
+                "name": o.name,
+                "params": o.params,
+                "states": o.states,
             }
         if isinstance(o, EventSpec):
             return {

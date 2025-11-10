@@ -2,6 +2,34 @@
 
 ---
 
+## [2.17.0] – 2025-11-11
+### Added
+- Added presets feature for quick storage of state/param values. Presets can be defined inside model
+  file or in external toml files.
+- Added `_read_presets` function in `src/dynlib/dsl/parser.py` to parse `[presets.<name>]` blocks 
+  from TOML files.
+- Introduced `PresetSpec` dataclass in `src/dynlib/dsl/spec.py` to represent presets in the model 
+  DSL.
+- Added `Sim` presets API in `src/dynlib/runtime/sim.py`:
+  - `list_presets(pattern)`: Lists preset names matching a glob pattern.
+  - `apply_preset(name)`: Applies a preset to the current session.
+  - `load_preset(name_or_pattern, path, on_conflict)`: Loads presets from a TOML file.
+  - `save_preset(name, path, include_states, overwrite)`: Saves a preset to a TOML file.
+- Added `examples/presets_demo.py` to demonstrate the presets feature.
+
+### Changed
+- Enhanced `build_spec` in `src/dynlib/dsl/spec.py` to validate and include presets in the model 
+  specification.
+- Updated `validate_tables` in `src/dynlib/dsl/schema.py` to validate the `[presets]` table.
+- Enhanced `Sim` initialization in `src/dynlib/runtime/sim.py` to auto-load inline presets from the 
+  model specification.
+
+### Tests
+- Added `tests/unit/test_presets.py` to cover inline and file-based presets, including validation, 
+  loading, saving, and error handling.
+
+---
+
 ## [2.16.2] – 2025-11-10
 ### Added
 - Persisted runtime `stepper_config` data in `SessionState`, snapshots, and snapshot metadata so

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import fnmatch
 import hashlib
 import json
 import logging
@@ -277,6 +278,10 @@ class Sim:
         self._event_time_columns = _event_time_column_map(self.model.spec)
         self._time_shift = 0.0
         self._nominal_dt = float(self.model.spec.sim.dt)
+        
+        # Initialize presets bank with inline presets from model DSL
+        self._presets: Dict[str, _PresetData] = {}
+        self._load_inline_presets()
 
     # ------------------------------ public API ---------------------------------
 
@@ -613,7 +618,330 @@ class Sim:
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON in meta.json: {e}")
 
+    # ---------------------------- presets API ----------------------------------
+
+    def list_presets(self, pattern: str = "*") -> list[str]:
+        """
+        Return preset names in this Sim's presets bank matching a glob pattern.
+        
+        Args:
+            pattern: Glob pattern (supports *, ?, []). Default "*" returns all.
+        
+        Returns:
+            List of matching preset names, sorted alphabetically.
+        """
+        all_names = list(self._presets.keys())
+        matched = [name for name in all_names if fnmatch.fnmatch(name, pattern)]
+        return sorted(matched)
+
+    def apply_preset(self, name: str) -> None:
+        """
+        Apply a preset from this Sim's bank to current session.
+        
+        Updates params and (optionally) states. Does NOT touch time, dt, step_count,
+        stepper workspace, or results/history.
+        
+        Args:
+            name: Preset name (must exist in bank)
+        
+        Raises:
+            KeyError: Preset not found
+            ValueError: Validation failures (unknown names, type mismatches, overflow)
+        
+        Validation:
+          - All param keys must exist in model
+          - If states present, must match model states exactly (all-or-none)
+          - Values cast to model dtype with warnings on precision loss
+          - Atomic: validates everything before applying
+        """
+        if name not in self._presets:
+            available = sorted(self._presets.keys())
+            raise KeyError(
+                f"Preset '{name}' not found in bank. Available: {available}"
+            )
+        
+        preset = self._presets[name]
+        
+        # Validate names
+        param_names = set(self.model.spec.params)
+        state_names = set(self.model.spec.states)
+        _validate_preset_names(preset, param_names, state_names)
+        
+        # Cast values (with warnings/errors)
+        casted_params = _cast_values_to_dtype(
+            preset.params, self._dtype, preset.name, "param"
+        )
+        casted_states = None
+        if preset.states is not None:
+            casted_states = _cast_values_to_dtype(
+                preset.states, self._dtype, preset.name, "state"
+            )
+        
+        # Atomic apply: params first, then states
+        # Update params
+        param_array = self._session_state.params_curr
+        for i, pname in enumerate(self.model.spec.params):
+            if pname in casted_params:
+                param_array[i] = casted_params[pname]
+        
+        # Update states (if present)
+        if casted_states is not None:
+            state_array = self._session_state.y_curr
+            for i, sname in enumerate(self.model.spec.states):
+                state_array[i] = casted_states[sname]
+
+    def load_preset(
+        self,
+        name_or_pattern: str,
+        path: str | Path,
+        *,
+        on_conflict: Literal["error", "keep", "replace"] = "error",
+    ) -> int:
+        """
+        Import preset(s) from a TOML file into this Sim's presets bank.
+        
+        Args:
+            name_or_pattern: Exact name or glob pattern ("*", "fast_*", etc.)
+            path: Path to TOML file
+            on_conflict: How to handle name conflicts:
+                - "error" (default): raise if name exists
+                - "keep": skip file preset, keep existing (WARNING)
+                - "replace": overwrite existing with file preset (WARNING)
+        
+        Returns:
+            Number of presets successfully loaded into bank
+        
+        Raises:
+            ValueError: File format errors, validation failures
+        
+        File format:
+          - Must have [__presets__].schema = "dynlib-presets-v1"
+          - Presets under [presets.<name>.params] and optionally [presets.<name>.states]
+          - Validates structural compatibility with active model
+        """
+        path = Path(path)
+        doc = _toml_read(path)
+        
+        # Validate schema header
+        header = doc.get("__presets__", {})
+        if header.get("schema") != "dynlib-presets-v1":
+            raise ValueError(
+                f"Invalid or missing schema in {path}. "
+                f"Expected [__presets__].schema = 'dynlib-presets-v1'"
+            )
+        
+        # Extract presets section
+        presets_section = doc.get("presets", {})
+        if not isinstance(presets_section, dict):
+            raise ValueError(f"[presets] must be a table in {path}")
+        
+        # Find matching presets
+        all_preset_names = list(presets_section.keys())
+        if name_or_pattern == "*" or any(c in name_or_pattern for c in "*?[]"):
+            # Glob pattern
+            matched_names = [n for n in all_preset_names if fnmatch.fnmatch(n, name_or_pattern)]
+        else:
+            # Exact name
+            matched_names = [name_or_pattern] if name_or_pattern in all_preset_names else []
+        
+        if not matched_names:
+            raise ValueError(
+                f"No presets matching '{name_or_pattern}' found in {path}. "
+                f"Available: {sorted(all_preset_names)}"
+            )
+        
+        # Parse and validate each matched preset
+        param_names = set(self.model.spec.params)
+        state_names = set(self.model.spec.states)
+        loaded_count = 0
+        
+        # Track duplicates within the file
+        file_presets: Dict[str, _PresetData] = {}
+        
+        for pname in matched_names:
+            preset_table = presets_section[pname]
+            if not isinstance(preset_table, dict):
+                raise ValueError(f"[presets.{pname}] must be a table in {path}")
+            
+            # Parse params (required)
+            params_table = preset_table.get("params")
+            if not isinstance(params_table, dict) or len(params_table) == 0:
+                raise ValueError(
+                    f"[presets.{pname}].params must be a non-empty table in {path}"
+                )
+            
+            # Parse states (optional)
+            states_table = preset_table.get("states")
+            if states_table is not None:
+                if not isinstance(states_table, dict):
+                    raise ValueError(f"[presets.{pname}].states must be a table in {path}")
+                if len(states_table) == 0:
+                    raise ValueError(
+                        f"[presets.{pname}].states cannot be empty; omit for param-only in {path}"
+                    )
+            
+            preset_data = _PresetData(
+                name=pname,
+                params={k: float(v) for k, v in params_table.items()},
+                states={k: float(v) for k, v in states_table.items()} if states_table else None,
+                source="file",
+            )
+            
+            # Validate against model
+            _validate_preset_names(preset_data, param_names, state_names)
+            
+            # Check for duplicates within file (last wins with WARNING)
+            if pname in file_presets:
+                warnings.warn(
+                    f"Preset '{pname}' defined multiple times in {path}; using last definition",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+            file_presets[pname] = preset_data
+        
+        # Merge into bank according to on_conflict policy
+        for pname, preset_data in file_presets.items():
+            if pname in self._presets:
+                if on_conflict == "error":
+                    raise ValueError(
+                        f"Preset '{pname}' already exists in bank. "
+                        f"Use on_conflict='keep' or 'replace' to resolve."
+                    )
+                elif on_conflict == "keep":
+                    warnings.warn(
+                        f"Skipping file preset '{pname}' (already in bank, on_conflict='keep')",
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
+                    continue
+                elif on_conflict == "replace":
+                    warnings.warn(
+                        f"Replacing bank preset '{pname}' with file preset (on_conflict='replace')",
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
+            
+            self._presets[pname] = preset_data
+            loaded_count += 1
+        
+        return loaded_count
+
+    def save_preset(
+        self,
+        name: str,
+        path: str | Path,
+        *,
+        include_states: bool = False,
+        overwrite: bool = False,
+    ) -> None:
+        """
+        Export a preset from this Sim's bank to a TOML file.
+        
+        Args:
+            name: Preset name (must exist in bank)
+            path: Target TOML file path (create or append)
+            include_states: If True, write all current states; if False, params only
+            overwrite: If True, replace existing preset in file; if False, error on conflict
+        
+        Raises:
+            KeyError: Preset not found in bank
+            ValueError: File conflicts when overwrite=False
+        
+        File handling:
+          - Creates file if missing with [__presets__].schema header
+          - Appends/updates if file exists
+          - Atomic write using temp file + replace
+          - Serializes NaN/Inf as strings: "nan", "+inf", "-inf"
+        """
+        if name not in self._presets:
+            available = sorted(self._presets.keys())
+            raise KeyError(
+                f"Preset '{name}' not found in bank. Available: {available}"
+            )
+        
+        path = Path(path)
+        preset = self._presets[name]
+        
+        # Read existing file or create new structure
+        if path.exists():
+            doc = _toml_read(path)
+            # Validate schema
+            header = doc.get("__presets__", {})
+            if header.get("schema") != "dynlib-presets-v1":
+                raise ValueError(
+                    f"File {path} has invalid schema. "
+                    f"Expected [__presets__].schema = 'dynlib-presets-v1'"
+                )
+            
+            # Use setdefault to ensure we get a reference that's attached to doc
+            presets_section = doc.setdefault("presets", {})
+            if not isinstance(presets_section, dict):
+                raise ValueError(f"[presets] must be a table in {path}")
+            
+            # Check for conflict
+            if name in presets_section and not overwrite:
+                raise ValueError(
+                    f"Preset '{name}' already exists in {path}. "
+                    f"Use overwrite=True to replace."
+                )
+        else:
+            doc = {
+                "__presets__": {"schema": "dynlib-presets-v1"},
+                "presets": {},
+            }
+            presets_section = doc["presets"]
+        
+        # Build preset data to write
+        preset_table: Dict[str, Any] = {}
+        
+        # Params (from current session state)
+        params_dict = {}
+        param_array = self._session_state.params_curr
+        for i, pname in enumerate(self.model.spec.params):
+            if pname in preset.params:  # Only save params that were in original preset
+                params_dict[pname] = float(param_array[i])
+        preset_table["params"] = params_dict
+        
+        # States (if requested, write ALL states from current session)
+        if include_states:
+            states_dict = {}
+            state_array = self._session_state.y_curr
+            for i, sname in enumerate(self.model.spec.states):
+                states_dict[sname] = float(state_array[i])
+            preset_table["states"] = states_dict
+        
+        # Update document
+        presets_section[name] = preset_table
+        
+        # Write atomically
+        _toml_write_atomic(path, doc)
+
     # ---------------------------- internal helpers -----------------------------
+
+    def _load_inline_presets(self) -> None:
+        """Auto-populate presets bank from model.spec.presets."""
+        for preset_spec in self.model.spec.presets:
+            preset_data = _PresetData(
+                name=preset_spec.name,
+                params={k: float(v) for k, v in preset_spec.params.items()},
+                states=(
+                    {k: float(v) for k, v in preset_spec.states.items()}
+                    if preset_spec.states
+                    else None
+                ),
+                source="inline",
+            )
+            
+            # Defensive: shouldn't happen with fresh Sim, but log if it does
+            if preset_data.name in self._presets:
+                warnings.warn(
+                    f"Inline preset '{preset_data.name}' already in bank; keeping first",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                continue
+            
+            self._presets[preset_data.name] = preset_data
 
     def _snapshot_pick_state(
         self, source: Literal["current", "snapshot"], name: Optional[str]
@@ -1139,6 +1467,251 @@ class Sim:
 
 
 # ------------------------------- misc helpers ---------------------------------
+
+@dataclass
+class _PresetData:
+    """Internal preset representation."""
+    name: str
+    params: Dict[str, float]
+    states: Optional[Dict[str, float]]
+    source: Literal["inline", "file"]
+
+
+def _did_you_mean(name: str, candidates: list[str], max_distance: int = 2) -> Optional[str]:
+    """Return the closest matching candidate using Levenshtein distance."""
+    def levenshtein(s1: str, s2: str) -> int:
+        if len(s1) < len(s2):
+            return levenshtein(s2, s1)
+        if len(s2) == 0:
+            return len(s1)
+        previous_row = range(len(s2) + 1)
+        for i, c1 in enumerate(s1):
+            current_row = [i + 1]
+            for j, c2 in enumerate(s2):
+                insertions = previous_row[j + 1] + 1
+                deletions = current_row[j] + 1
+                substitutions = previous_row[j] + (c1 != c2)
+                current_row.append(min(insertions, deletions, substitutions))
+            previous_row = current_row
+        return previous_row[-1]
+    
+    best = None
+    best_dist = max_distance + 1
+    for cand in candidates:
+        dist = levenshtein(name.lower(), cand.lower())
+        if dist < best_dist:
+            best_dist = dist
+            best = cand
+    
+    return best if best_dist <= max_distance else None
+
+
+def _validate_preset_names(
+    preset: _PresetData,
+    param_names: set[str],
+    state_names: set[str],
+) -> None:
+    """Validate that all param/state names in preset exist in the model.
+    
+    Raises ValueError with suggestions if any names are unknown.
+    """
+    # Check params
+    unknown_params = set(preset.params.keys()) - param_names
+    if unknown_params:
+        suggestions = []
+        for uk in sorted(unknown_params):
+            suggestion = _did_you_mean(uk, list(param_names))
+            if suggestion:
+                suggestions.append(f"'{uk}' (did you mean '{suggestion}'?)")
+            else:
+                suggestions.append(f"'{uk}'")
+        raise ValueError(
+            f"Preset '{preset.name}' has unknown param(s): {', '.join(suggestions)}. "
+            f"Valid params: {sorted(param_names)}"
+        )
+    
+    # Check states (if present, must be exact match)
+    if preset.states is not None:
+        preset_state_names = set(preset.states.keys())
+        if preset_state_names != state_names:
+            missing = state_names - preset_state_names
+            extra = preset_state_names - state_names
+            
+            msg_parts = [f"Preset '{preset.name}' has mismatched states (all-or-none rule violated)"]
+            if missing:
+                msg_parts.append(f"Missing: {sorted(missing)}")
+            if extra:
+                suggestions = []
+                for uk in sorted(extra):
+                    suggestion = _did_you_mean(uk, list(state_names))
+                    if suggestion:
+                        suggestions.append(f"'{uk}' (did you mean '{suggestion}'?)")
+                    else:
+                        suggestions.append(f"'{uk}' (unknown)")
+                msg_parts.append(f"Extra: {', '.join(suggestions)}")
+            
+            raise ValueError(". ".join(msg_parts))
+
+
+def _cast_values_to_dtype(
+    values: Dict[str, float],
+    dtype: np.dtype,
+    preset_name: str,
+    kind: str,  # "param" or "state"
+) -> Dict[str, Any]:
+    """Cast preset values to model dtype with overflow/precision warnings.
+    
+    Returns a dict of casted values (same keys).
+    Warns on precision loss, errors on overflow.
+    """
+    result = {}
+    
+    for key, val in values.items():
+        # Check for special float values (NaN/Inf are allowed as input)
+        if isinstance(val, float):
+            if np.isnan(val):
+                result[key] = dtype.type(val)
+                continue
+            # Inf is allowed but we check for overflow during casting below
+        
+        # Cast first to check for overflow
+        # Suppress numpy's overflow warning since we check for it explicitly below
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', 'overflow encountered in cast', RuntimeWarning)
+            casted = dtype.type(val)
+        
+        # Check for overflow (resulted in inf when input wasn't inf)
+        if np.issubdtype(dtype, np.floating):
+            if np.isinf(casted) and not (isinstance(val, float) and np.isinf(val)):
+                dtype_info = np.finfo(dtype)
+                raise ValueError(
+                    f"Preset '{preset_name}': {kind} '{key}' value {val} overflows {dtype} "
+                    f"(max: {dtype_info.max})"
+                )
+        elif np.issubdtype(dtype, np.integer):
+            dtype_info = np.iinfo(dtype)
+            if val < dtype_info.min or val > dtype_info.max:
+                raise ValueError(
+                    f"Preset '{preset_name}': {kind} '{key}' value {val} out of {dtype} range "
+                    f"[{dtype_info.min}, {dtype_info.max}]"
+                )
+        
+        # Warn on precision loss
+        if dtype == np.float32 and isinstance(val, (float, int)):
+            # Check if the value can be represented exactly in float32
+            roundtrip = float(casted)
+            if val != 0.0 and roundtrip != val:
+                rel_error = abs((roundtrip - val) / val)
+                if rel_error > 1e-8:  # Significant precision loss (>0.00001%)
+                    warnings.warn(
+                        f"Preset '{preset_name}': {kind} '{key}' may lose precision "
+                        f"when casting {val} to float32 (relative error: {rel_error:.2e})",
+                        RuntimeWarning,
+                        stacklevel=4,
+                    )
+        elif np.issubdtype(dtype, np.integer) and isinstance(val, float):
+            if val != float(int(val)):
+                warnings.warn(
+                    f"Preset '{preset_name}': {kind} '{key}' loses fractional part "
+                    f"when casting {val} to {dtype}",
+                    RuntimeWarning,
+                    stacklevel=4,
+                )
+        elif np.issubdtype(dtype, np.floating) and np.issubdtype(type(val), np.complexfloating):
+            warnings.warn(
+                f"Preset '{preset_name}': {kind} '{key}' loses imaginary part "
+                f"when casting complex to {dtype}",
+                RuntimeWarning,
+                stacklevel=4,
+            )
+        
+        result[key] = casted
+    
+    return result
+
+
+def _toml_read(path: Path) -> Dict[str, Any]:
+    """Read a TOML file and return parsed dict."""
+    try:
+        with open(path, "rb") as f:
+            return tomllib.load(f)
+    except FileNotFoundError:
+        raise ValueError(f"Preset file not found: {path}")
+    except Exception as e:
+        raise ValueError(f"Failed to read preset file {path}: {e}")
+
+
+def _toml_write_atomic(path: Path, data: Dict[str, Any]) -> None:
+    """Write TOML data to file atomically using temp file + replace."""
+    # Simple TOML emitter (handles basic types, dicts, nested tables)
+    def _emit_value(v: Any) -> str:
+        if isinstance(v, bool):
+            return "true" if v else "false"
+        elif isinstance(v, (int, float)):
+            if isinstance(v, float):
+                if np.isnan(v):
+                    return '"nan"'
+                elif np.isposinf(v):
+                    return '"+inf"'
+                elif np.isneginf(v):
+                    return '"-inf"'
+            return str(v)
+        elif isinstance(v, str):
+            # Escape quotes
+            escaped = v.replace('\\', '\\\\').replace('"', '\\"')
+            return f'"{escaped}"'
+        elif isinstance(v, (list, tuple)):
+            return "[" + ", ".join(_emit_value(x) for x in v) + "]"
+        else:
+            raise ValueError(f"Unsupported TOML value type: {type(v)}")
+    
+    def _emit_table(lines: list[str], table_path: str, table_data: dict) -> None:
+        lines.append(f"[{table_path}]")
+        for key, val in table_data.items():
+            if isinstance(val, dict):
+                # Nested table - skip here, emit separately
+                pass
+            else:
+                lines.append(f"{key} = {_emit_value(val)}")
+        lines.append("")  # blank line after table
+    
+    def _emit_nested(lines: list[str], prefix: str, data: dict) -> None:
+        # First emit direct key-value pairs
+        direct = {k: v for k, v in data.items() if not isinstance(v, dict)}
+        if direct:
+            _emit_table(lines, prefix, direct)
+        
+        # Then emit nested tables
+        for key, val in data.items():
+            if isinstance(val, dict):
+                nested_path = f"{prefix}.{key}" if prefix else key
+                _emit_nested(lines, nested_path, val)
+    
+    lines: list[str] = []
+    _emit_nested(lines, "", data)
+    
+    content = "\n".join(lines)
+    
+    # Write to temp file then replace
+    path.parent.mkdir(parents=True, exist_ok=True)
+    
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        delete=False,
+        dir=path.parent,
+        prefix=f".{path.name}_tmp_",
+        suffix=".toml",
+    ) as tmp_file:
+        tmp_path = Path(tmp_file.name)
+        tmp_file.write(content)
+    
+    try:
+        tmp_path.replace(path)
+    except Exception:
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise
+
 
 def _resize_1d(arr: np.ndarray, new_cap: int) -> np.ndarray:
     new_arr = np.zeros((new_cap,), dtype=arr.dtype)
