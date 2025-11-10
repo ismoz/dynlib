@@ -2,6 +2,27 @@
 
 ---
 
+## [2.16.1] – 2025-11-10
+### Added
+- Introduced snapshot export/import functionality in `Sim`:
+  - `export_snapshot()`: Exports session state to disk as a strict snapshot file.
+  - `import_snapshot()`: Imports session state from a snapshot file, replacing the current session.
+  - `inspect_snapshot()`: Returns parsed metadata from a snapshot file without modifying simulation 
+    state.
+- Added `examples/snapshot_demo.py` to demonstrate snapshot export/import and inspection.
+
+### Changed
+- Updated `Sim` class in `src/dynlib/runtime/sim.py`:
+  - Added internal helpers for snapshot handling, including `_snapshot_pick_state`, 
+    `_snapshot_build_meta`, `_snapshot_write_npz`, `_snapshot_read_npz`, and `_snapshot_restore`.
+  - Enhanced `Sim.run()` to support snapshot-based workflows.
+
+### Tests
+- Added `tests/integration/test_snapshot_persistence.py` to validate snapshot export/import 
+  functionality.
+
+---
+
 ## [2.16.0]
 ### Added
 - `Sim` now tracks an internal `SessionState` so `run(resume=True)` continues from the exact last

@@ -3,8 +3,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional, Tuple
+import tempfile
+from typing import Any, Dict, Literal, Mapping, Optional, Tuple
 import warnings
 
 import numpy as np
@@ -480,7 +482,303 @@ class Sim:
         diff = _diff_pins(self._pins, snap.state.pins)
         return (len(diff) == 0, diff)
 
+    def export_snapshot(
+        self,
+        path: str | Path,
+        *,
+        source: Literal["current", "snapshot"] = "current",
+        name: Optional[str] = None,
+    ) -> None:
+        """
+        Export session state to disk as a strict snapshot file (.npz format).
+        
+        Snapshots are full session images (integrator state) and do not include results/history.
+        
+        Args:
+            path: Target file path (will be overwritten atomically if it exists)
+            source: "current" for current session state, "snapshot" for named in-memory snapshot
+            name: Required when source="snapshot", ignored otherwise
+        
+        Raises:
+            ValueError: Invalid arguments (e.g., missing name when source="snapshot")
+        """
+        path = Path(path)
+        
+        # Validate arguments
+        if source == "snapshot" and name is None:
+            raise ValueError("name is required when source='snapshot'")
+        if source == "current" and name is not None:
+            raise ValueError("name should not be provided when source='current'")
+        
+        # Pick source state and build metadata
+        state, snap_name, description, time_shift, nominal_dt = self._snapshot_pick_state(
+            source, name
+        )
+        meta = self._snapshot_build_meta(state, snap_name, description, time_shift, nominal_dt)
+        
+        # Write atomically
+        self._snapshot_write_npz(path, meta, state)
+
+    def import_snapshot(self, path: str | Path) -> None:
+        """
+        Import session state from a snapshot file, replacing current session entirely.
+        
+        Import requires compatibility (pin match) and replaces the session; history is cleared.
+        
+        Args:
+            path: Snapshot file path to import from
+        
+        Raises:
+            ValueError: File format issues (schema, missing keys, shape mismatches)
+            RuntimeError: Pin compatibility issues
+        """
+        path = Path(path)
+        
+        # Read and validate file
+        meta, y, params, workspace = self._snapshot_read_npz(path)
+        
+        # Restore session state
+        restored_state = self._snapshot_restore(meta, y, params, workspace)
+        
+        # Replace current session and clear results/history
+        self._session_state = restored_state
+        self._result_accum = None
+        self._raw_results = None
+        self._results_view = None
+        self._time_shift = float(meta["time_shift"])
+        self._nominal_dt = float(meta["nominal_dt"])
+
+    def inspect_snapshot(self, path: str | Path) -> dict[str, Any]:
+        """
+        Return parsed metadata from a snapshot file without modifying sim state.
+        
+        Args:
+            path: Snapshot file path to inspect
+        
+        Returns:
+            Dictionary containing metadata from the snapshot file
+            
+        Raises:
+            ValueError: File format issues
+        """
+        path = Path(path)
+        
+        try:
+            with np.load(path, allow_pickle=False) as npz_file:
+                if "meta.json" not in npz_file.files:
+                    raise ValueError("Missing 'meta.json' in snapshot file")
+                
+                meta_bytes = npz_file["meta.json"]
+                meta_str = meta_bytes.tobytes().decode("utf-8")
+                meta = json.loads(meta_str)
+                
+                return meta
+        except (OSError, IOError) as e:
+            raise ValueError(f"Cannot read snapshot file: {e}")
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON in meta.json: {e}")
+
     # ---------------------------- internal helpers -----------------------------
+
+    def _snapshot_pick_state(
+        self, source: Literal["current", "snapshot"], name: Optional[str]
+    ) -> tuple[SessionState, str, str, float, float]:
+        """
+        Returns the SessionState to serialize, plus snap_name and description.
+        """
+        if source == "current":
+            return (
+                self._session_state,
+                "current",
+                "Current session state",
+                float(self._time_shift),
+                float(self._nominal_dt),
+            )
+        else:  # source == "snapshot"
+            if name is None:
+                raise ValueError("name is required when source='snapshot'")
+            snapshot = self._resolve_snapshot(name)
+            return (
+                snapshot.state,
+                snapshot.name,
+                snapshot.description,
+                float(snapshot.time_shift),
+                float(snapshot.nominal_dt),
+            )
+
+    def _snapshot_build_meta(
+        self,
+        state: SessionState,
+        snap_name: str,
+        description: str,
+        time_shift: float,
+        nominal_dt: float,
+    ) -> dict[str, Any]:
+        """
+        Builds the dict for meta.json using pins, names from model.spec, and values from state.
+        """
+        spec = self.model.spec
+        
+        return {
+            "schema": "dynlib-snapshot-v1",
+            "created_at": _now_iso(),
+            "name": snap_name,
+            "description": description,
+            "pins": {
+                "spec_hash": self._pins.spec_hash,
+                "stepper_name": self._pins.stepper_name,
+                "structsig": list(self._pins.structsig),
+                "dtype_token": self._pins.dtype_token,
+                "dynlib_version": self._pins.dynlib_version,
+            },
+            "n_state": len(spec.states),
+            "n_params": len(spec.params),
+            "state_names": list(spec.states),
+            "param_names": list(spec.params),
+            "t_curr": float(state.t_curr),
+            "dt_curr": float(state.dt_curr),
+            "step_count": int(state.step_count),
+            "status": int(state.status),
+            "time_shift": float(time_shift),
+            "nominal_dt": float(nominal_dt),
+        }
+
+    def _snapshot_write_npz(self, path: Path, meta: dict[str, Any], state: SessionState) -> None:
+        """
+        Opens a temp file, writes meta.json and arrays, then atomically replaces path.
+        """
+        # Serialize metadata as JSON bytes
+        meta_json = json.dumps(meta, indent=2)
+        meta_bytes = np.frombuffer(meta_json.encode("utf-8"), dtype=np.uint8)
+        
+        # Prepare arrays to save
+        arrays_to_save = {
+            "meta.json": meta_bytes,
+            "y": state.y_curr,
+            "params": state.params_curr,
+        }
+        
+        # Add workspace arrays if non-empty
+        for ws_name, ws_array in state.stepper_ws.items():
+            if ws_array.size > 0:
+                arrays_to_save[f"workspace/{ws_name}"] = ws_array
+        
+        # Write atomically using temporary file
+        path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with tempfile.NamedTemporaryFile(
+            delete=False, 
+            dir=path.parent, 
+            prefix=f".{path.name}_tmp_", 
+            suffix=".npz"
+        ) as tmp_file:
+            tmp_path = Path(tmp_file.name)
+        
+        try:
+            np.savez_compressed(tmp_path, **arrays_to_save)
+            tmp_path.replace(path)
+        except Exception:
+            # Clean up temp file on error
+            if tmp_path.exists():
+                tmp_path.unlink()
+            raise
+
+    def _snapshot_read_npz(
+        self, path: Path
+    ) -> tuple[dict[str, Any], np.ndarray, np.ndarray, dict[str, np.ndarray]]:
+        """
+        Reads and returns (meta, y, params, workspace).
+        """
+        try:
+            with np.load(path, allow_pickle=False) as npz_file:
+                # Read and parse metadata
+                if "meta.json" not in npz_file.files:
+                    raise ValueError("Missing 'meta.json' in snapshot file")
+                
+                meta_bytes = npz_file["meta.json"]
+                meta_str = meta_bytes.tobytes().decode("utf-8")
+                meta = json.loads(meta_str)
+                
+                # Read required arrays
+                if "y" not in npz_file.files:
+                    raise ValueError("Missing 'y' array in snapshot file")
+                if "params" not in npz_file.files:
+                    raise ValueError("Missing 'params' array in snapshot file")
+                
+                y = npz_file["y"]
+                params = npz_file["params"]
+                
+                # Read workspace arrays
+                workspace: dict[str, np.ndarray] = {}
+                workspace_prefix = "workspace/"
+                for key in npz_file.files:
+                    if key.startswith(workspace_prefix):
+                        ws_name = key[len(workspace_prefix):]
+                        if ws_name:  # Ensure non-empty name
+                            workspace[ws_name] = npz_file[key]
+                
+                return meta, y, params, workspace
+                
+        except (OSError, IOError) as e:
+            raise ValueError(f"Cannot read snapshot file: {e}")
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON in meta.json: {e}")
+        except Exception as e:
+            raise ValueError(f"Error reading snapshot file: {e}")
+
+    def _snapshot_restore(
+        self, 
+        meta: dict[str, Any], 
+        y: np.ndarray, 
+        params: np.ndarray, 
+        workspace: dict[str, np.ndarray]
+    ) -> SessionState:
+        """
+        Validates schema, shapes, pins; returns a new SessionState built from file content.
+        """
+        # Validate schema
+        if meta.get("schema") != "dynlib-snapshot-v1":
+            raise ValueError(f"Unsupported schema: {meta.get('schema')}")
+        
+        # Validate shapes
+        expected_n_state = len(self.model.spec.states)
+        expected_n_params = len(self.model.spec.params)
+        
+        if y.shape != (expected_n_state,):
+            raise ValueError(
+                f"State vector shape mismatch: expected ({expected_n_state},), got {y.shape}"
+            )
+        
+        if params.shape != (expected_n_params,):
+            raise ValueError(
+                f"Parameters shape mismatch: expected ({expected_n_params},), got {params.shape}"
+            )
+        
+        # Validate pins
+        file_pins_data = meta.get("pins", {})
+        file_pins = SessionPins(
+            spec_hash=file_pins_data.get("spec_hash", ""),
+            stepper_name=file_pins_data.get("stepper_name", ""),
+            structsig=tuple(file_pins_data.get("structsig", [])),
+            dtype_token=file_pins_data.get("dtype_token", ""),
+            dynlib_version=file_pins_data.get("dynlib_version", ""),
+        )
+        
+        diff = _diff_pins(self._pins, file_pins)
+        if diff:
+            raise RuntimeError(f"Snapshot incompatible: {diff}")
+        
+        # Build new SessionState
+        return SessionState(
+            t_curr=float(meta["t_curr"]),
+            y_curr=np.array(y, dtype=self._dtype, copy=True),
+            params_curr=np.array(params, dtype=self._dtype, copy=True),
+            dt_curr=float(meta["dt_curr"]),
+            step_count=int(meta["step_count"]),
+            stepper_ws=_copy_workspace_dict(workspace),
+            status=int(meta["status"]),
+            pins=self._pins,
+        )
 
     def _bootstrap_session_state(self) -> SessionState:
         spec = self.model.spec
