@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import hashlib
 import json
+import logging
 from pathlib import Path
 import tempfile
 from typing import Any, Dict, Literal, Mapping, Optional, Tuple
@@ -53,6 +55,7 @@ class SessionState:
     dt_curr: float
     step_count: int
     stepper_ws: WorkspaceSnapshot
+    stepper_cfg: np.ndarray
     status: int
     pins: SessionPins
 
@@ -64,6 +67,7 @@ class SessionState:
             dt_curr=self.dt_curr,
             step_count=self.step_count,
             stepper_ws=_copy_workspace_dict(self.stepper_ws),
+            stepper_cfg=np.array(self.stepper_cfg, dtype=np.float64, copy=True),
             status=self.status,
             pins=self.pins,
         )
@@ -245,6 +249,7 @@ class Sim:
     """
 
     def __init__(self, model: Model):
+        self._logger = logging.getLogger(__name__)
         self.model = model
         self._raw_results: Optional[Results] = None
         self._results_view: Optional[ResultsView] = None
@@ -259,6 +264,11 @@ class Sim:
             dtype_token=str(np.dtype(model.dtype)),
             dynlib_version=_dynlib_version(),
         )
+        stepper_spec = get_stepper(model.stepper_name)
+        self._stepper_spec = stepper_spec
+        self._fixed_time_control = getattr(stepper_spec.meta, "time_control", "fixed") == "fixed"
+        self._stepper_config_names = _stepper_config_names(stepper_spec, self.model.spec)
+        self._default_stepper_cfg = self._compute_default_stepper_config()
         self._session_state = self._bootstrap_session_state()
         self._snapshots: Dict[str, Snapshot] = {}
         self._initial_snapshot_name = "initial"
@@ -266,8 +276,6 @@ class Sim:
         self._result_accum: Optional[_ResultAccumulator] = None
         self._event_time_columns = _event_time_column_map(self.model.spec)
         self._time_shift = 0.0
-        stepper_spec = get_stepper(model.stepper_name)
-        self._fixed_time_control = getattr(stepper_spec.meta, "time_control", "fixed") == "fixed"
         self._nominal_dt = float(self.model.spec.sim.dt)
 
     # ------------------------------ public API ---------------------------------
@@ -345,7 +353,9 @@ class Sim:
                     f"Resume target t_end ({target_t_end}) must exceed current time ({current_time})"
                 )
 
-        stepper_config = self._build_stepper_config(stepper_kwargs)
+        prev_cfg = getattr(self._session_state, "stepper_cfg", None)
+        stepper_config = self._build_stepper_config(stepper_kwargs, prev_cfg)
+        self._sync_initial_snapshot_config(stepper_config)
         n_state = self._n_state
         max_steps = int(max_steps)
         cap_rec = max(1, int(cap_rec))
@@ -366,7 +376,9 @@ class Sim:
                 cap_evt=cap_evt,
                 stepper_config=stepper_config,
             )
-            self._session_state = self._state_from_results(warm_result, base_steps=seed.step_count)
+            self._session_state = self._state_from_results(
+                warm_result, base_steps=seed.step_count, stepper_config=stepper_config
+            )
             warm_state = self._session_state
             base_steps_for_session = warm_state.step_count
             step_offset_initial = 0
@@ -392,7 +404,9 @@ class Sim:
         if self._time_shift != 0.0:
             self._rebase_times(recorded_result, self._time_shift)
         self._session_state = self._state_from_results(
-            recorded_result, base_steps=base_steps_for_session
+            recorded_result,
+            base_steps=base_steps_for_session,
+            stepper_config=stepper_config,
         )
         self._append_results(recorded_result, step_offset_initial=step_offset_initial)
         self._publish_results(recorded_result)
@@ -417,11 +431,13 @@ class Sim:
         if name in self._snapshots:
             raise ValueError(f"Snapshot '{name}' already exists")
         self._ensure_initial_snapshot()
+        snapshot_state = self._session_state.clone()
+        snapshot_state.stepper_cfg = np.array(self._session_state.stepper_cfg, dtype=np.float64, copy=True)
         self._snapshots[name] = Snapshot(
             name=name,
             description=description,
             created_at=_now_iso(),
-            state=self._session_state.clone(),
+            state=snapshot_state,
             time_shift=self._time_shift,
             nominal_dt=self._nominal_dt,
         )
@@ -459,7 +475,7 @@ class Sim:
         """Return a small diagnostic summary of the current SessionState."""
         can_resume, reason = self.can_resume()
         state = self._session_state
-        return {
+        summary = {
             "t": state.t_curr,
             "step": state.step_count,
             "dt": state.dt_curr,
@@ -468,6 +484,25 @@ class Sim:
             "can_resume": can_resume,
             "reason": reason,
         }
+        summary["stepper_config"] = self._summarize_stepper_config(state.stepper_cfg)
+        return summary
+
+    def stepper_config(self, **kwargs: Any) -> np.ndarray:
+        """
+        Return the stored stepper configuration, optionally applying overrides for future runs.
+
+        Args:
+            **kwargs: Stepper-specific runtime parameters.
+
+        Returns:
+            Copy of the stored stepper configuration array.
+        """
+        if not kwargs:
+            return np.array(self._session_state.stepper_cfg, dtype=np.float64, copy=True)
+        new_cfg = self._build_stepper_config(kwargs, self._session_state.stepper_cfg)
+        self._session_state.stepper_cfg = np.array(new_cfg, dtype=np.float64, copy=True)
+        self._sync_initial_snapshot_config(new_cfg)
+        return np.array(new_cfg, dtype=np.float64, copy=True)
 
     def can_resume(self) -> tuple[bool, Optional[str]]:
         """Return (bool, reason) describing whether resume() may be invoked safely."""
@@ -535,10 +570,10 @@ class Sim:
         path = Path(path)
         
         # Read and validate file
-        meta, y, params, workspace = self._snapshot_read_npz(path)
-        
+        meta, y, params, workspace, stepper_config = self._snapshot_read_npz(path)
+
         # Restore session state
-        restored_state = self._snapshot_restore(meta, y, params, workspace)
+        restored_state = self._snapshot_restore(meta, y, params, workspace, stepper_config)
         
         # Replace current session and clear results/history
         self._session_state = restored_state
@@ -641,6 +676,8 @@ class Sim:
             "status": int(state.status),
             "time_shift": float(time_shift),
             "nominal_dt": float(nominal_dt),
+            "stepper_config_names": list(self._stepper_config_names),
+            "stepper_config_values": state.stepper_cfg.tolist(),
         }
 
     def _snapshot_write_npz(self, path: Path, meta: dict[str, Any], state: SessionState) -> None:
@@ -662,6 +699,9 @@ class Sim:
         for ws_name, ws_array in state.stepper_ws.items():
             if ws_array.size > 0:
                 arrays_to_save[f"workspace/{ws_name}"] = ws_array
+
+        if state.stepper_cfg.size > 0:
+            arrays_to_save["stepper_config"] = state.stepper_cfg
         
         # Write atomically using temporary file
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -685,7 +725,7 @@ class Sim:
 
     def _snapshot_read_npz(
         self, path: Path
-    ) -> tuple[dict[str, Any], np.ndarray, np.ndarray, dict[str, np.ndarray]]:
+    ) -> tuple[dict[str, Any], np.ndarray, np.ndarray, dict[str, np.ndarray], np.ndarray]:
         """
         Reads and returns (meta, y, params, workspace).
         """
@@ -716,9 +756,14 @@ class Sim:
                         ws_name = key[len(workspace_prefix):]
                         if ws_name:  # Ensure non-empty name
                             workspace[ws_name] = npz_file[key]
-                
-                return meta, y, params, workspace
-                
+                stepper_config = (
+                    np.array(npz_file["stepper_config"], dtype=np.float64)
+                    if "stepper_config" in npz_file.files
+                    else np.array([], dtype=np.float64)
+                )
+
+                return meta, y, params, workspace, stepper_config
+
         except (OSError, IOError) as e:
             raise ValueError(f"Cannot read snapshot file: {e}")
         except json.JSONDecodeError as e:
@@ -727,11 +772,12 @@ class Sim:
             raise ValueError(f"Error reading snapshot file: {e}")
 
     def _snapshot_restore(
-        self, 
-        meta: dict[str, Any], 
-        y: np.ndarray, 
-        params: np.ndarray, 
-        workspace: dict[str, np.ndarray]
+        self,
+        meta: dict[str, Any],
+        y: np.ndarray,
+        params: np.ndarray,
+        workspace: dict[str, np.ndarray],
+        stepper_config: np.ndarray,
     ) -> SessionState:
         """
         Validates schema, shapes, pins; returns a new SessionState built from file content.
@@ -769,6 +815,11 @@ class Sim:
             raise RuntimeError(f"Snapshot incompatible: {diff}")
         
         # Build new SessionState
+        cfg_values = meta.get("stepper_config_values", [])
+        cfg_array = np.array(cfg_values, dtype=np.float64) if cfg_values else np.array([], dtype=np.float64)
+        if stepper_config.size:
+            cfg_array = np.array(stepper_config, dtype=np.float64, copy=True)
+
         return SessionState(
             t_curr=float(meta["t_curr"]),
             y_curr=np.array(y, dtype=self._dtype, copy=True),
@@ -776,6 +827,7 @@ class Sim:
             dt_curr=float(meta["dt_curr"]),
             step_count=int(meta["step_count"]),
             stepper_ws=_copy_workspace_dict(workspace),
+            stepper_cfg=cfg_array,
             status=int(meta["status"]),
             pins=self._pins,
         )
@@ -792,6 +844,7 @@ class Sim:
             dt_curr=float(sim_defaults.dt),
             step_count=0,
             stepper_ws={},
+            stepper_cfg=np.array(self._default_stepper_cfg, dtype=np.float64, copy=True),
             status=int(Status.DONE),
             pins=self._pins,
         )
@@ -807,6 +860,7 @@ class Sim:
             dt_curr=base.dt,
             step_count=base.step_count,
             stepper_ws=_copy_workspace_dict(base.workspace),
+            stepper_cfg=np.array(self._session_state.stepper_cfg, dtype=np.float64, copy=True),
             status=int(Status.DONE),
             pins=self._pins,
         )
@@ -884,7 +938,9 @@ class Sim:
             workspace_seed=seed.workspace,
         )
 
-    def _state_from_results(self, result: Results, *, base_steps: int) -> SessionState:
+    def _state_from_results(
+        self, result: Results, *, base_steps: int, stepper_config: np.ndarray
+    ) -> SessionState:
         total_steps = base_steps + int(result.step_count_final)
         return SessionState(
             t_curr=float(result.t_final),
@@ -893,6 +949,7 @@ class Sim:
             dt_curr=float(result.final_dt),
             step_count=total_steps,
             stepper_ws=_copy_workspace_dict(result.final_stepper_ws),
+             stepper_cfg=np.array(stepper_config, dtype=np.float64, copy=True),
             status=int(result.status),
             pins=self._pins,
         )
@@ -995,14 +1052,53 @@ class Sim:
             raise KeyError(f"Unknown snapshot '{snapshot}'")
         return self._snapshots[snapshot]
 
-    def _build_stepper_config(self, kwargs: dict) -> np.ndarray:
-        """
-        Build stepper config array from run() kwargs and model_spec.
-        """
-        from dynlib.steppers.registry import get_stepper
+    def _compute_default_stepper_config(self) -> np.ndarray:
+        default_config = self._stepper_spec.default_config(self.model.spec)
+        if default_config is None:
+            return np.array([], dtype=np.float64)
+        return self._stepper_spec.pack_config(default_config)
 
+    def _sync_initial_snapshot_config(self, config: np.ndarray) -> None:
+        snapshot = self._snapshots.get(self._initial_snapshot_name)
+        if snapshot is None:
+            return
+        snapshot.state.stepper_cfg = np.array(config, dtype=np.float64, copy=True)
+
+    def _log_stepper_overrides(
+        self, previous: np.ndarray, new: np.ndarray, updates: Mapping[str, Any]
+    ) -> None:
+        prev_digest = _config_digest(previous)
+        new_digest = _config_digest(new)
+        self._logger.info(
+            "Stepper config overrides applied (%s → %s) with %s",
+            prev_digest,
+            new_digest,
+            updates,
+        )
+
+    def _summarize_stepper_config(self, cfg: np.ndarray) -> Dict[str, Any]:
+        summary: Dict[str, Any] = {
+            "size": int(cfg.size),
+            "hash": _config_digest(cfg),
+        }
+        if cfg.size == 0:
+            summary["preview"] = {}
+            return summary
+        preview_count = min(3, cfg.size)
+        preview: Dict[str, float] = {}
+        names = self._stepper_config_names
+        for idx in range(preview_count):
+            key = names[idx] if idx < len(names) else f"f{idx}"
+            preview[key] = float(cfg[idx])
+        summary["preview"] = preview
+        return summary
+
+    def _build_stepper_config(self, kwargs: dict, prev_config: Optional[np.ndarray]) -> np.ndarray:
+        """
+        Build stepper config array from run() kwargs, session defaults, and prior runs.
+        """
         stepper_name = self.model.stepper_name
-        stepper_spec = get_stepper(stepper_name)
+        stepper_spec = self._stepper_spec
         default_config = stepper_spec.default_config(self.model.spec)
 
         if default_config is None:
@@ -1014,6 +1110,11 @@ class Sim:
                     stacklevel=3,
                 )
             return np.array([], dtype=np.float64)
+
+        if not kwargs:
+            if prev_config is not None and prev_config.size:
+                return np.array(prev_config, dtype=np.float64, copy=True)
+            return np.array(self._default_stepper_cfg, dtype=np.float64, copy=True)
 
         import dataclasses
 
@@ -1031,7 +1132,10 @@ class Sim:
         final_config = (
             dataclasses.replace(default_config, **config_updates) if config_updates else default_config
         )
-        return stepper_spec.pack_config(final_config)
+        new_config = stepper_spec.pack_config(final_config)
+        if prev_config is not None and prev_config.size and not np.array_equal(prev_config, new_config):
+            self._log_stepper_overrides(prev_config, new_config, config_updates)
+        return new_config
 
 
 # ------------------------------- misc helpers ---------------------------------
@@ -1065,6 +1169,12 @@ def _max_event_log_width(events) -> int:
     return width
 
 
+def _config_digest(cfg: np.ndarray) -> str:
+    if cfg.size == 0:
+        return "empty"
+    return hashlib.sha1(cfg.tobytes()).hexdigest()[:10]
+
+
 def _struct_signature(struct) -> Tuple[int, ...]:
     return (
         struct.sp_size,
@@ -1082,6 +1192,17 @@ def _struct_signature(struct) -> Tuple[int, ...]:
         -1 if struct.embedded_order is None else int(struct.embedded_order),
         int(bool(struct.stiff_ok)),
     )
+
+
+def _stepper_config_names(stepper_spec, model_spec) -> Tuple[str, ...]:
+    if not hasattr(stepper_spec, "default_config"):
+        return ()
+    default_config = stepper_spec.default_config(model_spec)
+    if default_config is None:
+        return ()
+    import dataclasses
+
+    return tuple(field.name for field in dataclasses.fields(default_config))
 
 
 def _dynlib_version() -> str:

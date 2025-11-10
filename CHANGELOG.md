@@ -2,6 +2,15 @@
 
 ---
 
+## [2.16.2] – 2025-11-10
+### Added
+- Persisted runtime `stepper_config` data in `SessionState`, snapshots, and snapshot metadata so
+  resumes continue with the exact tolerances last used (plus field-name lists for inspection).
+- Added `Sim.stepper_config(**kwargs)` helper and extended `session_state_summary()` diagnostics with
+  stepper-config previews/digests.
+
+---
+
 ## [2.16.1] – 2025-11-10
 ### Added
 - Introduced snapshot export/import functionality in `Sim`:
@@ -23,7 +32,7 @@
 
 ---
 
-## [2.16.0]
+## [2.16.0] – 2025-11-10
 ### Added
 - `Sim` now tracks an internal `SessionState` so `run(resume=True)` continues from the exact last
   integrator conditions (time, state, params, dt, workspace).
@@ -47,7 +56,7 @@
 
 ---
 
-## [2.15.3]
+## [2.15.3] – 2025-11-09
 ### Added
 - `Sim.run()` accepts a `transient` warm-up duration that advances the model before recording while
   keeping events functional and resetting the public time axis to `t0`.
