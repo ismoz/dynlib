@@ -840,7 +840,7 @@ def test_apply_does_not_touch_time_or_stepper():
     sim = Sim(model)
     
     # Run to establish state
-    sim.run(t_end=1.0, max_steps=100)
+    sim.run(T=1.0, max_steps=100)
     
     # Capture state before apply
     t_before = sim._session_state.t_curr

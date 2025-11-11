@@ -18,7 +18,7 @@ from dynlib.runtime.model import Model
 
 
 def _load_model(toml_name: str) -> Model:
-    data_dir = Path(__file__).parent.parent / "data" / "models"
+    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
     with open(data_dir / toml_name, "rb") as fh:
         data = tomllib.load(fh)
     spec = build_spec(parse_model_v2(data))
@@ -42,7 +42,7 @@ def test_export_import_current_state(tmp_path):
     sim = Sim(_load_model("decay.toml"))
     
     # Run simulation to some intermediate state
-    sim.run(t_end=0.5)
+    sim.run(T=0.5)
     original_summary = sim.session_state_summary()
     original_y = sim._session_state.y_curr.copy()
     original_params = sim._session_state.params_curr.copy()
@@ -52,7 +52,7 @@ def test_export_import_current_state(tmp_path):
     sim.export_snapshot(snap_path, source="current")
     
     # Modify state locally
-    sim.run(t_end=1.0, resume=True)
+    sim.run(T=1.0, resume=True)
     modified_summary = sim.session_state_summary()
     assert modified_summary["t"] != original_summary["t"], "State should have changed"
     
@@ -76,19 +76,19 @@ def test_export_import_named_snapshot(tmp_path):
     sim = Sim(_load_model("decay.toml"))
     
     # Run to intermediate state and create named snapshot
-    sim.run(t_end=0.3)
+    sim.run(T=0.3)
     sim.create_snapshot("mid", "Intermediate checkpoint")
     original_summary = sim.session_state_summary()
     
     # Continue simulation
-    sim.run(t_end=1.0, resume=True)
+    sim.run(T=1.0, resume=True)
     
     # Export the named snapshot
     snap_path = tmp_path / "mid_snapshot.npz"
     sim.export_snapshot(snap_path, source="snapshot", name="mid")
     
     # Change state further
-    sim.run(t_end=2.0, resume=True)
+    sim.run(T=2.0, resume=True)
     
     # Import named snapshot
     sim.import_snapshot(snap_path)
@@ -101,7 +101,7 @@ def test_export_import_named_snapshot(tmp_path):
 def test_inspect_snapshot(tmp_path):
     """Test snapshot inspection without modifying sim state."""
     sim = Sim(_load_model("decay.toml"))
-    sim.run(t_end=0.4)
+    sim.run(T=0.4)
     
     snap_path = tmp_path / "inspect_test.npz"
     sim.export_snapshot(snap_path, source="current")
@@ -126,7 +126,7 @@ def test_inspect_snapshot(tmp_path):
 def test_pin_mismatch_rejection():
     """Test that snapshots with mismatched pins are rejected."""
     sim1 = Sim(_load_model("decay.toml"))
-    sim1.run(t_end=0.2)
+    sim1.run(T=0.2)
     
     with tempfile.NamedTemporaryFile(suffix=".npz", delete=False) as tmp:
         snap_path = Path(tmp.name)
@@ -213,7 +213,7 @@ def test_wrong_schema_rejection(tmp_path):
 def test_shape_mismatch_rejection(tmp_path):
     """Test rejection of files with wrong array shapes."""
     sim = Sim(_load_model("decay.toml"))
-    sim.run(t_end=0.1)
+    sim.run(T=0.1)
     
     # Export valid snapshot first
     valid_path = tmp_path / "valid.npz"
@@ -251,7 +251,7 @@ def test_shape_mismatch_rejection(tmp_path):
 def test_atomic_write_behavior(tmp_path):
     """Test that export overwrites existing files atomically."""
     sim = Sim(_load_model("decay.toml"))
-    sim.run(t_end=0.2)
+    sim.run(T=0.2)
     
     snap_path = tmp_path / "atomic_test.npz"
     
@@ -272,14 +272,14 @@ def test_workspace_persistence(tmp_path):
     # Note: This test depends on having a stepper that uses non-empty workspace
     # For now, we'll test the basic structure even if workspace is empty
     sim = Sim(_load_model("decay_rk4.toml"))
-    sim.run(t_end=0.3)
+    sim.run(T=0.3)
     
     snap_path = tmp_path / "workspace_test.npz"
     sim.export_snapshot(snap_path, source="current")
     
     # Check that we can round-trip even with workspace (empty or not)
     original_ws = sim._session_state.stepper_ws.copy()
-    sim.run(t_end=1.0, resume=True)  # Change state
+    sim.run(T=1.0, resume=True)  # Change state
     
     sim.import_snapshot(snap_path)
     restored_ws = sim._session_state.stepper_ws
@@ -295,14 +295,14 @@ def test_export_snapshot_preserves_metadata(tmp_path):
     sim = Sim(_load_model("decay.toml"))
 
     # Create a snapshot after running with a transient warm-up to get a time shift.
-    sim.run(t_end=1.0, transient=0.4)
+    sim.run(T=1.0, transient=0.4)
     sim.create_snapshot("transient", "after transient run")
     stored_snapshot = sim._snapshots["transient"]
     stored_time_shift = stored_snapshot.time_shift
     stored_nominal_dt = stored_snapshot.nominal_dt
 
     # Run again with a different dt so the sim's current nominal dt/time shift change.
-    sim.run(t_end=0.5, dt=0.002)
+    sim.run(T=0.5, dt=0.002)
     assert sim._nominal_dt == pytest.approx(0.002)
     assert sim._time_shift == 0.0  # Non-transient run resets the shift
 

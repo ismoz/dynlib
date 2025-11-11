@@ -56,7 +56,7 @@ def test_rk4_accuracy():
     For RK4 with step dt, the local truncation error is O(dt^5).
     Global error is O(dt^4), so halving dt should reduce error by ~16x.
     """
-    data_dir = Path(__file__).parent.parent / "data" / "models"
+    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
     model_path = data_dir / "decay_rk4.toml"
     
     model = load_model_from_toml(model_path, jit=True)
@@ -90,7 +90,7 @@ def test_rk4_order_convergence():
     """
     Test RK4 order of convergence: halving dt should reduce error by ~16x.
     """
-    data_dir = Path(__file__).parent.parent / "data" / "models"
+    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
     
     # Analytic solution
     t_end = 2.0
@@ -120,7 +120,7 @@ def test_rk4_order_convergence():
     )
     
     sim_coarse = Sim(model_coarse)
-    sim_coarse.run(t_end=t_end, dt=0.2)
+    sim_coarse.run(T=t_end, dt=0.2)
     results_coarse = sim_coarse.raw_results()
     # Find the index where T is closest to t_end
     idx_coarse = np.argmin(np.abs(results_coarse.T[:results_coarse.n] - t_end))
@@ -143,7 +143,7 @@ def test_rk4_order_convergence():
     )
     
     sim_fine = Sim(model_fine)
-    sim_fine.run(t_end=t_end, dt=0.1)
+    sim_fine.run(T=t_end, dt=0.1)
     results_fine = sim_fine.raw_results()
     idx_fine = np.argmin(np.abs(results_fine.T[:results_fine.n] - t_end))
     x_fine = results_fine.Y[0, idx_fine]
@@ -163,7 +163,7 @@ def test_rk45_adaptive_accuracy():
     RK45 should automatically adjust step size to maintain error tolerance,
     resulting in very accurate solutions.
     """
-    data_dir = Path(__file__).parent.parent / "data" / "models"
+    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
     model_path = data_dir / "decay_rk45.toml"
     
     model = load_model_from_toml(model_path, jit=True)
@@ -199,7 +199,7 @@ def test_rk45_step_adaptation():
     
     For smooth problems, RK45 should take fewer steps than fixed-step methods.
     """
-    data_dir = Path(__file__).parent.parent / "data" / "models"
+    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
     
     # Load RK45 model
     with open(data_dir / "decay_rk45.toml", "rb") as f:
@@ -244,11 +244,11 @@ def test_rk45_step_adaptation():
     
     # Run both with same initial dt
     sim_rk45 = Sim(model_rk45)
-    sim_rk45.run(t_end=2.0, dt=0.1, record_interval=1)
+    sim_rk45.run(T=2.0, dt=0.1, record_interval=1)
     results_rk45 = sim_rk45.raw_results()
     
     sim_euler = Sim(model_euler)
-    sim_euler.run(t_end=2.0, dt=0.1, record_interval=1)
+    sim_euler.run(T=2.0, dt=0.1, record_interval=1)
     results_euler = sim_euler.raw_results()
     
     # RK45 should take different number of steps (adaptive)
@@ -276,7 +276,7 @@ def test_rk4_jit_parity():
     """
     Test that RK4 produces identical results with JIT on/off.
     """
-    data_dir = Path(__file__).parent.parent / "data" / "models"
+    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
     model_path = data_dir / "decay_rk4.toml"
     
     # Build and run with JIT enabled
@@ -313,7 +313,7 @@ def test_rk45_jit_parity():
     """
     Test that RK45 produces identical results with JIT on/off.
     """
-    data_dir = Path(__file__).parent.parent / "data" / "models"
+    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
     model_path = data_dir / "decay_rk45.toml"
     
     # Build and run with JIT enabled

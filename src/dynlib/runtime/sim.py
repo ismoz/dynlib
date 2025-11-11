@@ -299,7 +299,8 @@ class Sim:
         self,
         *,
         t0: Optional[float] = None,
-        t_end: Optional[float] = None,
+        T: Optional[float] = None,  # Continuous: end time
+        N: Optional[int] = None,    # Discrete: number of iterations
         dt: Optional[float] = None,
         max_steps: int = 100000,
         record: Optional[bool] = None,
@@ -310,19 +311,82 @@ class Sim:
         cap_evt: int = 1,
         transient: Optional[float] = None,
         resume: bool = False,
+        # Note: legacy `t_end` removed from public API; use `T` instead.
         **stepper_kwargs,
     ) -> None:
         """
         Run the compiled model. Set resume=True to continue from the last SessionState.
+        
+        Args:
+            t0: Initial time (default from sim config)
+            T: End time for continuous systems (ODEs, SDEs, etc.)
+            N: Number of iterations for discrete systems (maps, difference equations)
+            dt: Time step / label spacing (default from sim config)
+            max_steps: Maximum steps (safety guard for continuous, target for discrete if N not set)
+            record: Whether to record states (default from sim config)
+            record_interval: Record every N steps
+            ic: Initial conditions (default from model spec)
+            params: Parameters (default from model spec)
+            cap_rec: Initial recording buffer capacity
+            cap_evt: Initial event log buffer capacity
+            transient: Transient warm-up period (continuous) or iterations (discrete)
+            resume: Continue from last session state
+            **stepper_kwargs: Runtime stepper configuration parameters
+        
+        Notes:
+            - For discrete systems: Specify N (iterations) or use max_steps as target
+            - For continuous systems: Specify T (end time), max_steps is safety guard
+            - If transient > 0: warm-up period before recording (no effect on resume)
         """
         sim_defaults = self.model.spec.sim
         record = record if record is not None else sim_defaults.record
         run_t0 = t0 if t0 is not None else sim_defaults.t0
-        if not resume:
-            nominal_dt = float(dt if dt is not None else sim_defaults.dt)
-            self._nominal_dt = nominal_dt
+        
+        # Determine if we're running a discrete or continuous system
+        is_discrete = self.model.spec.kind == "map"
+        
+        # Handle T/N parameter conflicts and defaults
+        
+        if is_discrete:
+            # Discrete system: N is primary, T is derived
+            if T is not None and N is not None:
+                raise ValueError("For discrete systems, specify either N (iterations) or T (inferred), not both")
+            
+            if not resume:
+                nominal_dt = float(dt if dt is not None else sim_defaults.dt)
+                self._nominal_dt = nominal_dt
+            else:
+                nominal_dt = self._nominal_dt
+            
+            # Determine N (number of iterations)
+            if N is not None:
+                target_N = int(N)
+                # T is derived from N
+                target_T = run_t0 + target_N * nominal_dt
+            elif T is not None:
+                # Infer N from T
+                target_T = float(T)
+                target_N = int(round((target_T - run_t0) / nominal_dt))
+                if target_N < 0:
+                    raise ValueError(f"T ({T}) must be >= t0 ({run_t0}) for discrete systems")
+            else:
+                # Neither N nor T specified: use max_steps as N
+                target_N = max_steps
+                target_T = run_t0 + target_N * nominal_dt
         else:
-            nominal_dt = self._nominal_dt
+            # Continuous system: T is primary
+            if N is not None:
+                raise ValueError("For continuous systems, use 'T' (end time), not 'N' (iterations)")
+            
+            if not resume:
+                nominal_dt = float(dt if dt is not None else sim_defaults.dt)
+                self._nominal_dt = nominal_dt
+            else:
+                nominal_dt = self._nominal_dt
+            
+            target_T = T if T is not None else sim_defaults.t_end
+            target_N = None  # Not used for continuous
+        
         transient = 0.0 if transient is None else float(transient)
         if transient < 0.0:
             raise ValueError("transient must be non-negative")
@@ -349,32 +413,63 @@ class Sim:
             seed.dt = self._nominal_dt
         self._ensure_initial_snapshot(seed if not self._initial_snapshot_created else None)
 
-        target_t_end = t_end if t_end is not None else sim_defaults.t_end
         if resume:
-            target_t_end_abs = target_t_end + self._time_shift
-            if target_t_end_abs <= seed.t:
+            target_T_abs = target_T + self._time_shift
+            if target_T_abs <= seed.t:
                 current_time = seed.t - self._time_shift
                 raise ValueError(
-                    f"Resume target t_end ({target_t_end}) must exceed current time ({current_time})"
+                    f"Resume target {'T' if not is_discrete else 'T (from N)'} ({target_T}) "
+                    f"must exceed current time ({current_time})"
                 )
 
         prev_cfg = getattr(self._session_state, "stepper_cfg", None)
         stepper_config = self._build_stepper_config(stepper_kwargs, prev_cfg)
         self._sync_initial_snapshot_config(stepper_config)
         n_state = self._n_state
-        max_steps = int(max_steps)
+        max_steps_internal = int(max_steps if target_N is None else target_N)
         cap_rec = max(1, int(cap_rec))
         cap_evt = max(1, int(cap_evt))
         base_steps_for_session = seed.step_count
         step_offset_initial = seed.step_count
         run_seed = seed
-        record_target_t_end = target_t_end + self._time_shift
+        record_target_T = target_T + self._time_shift
+        def _remaining_steps(recorded_completed: int) -> int:
+            remaining = target_N - recorded_completed
+            if remaining <= 0:
+                raise ValueError(
+                    "Requested discrete horizon already satisfied by current state; "
+                    "increase N/T or reset() to start over."
+                )
+            return remaining
+
+        if is_discrete:
+            if resume:
+                transient_steps = 0
+                if self._nominal_dt != 0.0:
+                    transient_steps = int(round(self._time_shift / self._nominal_dt))
+                recorded_completed = max(0, base_steps_for_session - transient_steps)
+            else:
+                recorded_completed = 0
+            record_target_steps = _remaining_steps(recorded_completed)
+        else:
+            record_target_steps = None
+        
         # Optional transient warm-up (no recording, no stitching) before the recorded run.
         if transient > 0.0:
+            if is_discrete:
+                # transient is in iterations for discrete systems
+                transient_N = int(transient)
+                transient_T = seed.t + transient_N * nominal_dt
+            else:
+                # transient is in time for continuous systems
+                transient_T = seed.t + transient
+                transient_N = max_steps  # Use max_steps as guard
+            
             warm_result = self._execute_run(
                 seed=run_seed,
-                t_end=seed.t + transient,
-                max_steps=max_steps,
+                t_end=transient_T,
+                target_steps=transient_N if is_discrete else None,
+                max_steps=transient_N if is_discrete else max_steps,
                 record=False,
                 record_interval=record_interval,
                 cap_rec=cap_rec,
@@ -389,17 +484,27 @@ class Sim:
             step_offset_initial = 0
             run_seed = warm_state.to_seed()
             run_seed.dt = self._nominal_dt
-            recorded_duration = target_t_end - run_t0
-            if recorded_duration <= 0:
-                raise ValueError("transient exceeds or equals requested horizon; nothing left to record")
+            
+            if is_discrete:
+                recorded_duration = target_T - run_t0
+                if recorded_duration <= 0:
+                    raise ValueError("transient exceeds or equals requested horizon; nothing left to record")
+            else:
+                recorded_duration = target_T - run_t0
+                if recorded_duration <= 0:
+                    raise ValueError("transient exceeds or equals requested horizon; nothing left to record")
+            
             self._time_shift = warm_state.t_curr - run_t0
-            record_target_t_end = target_t_end + self._time_shift
+            record_target_T = target_T + self._time_shift
+            if is_discrete:
+                record_target_steps = _remaining_steps(recorded_completed)
 
         # Recorded run (or the only run when transient==0)
         recorded_result = self._execute_run(
             seed=run_seed,
-            t_end=record_target_t_end,
-            max_steps=max_steps,
+            t_end=record_target_T,
+            target_steps=record_target_steps,
+            max_steps=max_steps_internal,
             record=record,
             record_interval=record_interval,
             cap_rec=cap_rec,
@@ -1235,6 +1340,7 @@ class Sim:
         *,
         seed: IntegratorSeed,
         t_end: float,
+        target_steps: Optional[int],
         max_steps: int,
         record: bool,
         record_interval: int,
@@ -1264,6 +1370,8 @@ class Sim:
             max_log_width=self._max_log_width,
             stepper_config=stepper_config,
             workspace_seed=seed.workspace,
+            discrete=(target_steps is not None),
+            target_steps=target_steps,
         )
 
     def _state_from_results(
@@ -1302,7 +1410,7 @@ class Sim:
         trimmed_n = max(n_curr - start, 0)
         if trimmed_n > 0:
             if prev_n > 0:
-                step_offset = accum.STEP[prev_n - 1] + 1
+                step_offset = accum.STEP[prev_n - 1]
             else:
                 step_offset = step_offset_initial
             accum.append_records(

@@ -105,7 +105,7 @@ def main():
     # Apply a preset and run
     print("\n=== Applying 'regular_spiking' preset ===")
     sim.apply_preset("regular_spiking")
-    sim.run(t_end=100.0)
+    sim.run(T=100.0)
     results = sim.results()
     event_counts = results.event.summary()
     n_spikes = event_counts.get('spike', 0)
@@ -115,7 +115,7 @@ def main():
     print("\n=== Applying 'fast_spiking' preset ===")
     sim.reset()  # Reset to initial state
     sim.apply_preset("fast_spiking")
-    sim.run(t_end=100.0)
+    sim.run(T=100.0)
     results = sim.results()
     event_counts = results.event.summary()
     n_spikes = event_counts.get('spike', 0)
@@ -147,7 +147,7 @@ def main():
         
         # Verify they work
         sim2.apply_preset("regular_spiking")
-        sim2.run(t_end=100.0)
+        sim2.run(T=100.0)
         results2 = sim2.results()
         event_counts2 = results2.event.summary()
         n_spikes2 = event_counts2.get('spike', 0)

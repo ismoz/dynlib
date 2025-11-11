@@ -13,7 +13,7 @@ from dynlib.runtime.model import Model
 
 
 def _load_model(toml_name: str) -> Model:
-    data_dir = Path(__file__).parent.parent / "data" / "models"
+    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
     with open(data_dir / toml_name, "rb") as fh:
         data = tomllib.load(fh)
     spec = build_spec(parse_model_v2(data))
@@ -34,8 +34,8 @@ def _load_model(toml_name: str) -> Model:
 
 def test_resume_stitches_without_duplicates():
     sim = Sim(_load_model("decay_with_event.toml"))
-    sim.run(t_end=1.0)
-    sim.run(t_end=2.0, resume=True)
+    sim.run(T=1.0)
+    sim.run(T=2.0, resume=True)
     res = sim.raw_results()
     t = res.T_view
     step = res.STEP_view
@@ -49,9 +49,9 @@ def test_resume_stitches_without_duplicates():
 
 def test_record_off_then_resume_records_with_offset():
     sim = Sim(_load_model("decay.toml"))
-    sim.run(t_end=0.5, record=False)
+    sim.run(T=0.5, record=False)
     prev_steps = sim.session_state_summary()["step"]
-    sim.run(t_end=1.0, record=True, resume=True)
+    sim.run(T=1.0, record=True, resume=True)
     res = sim.raw_results()
     assert len(res.STEP_view) > 0, "Second run should record samples"
     assert res.STEP_view[-1] > prev_steps, "Recorded STEP axis must extend past prior session steps"
@@ -59,9 +59,9 @@ def test_record_off_then_resume_records_with_offset():
 
 def test_snapshot_reset_clears_results():
     sim = Sim(_load_model("decay.toml"))
-    sim.run(t_end=0.5)
+    sim.run(T=0.5)
     sim.create_snapshot("checkpoint", description="after first segment")
-    sim.run(t_end=1.0, resume=True)
+    sim.run(T=1.0, resume=True)
     assert sim.raw_results().n > 0
     sim.reset("checkpoint")
     summary = sim.session_state_summary()

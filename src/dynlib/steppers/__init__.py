@@ -6,6 +6,7 @@ from .registry import register, get_stepper, registry
 from . import euler
 from . import rk4
 from . import rk45
+from .discrete import map
 
 __all__ = [
     "StepperMeta", "StepperInfo", "StructSpec", "StepperSpec",

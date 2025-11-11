@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Callable, Mapping, Dict
+from typing import Callable, Mapping, Dict, Optional
 import warnings
 import numpy as np
 
@@ -43,6 +43,8 @@ def run_with_wrapper(
     # NEW: stepper configuration
     stepper_config: np.ndarray = None,
     workspace_seed: Mapping[str, np.ndarray] | None = None,
+    discrete: bool = False,
+    target_steps: Optional[int] = None,
 ) -> Results:
     """
     JIT-free orchestrator. Allocates banks/buffers, calls the compiled runner
@@ -50,7 +52,7 @@ def run_with_wrapper(
 
     Runner ABI (frozen) — summarized here (see runner_api.py for full doc):
         status = runner(
-            t0, t_end, dt_init,
+            t0, horizon, dt_init,
             max_steps, n_state, record_interval,
             y_curr, y_prev, params,
             sp, ss, sw0, sw1, sw2, sw3, iw0, bw0,
@@ -70,7 +72,18 @@ def run_with_wrapper(
         and re-entering with updated caps/cursors.
       - hint_out[0] is used here as the current **event log cursor m** (by convention).
       - stepper_config is a read-only float64 array containing runtime configuration.
+      - When ``discrete=True`` the runner horizon is interpreted as an iteration
+        budget ``N`` (second argument). Otherwise it is ``t_end`` (continuous time).
     """
+    if discrete:
+        if target_steps is None:
+            raise ValueError("target_steps must be provided when discrete=True")
+        steps_horizon = int(target_steps)
+        if steps_horizon < 0:
+            raise ValueError("target_steps must be non-negative")
+    else:
+        steps_horizon = None
+
     assert ic.shape == (n_state,)
     y_curr = np.array(ic, dtype=dtype, copy=True)
     y_prev = np.array(ic, dtype=dtype, copy=True)  # will be set by runner after first commit
@@ -122,8 +135,9 @@ def run_with_wrapper(
 
     # Attempt/re-entry loop
     while True:
+        horizon_arg = steps_horizon if discrete else float(t_end)
         status = runner(
-            t_curr, float(t_end), dt_curr,
+            t_curr, horizon_arg, dt_curr,
             int(max_steps), int(n_state), int(rec_every),
             y_curr, y_prev, params,
             banks.sp, banks.ss, banks.sw0, banks.sw1, banks.sw2, banks.sw3,

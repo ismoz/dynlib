@@ -46,7 +46,7 @@ sim = Sim(model)
 sim_jit = Sim(model_jit)
 
 with Timer("jit False"):
-    sim.run(t_end=T, dt=0.01, cap_rec=10000, record=False)
+    sim.run(T=T, dt=0.01, cap_rec=10000, record=False)
 
 with Timer("jit True"):
-    sim_jit.run(t_end=T, dt=0.01, cap_rec=10000, record=False)
+    sim_jit.run(T=T, dt=0.01, cap_rec=10000, record=False)

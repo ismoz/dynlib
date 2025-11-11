@@ -47,7 +47,7 @@ def load_model_from_toml(path: Path, jit: bool = True) -> Model:
 def test_event_logging_basic():
     """Test that event logging records when an event fires."""
     # Load model with event that has log=["t", "x"]
-    data_dir = Path(__file__).parent.parent / "data" / "models"
+    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
     model_path = data_dir / "decay_with_event.toml"
     
     model = load_model_from_toml(model_path, jit=True)
@@ -95,7 +95,7 @@ def test_event_logging_basic():
 def test_event_logging_no_log_field():
     """Test that events without log field don't populate event buffer."""
     # Create a simple decay model without event logging
-    data_dir = Path(__file__).parent.parent / "data" / "models"
+    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
     model_path = data_dir / "decay.toml"
     
     model = load_model_from_toml(model_path, jit=True)
@@ -114,14 +114,14 @@ def test_event_logging_no_log_field():
 
 def test_event_logging_multiple_fires():
     """Test that multiple event firings are all logged."""
-    data_dir = Path(__file__).parent.parent / "data" / "models"
+    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
     model_path = data_dir / "decay_with_event.toml"
     
     model = load_model_from_toml(model_path, jit=True)
     sim = Sim(model)
     
     # Run with longer simulation to ensure multiple resets
-    sim.run(t_end=10.0, cap_evt=100)
+    sim.run(T=10.0, cap_evt=100)
     result = sim.raw_results()
     
     evt_code = result.EVT_CODE_view
@@ -141,13 +141,13 @@ def test_event_logging_multiple_fires():
 
 def test_event_logging_captures_state():
     """Test that event logging happens at the correct time."""
-    data_dir = Path(__file__).parent.parent / "data" / "models"
+    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
     model_path = data_dir / "decay_with_event.toml"
     
     model = load_model_from_toml(model_path, jit=True)
     sim = Sim(model)
     
-    sim.run(t_end=3.0, cap_evt=100)
+    sim.run(T=3.0, cap_evt=100)
     result = sim.raw_results()
     
     evt_code = result.EVT_CODE_view

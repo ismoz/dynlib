@@ -70,7 +70,7 @@ def main():
     print("✓ Created simulation with exponential decay model")
     
     # Run to some intermediate state
-    sim.run(t_end=2.0)
+    sim.run(T=2.0)
     print(f"✓ Ran simulation to t=2.0, current state: x={sim._session_state.y_curr[0]:.4f}")
     
     # Create an in-memory snapshot
@@ -78,7 +78,7 @@ def main():
     print("✓ Created in-memory snapshot 'checkpoint_1'")
     
     # Continue running
-    sim.run(t_end=5.0, resume=True)
+    sim.run(T=5.0, resume=True)
     print(f"✓ Continued to t=5.0, current state: x={sim._session_state.y_curr[0]:.4f}")
     
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -107,7 +107,7 @@ def main():
             print()
         
         # Continue simulation further
-        sim.run(t_end=8.0, resume=True)
+        sim.run(T=8.0, resume=True)
         current_x = sim._session_state.y_curr[0]
         print(f"✓ Continued to t=8.0, current state: x={current_x:.4f}")
         
@@ -127,7 +127,7 @@ def main():
             print(f"✓ Results correctly cleared: {e}")
         
         # Can continue from restored state
-        sim.run(t_end=3.0, resume=True)
+        sim.run(T=3.0, resume=True)
         final_x = sim._session_state.y_curr[0]
         print(f"✓ Resumed from restored state to t=3.0, x={final_x:.4f}")
         

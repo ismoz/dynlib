@@ -1,0 +1,679 @@
+# src/dynlib/compiler/codegen/runner_discrete.py
+"""
+Discrete-time runner for maps and difference equations.
+
+Mirrors the continuous runner but with iteration-based termination:
+  1. Pre-events on committed state
+  2. Stepper loop (map function: y_next = F(n, y_curr))
+  3. Commit: y_prev, y_curr, n
+  4. Post-events on committed state
+  5. Record (with capacity checks)
+  6. Loop until step >= N (no time-based termination)
+  7. Return status codes per runner_api.py
+
+Key differences from continuous runner:
+  - Loop condition: while step < N (not t < T)
+  - No dt clipping (dt is constant label spacing)
+  - Time is computed: t = t0 + step * dt (exact, no accumulation)
+  - Supports all continuous features: events, recording, transients, workspace, config
+
+The runner accepts the stepper as a callable parameter, matching the continuous ABI.
+"""
+from __future__ import annotations
+
+import contextlib
+import hashlib
+import importlib.util
+import inspect
+import json
+import os
+import platform
+import shutil
+import sys
+import textwrap
+import time
+import uuid
+import warnings
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import TYPE_CHECKING, Callable, Dict, Optional, Tuple
+
+try:
+    from importlib import metadata as importlib_metadata
+except ImportError:  # pragma: no cover - Python <3.8 fallback
+    import importlib_metadata  # type: ignore
+
+try:
+    import tomllib  # Python 3.11+
+except Exception:  # pragma: no cover - fallback for <3.11
+    import tomli as tomllib  # type: ignore
+
+if TYPE_CHECKING:
+    from dynlib.steppers.base import StructSpec
+
+# Import status codes from canonical source
+from dynlib.runtime.runner_api import (
+    OK, STEPFAIL, NAN_DETECTED,
+    DONE, GROW_REC, GROW_EVT, USER_BREAK
+)
+
+# Import centralized JIT compilation helper
+from dynlib.compiler.jit.compile import jit_compile
+
+__all__ = [
+    "runner_discrete",
+    "get_runner_discrete",
+    "configure_runner_disk_cache_discrete",
+    "last_runner_cache_hit_discrete",
+]
+
+try:
+    import numba  # type: ignore
+    _NUMBA_AVAILABLE = True
+    _NUMBA_VERSION = getattr(numba, "__version__", "unknown")
+except Exception:
+    numba = None  # type: ignore
+    _NUMBA_AVAILABLE = False
+    _NUMBA_VERSION = None
+
+try:
+    import llvmlite  # type: ignore
+    _LLVMLITE_VERSION = getattr(llvmlite, "__version__", "unknown")
+except Exception:
+    llvmlite = None  # type: ignore
+    _LLVMLITE_VERSION = None
+
+
+def _discover_dynlib_version() -> str:
+    """Best-effort dynlib version lookup."""
+    version = _read_pyproject_version()
+    if version is not None:
+        return version
+    try:
+        return importlib_metadata.version("dynlib")
+    except importlib_metadata.PackageNotFoundError:
+        return "0.0.0+local"
+
+
+def _read_pyproject_version() -> Optional[str]:
+    root = Path(__file__).resolve()
+    for parent in root.parents:
+        candidate = parent / "pyproject.toml"
+        if not candidate.exists():
+            continue
+        try:
+            with open(candidate, "rb") as fh:
+                data = tomllib.load(fh)
+        except Exception:
+            continue
+        project = data.get("project", {})
+        version = project.get("version")
+        if isinstance(version, str):
+            return version
+    return None
+
+
+_DYNLIB_VERSION = _discover_dynlib_version()
+
+
+def runner_discrete(
+    # scalars
+    t0, N, dt_init,
+    max_steps, n_state, record_interval,
+    # state/params
+    y_curr, y_prev, params,
+    # struct banks (views)
+    sp, ss,
+    sw0, sw1, sw2, sw3,
+    iw0, bw0,
+    # stepper configuration (read-only)
+    stepper_config,
+    # proposals/outs (len-1 arrays where applicable)
+    y_prop, t_prop, dt_next, err_est,
+    # recording
+    T, Y, STEP, FLAGS,
+    # event log (present; cap may be 1 if disabled)
+    EVT_CODE, EVT_INDEX, EVT_LOG_DATA,
+    # event log scratch (for writing log values before copying)
+    evt_log_scratch,
+    # cursors & caps
+    i_start, step_start, cap_rec, cap_evt,
+    # control/outs (len-1)
+    user_break_flag, status_out, hint_out,
+    i_out, step_out, t_out,
+    # function symbols (jittable callables)
+    stepper, rhs, events_pre, events_post
+):
+    """
+    Discrete-time runner: iteration-based execution with events and recording.
+    
+    Frozen ABI signature - mirrors continuous runner but uses N instead of t_end.
+    
+    Key behavior:
+      - Loop terminates at step >= N (not time-based)
+      - Time is computed exactly: t = t0 + step * dt (no accumulation drift)
+      - dt never clipped (always constant label spacing)
+      - Supports all features: events, recording, workspace, stepper config
+    
+    Returns status code (int32).
+    """
+    # Initialize loop state
+    t = float(t0)
+    dt = float(dt_init)
+    i = int(i_start)         # record cursor
+    step = int(step_start)   # global step counter (iteration count)
+    
+    # Event log cursor: hint_out[0] is used to pass m between re-entries
+    # On first call, hint_out[0] is 0; on re-entry after GROW_EVT, it contains the saved m
+    m = int(hint_out[0])     # event log cursor (resume from hint)
+    
+    # Recording at t0 (if record_interval > 0)
+    if record_interval > 0 and step == 0:
+        # Record initial condition
+        if i >= cap_rec:
+            # Need growth before recording
+            i_out[0] = i
+            step_out[0] = step
+            t_out[0] = t
+            status_out[0] = GROW_REC
+            hint_out[0] = m
+            return GROW_REC
+        
+        T[i] = t
+        for k in range(n_state):
+            Y[k, i] = y_curr[k]
+        STEP[i] = step
+        FLAGS[i] = OK
+        i += 1
+    
+    # Main iteration loop - DISCRETE: only step count matters, not time
+    while step < N:
+        # Check if we need to record a pending step from before growth
+        # This happens when step_start > i_start (we've advanced steps but not recorded)
+        if step > 0 and record_interval > 0 and (step % record_interval == 0) and step == step_start:
+            # Re-entering after GROW_REC: attempt the pending record first
+            if i >= cap_rec:
+                # Still not enough space (should not happen with geometric growth)
+                i_out[0] = i
+                step_out[0] = step
+                t_out[0] = t
+                status_out[0] = GROW_REC
+                hint_out[0] = m
+                return GROW_REC
+            
+            T[i] = t
+            for k in range(n_state):
+                Y[k, i] = y_curr[k]
+            STEP[i] = step
+            FLAGS[i] = OK
+            i += 1
+            
+        # 1. Pre-events on committed state
+        event_code_pre, log_width_pre = events_pre(t, y_curr, params, evt_log_scratch)
+        
+        # Record pre-event if it fired and has log data
+        if event_code_pre >= 0 and log_width_pre > 0:
+            if m >= cap_evt:
+                # Need event buffer growth
+                i_out[0] = i
+                step_out[0] = step
+                t_out[0] = t
+                status_out[0] = GROW_EVT
+                hint_out[0] = m
+                return GROW_EVT
+            
+            # Copy log data to buffers
+            for log_idx in range(log_width_pre):
+                EVT_LOG_DATA[m, log_idx] = evt_log_scratch[log_idx]
+            
+            EVT_CODE[m] = event_code_pre
+            EVT_INDEX[m] = (i - 1) if i > 0 else -1
+            m += 1
+        
+        # 2. NO dt clipping for discrete systems - dt is constant label spacing
+        # Time is a derived label, not a termination criterion
+        
+        # 3. Stepper attempt (map: single evaluation, no internal iteration)
+        step_status = stepper(
+            t, dt, y_curr, rhs, params,
+            sp, ss, sw0, sw1, sw2, sw3, iw0, bw0,
+            stepper_config,
+            y_prop, t_prop, dt_next, err_est
+        )
+        
+        # Check for stepper failure/termination
+        # Steppers return: OK (accepted step) or terminal codes (STEPFAIL, NAN_DETECTED)
+        if step_status != OK:
+            i_out[0] = i
+            step_out[0] = step
+            t_out[0] = t
+            status_out[0] = step_status
+            hint_out[0] = m
+            return step_status
+        
+        # 4. Commit: y_prev <- y_curr, y_curr <- y_prop, step++
+        for k in range(n_state):
+            y_prev[k] = y_curr[k]
+            y_curr[k] = y_prop[k]
+        step += 1
+        
+        # Compute time exactly (no accumulation) - KEY DIFFERENCE from continuous
+        t = t0 + step * dt
+        # dt remains constant (from dt_next, but for maps it's always dt_init)
+        dt = dt_next[0]
+        
+        # 5. Post-events on committed state
+        event_code_post, log_width_post = events_post(t, y_curr, params, evt_log_scratch)
+        
+        # Record post-event if it fired and has log data
+        if event_code_post >= 0 and log_width_post > 0:
+            if m >= cap_evt:
+                # Need event buffer growth
+                i_out[0] = i
+                step_out[0] = step
+                t_out[0] = t
+                status_out[0] = GROW_EVT
+                hint_out[0] = m
+                return GROW_EVT
+            
+            # Copy log data to buffers
+            for log_idx in range(log_width_post):
+                EVT_LOG_DATA[m, log_idx] = evt_log_scratch[log_idx]
+            
+            EVT_CODE[m] = event_code_post
+            EVT_INDEX[m] = (i - 1) if i > 0 else -1
+            m += 1
+        
+        # 6. Record (if enabled and step matches record_interval)
+        if record_interval > 0 and (step % record_interval == 0):
+            if i >= cap_rec:
+                # Need growth
+                i_out[0] = i
+                step_out[0] = step
+                t_out[0] = t
+                status_out[0] = GROW_REC
+                hint_out[0] = m
+                return GROW_REC
+            
+            T[i] = t
+            for k in range(n_state):
+                Y[k, i] = y_curr[k]
+            STEP[i] = step
+            FLAGS[i] = OK
+            i += 1
+        
+        # Check user break flag (if implemented)
+        if user_break_flag[0] != 0:
+            i_out[0] = i
+            step_out[0] = step
+            t_out[0] = t
+            status_out[0] = USER_BREAK
+            hint_out[0] = m
+            return USER_BREAK
+    
+    # Successful completion (reached N iterations)
+    i_out[0] = i
+    step_out[0] = step
+    t_out[0] = t
+    status_out[0] = DONE
+    hint_out[0] = m
+    return DONE
+
+
+@dataclass(frozen=True)
+class _RunnerDiskCacheRequest:
+    spec_hash: str
+    stepper_name: str
+    structsig: Tuple[int, ...]
+    dtype: str
+    cache_root: Path
+
+
+class _DiskCacheUnavailable(RuntimeError):
+    pass
+
+
+_pending_cache_request: Optional[_RunnerDiskCacheRequest] = None
+_inproc_runner_cache: Dict[str, Callable] = {}
+_warned_reasons: set[str] = set()
+_last_runner_cache_hit: bool = False
+
+
+def configure_runner_disk_cache_discrete(
+    *,
+    spec_hash: str,
+    stepper_name: str,
+    structsig: Tuple[int, ...],
+    dtype: str,
+    cache_root: Path,
+) -> None:
+    """Store the cache context for the next disk-backed discrete runner build."""
+    global _pending_cache_request
+    _pending_cache_request = _RunnerDiskCacheRequest(
+        spec_hash=spec_hash,
+        stepper_name=stepper_name,
+        structsig=tuple(int(x) for x in structsig),
+        dtype=str(dtype),
+        cache_root=Path(cache_root).expanduser().resolve(),
+    )
+
+
+def _consume_cache_request() -> Optional[_RunnerDiskCacheRequest]:
+    global _pending_cache_request
+    req = _pending_cache_request
+    _pending_cache_request = None
+    return req
+
+
+def last_runner_cache_hit_discrete() -> bool:
+    """Return whether the last discrete runner build was served from cache."""
+    return _last_runner_cache_hit
+
+
+def get_runner_discrete(*, jit: bool = True, disk_cache: bool = True) -> Callable:
+    """
+    Return the discrete runner function, optionally JIT-compiled with disk caching.
+    
+    Args:
+        jit: If True, compile with numba. If False, return pure Python.
+        disk_cache: If True and jit=True, attempt to use disk-backed cache.
+    
+    Returns:
+        Callable runner_discrete function (jitted or pure Python).
+    """
+    global _last_runner_cache_hit
+    _last_runner_cache_hit = False
+    
+    if not jit:
+        return runner_discrete
+    
+    if not _NUMBA_AVAILABLE:
+        warnings.warn(
+            "Numba not available; discrete runner will run in pure Python (slow).",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return runner_discrete
+    
+    # Check for cached request
+    req = _consume_cache_request()
+    
+    if req is None or not disk_cache:
+        # No disk cache request or disk cache disabled: use in-proc cache only
+        cache_key = "discrete_runner_nondisk"
+        if cache_key in _inproc_runner_cache:
+            _last_runner_cache_hit = True
+            return _inproc_runner_cache[cache_key]
+        
+        # JIT compile without disk cache
+        jitted = jit_compile(
+            runner_discrete,
+            cache=False,
+            function_name="runner_discrete",
+        )
+        _inproc_runner_cache[cache_key] = jitted
+        return jitted
+    
+    # Disk cache path
+    try:
+        cache_file = _build_disk_cache_path_discrete(req)
+        
+        # Check if cached module exists
+        if cache_file.exists():
+            # Attempt to load from disk
+            try:
+                loaded_fn = _load_cached_runner_discrete(cache_file, req)
+                _inproc_runner_cache[cache_file.name] = loaded_fn
+                _last_runner_cache_hit = True
+                return loaded_fn
+            except Exception as e:
+                warnings.warn(
+                    f"Discrete runner disk cache load failed ({e}); recompiling.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+        
+        # Compile and save to disk
+        jitted = _compile_and_cache_runner_discrete(cache_file, req)
+        _inproc_runner_cache[cache_file.name] = jitted
+        return jitted
+        
+    except _DiskCacheUnavailable as e:
+        # Disk cache unavailable: fall back to in-proc cache
+        reason = str(e)
+        if reason not in _warned_reasons:
+            warnings.warn(
+                f"Discrete runner disk cache unavailable ({reason}); using in-process cache.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            _warned_reasons.add(reason)
+        
+        cache_key = f"discrete_{req.spec_hash}_{req.stepper_name}_{req.dtype}"
+        if cache_key in _inproc_runner_cache:
+            _last_runner_cache_hit = True
+            return _inproc_runner_cache[cache_key]
+        
+        jitted = jit_compile(
+            runner_discrete,
+            cache=False,
+            function_name="runner_discrete",
+        )
+        _inproc_runner_cache[cache_key] = jitted
+        return jitted
+
+
+def _build_disk_cache_path_discrete(req: _RunnerDiskCacheRequest) -> Path:
+    """Build the canonical path for a cached discrete runner module."""
+    if not req.cache_root:
+        raise _DiskCacheUnavailable("cache_root not set")
+    
+    # Platform triple
+    platform_token = _platform_triple()
+    
+    # Dtype token
+    dtype_token = _dtype_token(req.dtype)
+    
+    # Stepper name (sanitized)
+    stepper_token = _sanitize_token(req.stepper_name)
+    
+    # Struct signature as hex
+    structsig_token = hashlib.sha1(
+        str(req.structsig).encode("utf-8")
+    ).hexdigest()[:12]
+    
+    # Spec hash (first 12 chars)
+    spec_token = req.spec_hash[:12]
+    
+    # Environment pins (numba, llvmlite, dynlib versions)
+    env_pins = _gather_env_pins(platform_token)
+    env_hash = _hash_payload(env_pins)[:8]
+    
+    # Filename
+    filename = (
+        f"discrete_runner__{platform_token}__{dtype_token}__{stepper_token}__"
+        f"{structsig_token}__{spec_token}__{env_hash}.py"
+    )
+    
+    return req.cache_root / "runners" / "discrete" / filename
+
+
+def _load_cached_runner_discrete(cache_file: Path, req: _RunnerDiskCacheRequest) -> Callable:
+    """Load and validate a cached discrete runner module."""
+    if not cache_file.exists():
+        raise _DiskCacheUnavailable(f"cache file missing: {cache_file}")
+    
+    # Read and validate metadata
+    content = cache_file.read_text(encoding="utf-8")
+    
+    if "# CACHE_META:" not in content:
+        raise _DiskCacheUnavailable("cache file missing metadata")
+    
+    # Extract metadata JSON
+    for line in content.splitlines():
+        if line.startswith("# CACHE_META:"):
+            meta_json = line[len("# CACHE_META:"):].strip()
+            meta = json.loads(meta_json)
+            
+            # Validate version compatibility
+            if meta.get("dynlib_version") != _DYNLIB_VERSION:
+                raise _DiskCacheUnavailable(
+                    f"version mismatch: cached={meta.get('dynlib_version')}, "
+                    f"current={_DYNLIB_VERSION}"
+                )
+            
+            break
+    else:
+        raise _DiskCacheUnavailable("metadata not found in cache file")
+    
+    # Load module
+    spec = importlib.util.spec_from_file_location(
+        f"_discrete_runner_cached_{uuid.uuid4().hex[:8]}",
+        cache_file,
+    )
+    if spec is None or spec.loader is None:
+        raise _DiskCacheUnavailable("failed to create module spec")
+    
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    
+    if not hasattr(module, "runner_discrete"):
+        raise _DiskCacheUnavailable("cached module missing runner_discrete function")
+    
+    return module.runner_discrete
+
+
+def _compile_and_cache_runner_discrete(cache_file: Path, req: _RunnerDiskCacheRequest) -> Callable:
+    """JIT compile discrete runner and save to disk cache."""
+    # Generate source module with @njit decorator
+    source = _render_runner_module_source_discrete()
+    
+    # Add metadata header
+    platform_token = _platform_triple()
+    env_pins = _gather_env_pins(platform_token)
+    metadata = {
+        "dynlib_version": _DYNLIB_VERSION,
+        "numba_version": _NUMBA_VERSION,
+        "llvmlite_version": _LLVMLITE_VERSION,
+        "platform": platform_token,
+        "spec_hash": req.spec_hash,
+        "stepper_name": req.stepper_name,
+        "dtype": req.dtype,
+        "structsig": list(req.structsig),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    metadata.update(env_pins)
+    
+    header = f"# CACHE_META: {json.dumps(metadata)}\n"
+    full_source = header + source
+    
+    # Write to temp file first
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    temp_file = cache_file.with_suffix(".tmp")
+    
+    try:
+        temp_file.write_text(full_source, encoding="utf-8")
+        
+        # Load and compile
+        spec = importlib.util.spec_from_file_location(
+            f"_discrete_runner_{uuid.uuid4().hex[:8]}",
+            temp_file,
+        )
+        if spec is None or spec.loader is None:
+            raise _DiskCacheUnavailable("failed to create module spec for compilation")
+        
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        
+        if not hasattr(module, "runner_discrete"):
+            raise _DiskCacheUnavailable("compiled module missing runner_discrete function")
+        
+        # Atomic move
+        temp_file.replace(cache_file)
+        
+        return module.runner_discrete
+        
+    except Exception as e:
+        # Clean up temp file on error
+        if temp_file.exists():
+            temp_file.unlink()
+        raise _DiskCacheUnavailable(f"compilation failed: {e}")
+
+
+def _render_runner_module_source_discrete() -> str:
+    """Generate source code for a standalone discrete runner module with @njit."""
+    runner_src = inspect.getsource(runner_discrete)
+    decorated = runner_src.replace("def runner_discrete(", "@njit(cache=True)\ndef runner_discrete(", 1)
+    
+    imports = textwrap.dedent("""
+        from numba import njit
+        
+        # Status codes (must match runner_api.py)
+        OK = 0
+        STEPFAIL = 2
+        NAN_DETECTED = 3
+        DONE = 9
+        GROW_REC = 10
+        GROW_EVT = 11
+        USER_BREAK = 12
+    """)
+    
+    return imports + "\n\n" + decorated
+
+
+# Shared utility functions (same as continuous runner)
+
+def _platform_triple() -> str:
+    """Return a platform identifier triple."""
+    system = platform.system().lower()
+    machine = platform.machine().lower()
+    
+    # Normalize common variations
+    if machine in ("x86_64", "amd64"):
+        machine = "x86_64"
+    elif machine in ("aarch64", "arm64"):
+        machine = "aarch64"
+    
+    return f"{system}-{machine}-py{sys.version_info.major}{sys.version_info.minor}"
+
+
+def _canonical_dtype_name(dtype: str) -> str:
+    """Normalize dtype string for caching."""
+    import numpy as np
+    return str(np.dtype(dtype))
+
+
+def _dtype_token(dtype: str) -> str:
+    """Convert dtype to short cache token."""
+    canonical = _canonical_dtype_name(dtype)
+    if "float64" in canonical:
+        return "f64"
+    elif "float32" in canonical:
+        return "f32"
+    else:
+        return hashlib.sha1(canonical.encode("utf-8")).hexdigest()[:6]
+
+
+def _sanitize_token(value: str) -> str:
+    """Sanitize a string for use in filenames."""
+    import re
+    sanitized = re.sub(r'[^a-zA-Z0-9_-]', '_', value)
+    return sanitized[:32]
+
+
+def _gather_env_pins(platform_token: str) -> Dict[str, str]:
+    """Gather environment version pins for cache validation."""
+    return {
+        "platform_token": platform_token,
+        "numba_version": _NUMBA_VERSION or "none",
+        "llvmlite_version": _LLVMLITE_VERSION or "none",
+        "dynlib_version": _DYNLIB_VERSION,
+        "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+    }
+
+
+def _hash_payload(payload: Dict[str, object]) -> str:
+    """Hash a dictionary payload for cache keying."""
+    serialized = json.dumps(payload, sort_keys=True).encode("utf-8")
+    return hashlib.sha1(serialized).hexdigest()

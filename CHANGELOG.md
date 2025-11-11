@@ -2,6 +2,28 @@
 
 ---
 
+## [2.19.0] – 2025-11-11
+### Changed
+- Split runners into two: `runner_discrete` for discrete-time models; `runner` (old `runner` 
+  untouched) for continuous-time models.
+- Sim.run: replaced legacy `t_end` with `T` (continuous end time) and added `N` for discrete
+  iteration counts. `Sim` now distinguishes discrete (maps) vs continuous systems and enforces
+  the correct parameters, improving transient and resume behavior.
+- Wrapper: `run_with_wrapper` accepts `discrete`/`target_steps` and passes a general `horizon`
+  argument to the runner so it can work in iteration (N) or time (T) modes.
+- Build/codegen: added and exported a discrete runner (`runner_discrete`) and wired build to
+  select the discrete runner for `map`-kind steppers; disk-cache configuration was added for
+  the discrete runner as well.
+- Steppers: exported the discrete `map` stepper so it is available for selection/registration.
+- Docs/examples: updated usages to call `sim.run(T=...)` where appropriate (replacing
+  `t_end`).
+
+### Tests
+- Reorganized whole tests folder.
+- Added `test_discrete_runner.py` test for new `runner_discrete` and maps.
+
+---
+
 ## [2.18.0] – 2025-11-11
 ### Added
 - Added source code export functionality for compiled models. All compiled models now store the 

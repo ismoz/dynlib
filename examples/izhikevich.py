@@ -34,8 +34,8 @@ u = u + d
 '''
 
 sim = setup(DSL, stepper="euler", jit=False, dtype="float32")
-sim.run(t_end=300.0, dt=0.01, transient=50.0)
-sim.run(t_end=600.0, resume=True)
+sim.run(T=300.0, dt=0.01, transient=50.0)
+sim.run(T=600.0, resume=True)
 
 res = sim.results()
 

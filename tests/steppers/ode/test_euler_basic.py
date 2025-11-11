@@ -58,7 +58,7 @@ def test_euler_decay_analytic():
     
     With small dt, Euler should be reasonably close.
     """
-    data_dir = Path(__file__).parent.parent / "data" / "models"
+    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
     model_path = data_dir / "decay.toml"
     
     model = load_model_from_toml(model_path, jit=True)
@@ -94,14 +94,14 @@ def test_euler_transient_warmup_reuses_state():
     """
     Warm-up transient should advance the state before recording and reset time.
     """
-    data_dir = Path(__file__).parent.parent / "data" / "models"
+    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
     model_path = data_dir / "decay.toml"
 
     model = load_model_from_toml(model_path, jit=True)
 
-    # Reference run without transient but longer horizon (t_end + transient)
+    # Reference run without transient but longer horizon (T + transient)
     sim_ref = Sim(model)
-    sim_ref.run(t_end=3.0)
+    sim_ref.run(T=3.0)
     res_ref = sim_ref.raw_results()
 
     sim_transient = Sim(model)
@@ -129,7 +129,7 @@ def test_euler_with_event():
     Model: dx/dt = -a*x with a reset event when x < threshold.
     The event should reset x to 1.0, causing the simulation to continue.
     """
-    data_dir = Path(__file__).parent.parent / "data" / "models"
+    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
     model_path = data_dir / "decay_with_event.toml"
     
     model = load_model_from_toml(model_path, jit=True)
@@ -165,7 +165,7 @@ def test_euler_growth_triggered():
     
     Uses a tiny initial capacity to force growth during execution.
     """
-    data_dir = Path(__file__).parent.parent / "data" / "models"
+    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
     model_path = data_dir / "decay.toml"
     
     model = load_model_from_toml(model_path, jit=True)
@@ -187,7 +187,7 @@ def test_euler_growth_matches_reference():
     """
     Forcing buffer growth must not change the recorded trajectory.
     """
-    data_dir = Path(__file__).parent.parent / "data" / "models"
+    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
     model_path = data_dir / "decay.toml"
 
     model = load_model_from_toml(model_path, jit=True)
@@ -217,7 +217,7 @@ def test_jit_on_off_parity():
     
     This is a critical test for the "optional JIT" requirement.
     """
-    data_dir = Path(__file__).parent.parent / "data" / "models"
+    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
     model_path = data_dir / "decay.toml"
     
     # Build and run with JIT enabled

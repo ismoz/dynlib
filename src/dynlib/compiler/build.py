@@ -11,6 +11,7 @@ from dynlib.steppers.registry import get_stepper
 from dynlib.steppers.base import StructSpec
 from dynlib.compiler.codegen.emitter import emit_rhs_and_events, CompiledCallables
 from dynlib.compiler.codegen import runner as runner_codegen
+from dynlib.compiler.codegen import runner_discrete as runner_discrete_codegen
 from dynlib.compiler.codegen.validate import validate_stepper_function, report_validation_issues
 from dynlib.compiler.jit.compile import maybe_jit_triplet, jit_compile
 from dynlib.compiler.jit.cache import JITCache, CacheKey
@@ -619,16 +620,32 @@ def build(
     stepper_fn = stepper_entry.fn
     stepper_from_disk = stepper_entry.from_disk
     
-    # Get runner function (optionally JIT-compiled)
-    if jit and disk_cache and cache_root_path is not None:
-        runner_codegen.configure_runner_disk_cache(
-            spec_hash=pieces.spec_hash,
-            stepper_name=stepper_name,
-            structsig=structsig,
-            dtype=dtype,
-            cache_root=cache_root_path,
-        )
-    runner_fn = runner_codegen.get_runner(jit=jit, disk_cache=disk_cache)
+    # Select runner based on stepper kind (discrete vs continuous)
+    # Discrete systems (maps, difference equations): use runner_discrete with N-based termination
+    # Continuous systems (ODEs, SDEs, DAEs): use runner with T-based termination
+    if stepper_spec.meta.kind == "map":
+        # Use discrete runner
+        if jit and disk_cache and cache_root_path is not None:
+            runner_discrete_codegen.configure_runner_disk_cache_discrete(
+                spec_hash=pieces.spec_hash,
+                stepper_name=stepper_name,
+                structsig=structsig,
+                dtype=dtype,
+                cache_root=cache_root_path,
+            )
+        runner_fn = runner_discrete_codegen.get_runner_discrete(jit=jit, disk_cache=disk_cache)
+    else:
+        # Use continuous runner (default)
+        if jit and disk_cache and cache_root_path is not None:
+            runner_codegen.configure_runner_disk_cache(
+                spec_hash=pieces.spec_hash,
+                stepper_name=stepper_name,
+                structsig=structsig,
+                dtype=dtype,
+                cache_root=cache_root_path,
+            )
+        runner_fn = runner_codegen.get_runner(jit=jit, disk_cache=disk_cache)
+
     
     def _all_compiled() -> bool:
         return all(

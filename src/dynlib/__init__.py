@@ -71,7 +71,7 @@ def setup(
             from dynlib import setup
             
             sim = setup(model_uri, stepper="euler", jit=True)
-            sim.run(t_end=10.0)
+            sim.run(T=10.0)
             results = sim.results()
         
         Equivalent manual approach for advanced use::
@@ -81,7 +81,7 @@ def setup(
             model = build(model_uri, stepper="euler", jit=True)
             # Inspect or modify model here if needed
             sim = Sim(model)
-            sim.run(t_end=10.0)
+            sim.run(T=10.0)
     
     See Also:
         build : Compile a model without creating a Sim instance.
