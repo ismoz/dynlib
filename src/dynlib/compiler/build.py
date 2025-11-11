@@ -18,7 +18,7 @@ from dynlib.compiler.paths import resolve_uri, load_config, PathConfig, resolve_
 from dynlib.compiler.mods import apply_mods_v2, ModSpec
 from dynlib.errors import ModelLoadError, StepperKindMismatchError
 
-__all__ = ["CompiledPieces", "build_callables", "FullModel", "build", "load_model_from_uri"]
+__all__ = ["CompiledPieces", "build_callables", "FullModel", "build", "load_model_from_uri", "export_model_sources"]
 
 @dataclass(frozen=True)
 class CompiledPieces:
@@ -30,6 +30,9 @@ class CompiledPieces:
     spec_hash: str
     triplet_digest: Optional[str] = None
     triplet_from_disk: bool = False
+    rhs_source: Optional[str] = None
+    events_pre_source: Optional[str] = None
+    events_post_source: Optional[str] = None
 
 @dataclass(frozen=True)
 class FullModel:
@@ -44,12 +47,17 @@ class FullModel:
     runner: Callable
     spec_hash: str
     dtype: np.dtype
+    rhs_source: Optional[str] = None
+    events_pre_source: Optional[str] = None
+    events_post_source: Optional[str] = None
+    stepper_source: Optional[str] = None
 
 @dataclass
 class _StepperCacheEntry:
     fn: Callable
     digest: Optional[str]
     from_disk: bool
+    source: Optional[str] = None
 
 
 _cache = JITCache()
@@ -157,6 +165,7 @@ def build_callables(
     if cached is not None and cached.get("jit") == bool(jit):
         tri = cached["triplet"]
         meta = cached.get("triplet_meta", {})
+        sources = cached.get("sources", {})
         return CompiledPieces(
             spec,
             stepper_name,
@@ -166,6 +175,9 @@ def build_callables(
             s_hash,
             triplet_digest=meta.get("digest"),
             triplet_from_disk=meta.get("from_disk", False),
+            rhs_source=sources.get("rhs"),
+            events_pre_source=sources.get("events_pre"),
+            events_post_source=sources.get("events_post"),
         )
 
     cc: CompiledCallables = emit_rhs_and_events(spec)
@@ -207,6 +219,11 @@ def build_callables(
             "triplet": (rhs_fn, pre_fn, post_fn),
             "jit": bool(jit),
             "triplet_meta": {"digest": triplet_digest, "from_disk": triplet_from_disk},
+            "sources": {
+                "rhs": cc.rhs_source,
+                "events_pre": cc.events_pre_source,
+                "events_post": cc.events_post_source,
+            },
         },
     )
 
@@ -219,6 +236,9 @@ def build_callables(
         s_hash,
         triplet_digest=triplet_digest,
         triplet_from_disk=triplet_from_disk,
+        rhs_source=cc.rhs_source,
+        events_pre_source=cc.events_pre_source,
+        events_post_source=cc.events_post_source,
     )
 
 
@@ -589,8 +609,12 @@ def build(
             fn=compiled.fn,
             digest=compiled.cache_digest,
             from_disk=compiled.cache_hit,
+            source=stepper_source,
         )
         _stepper_cache[stepper_cache_key] = stepper_entry
+    else:
+        # Retrieved from cache, get source if available
+        stepper_source = stepper_entry.source
     
     stepper_fn = stepper_entry.fn
     stepper_from_disk = stepper_entry.from_disk
@@ -631,4 +655,85 @@ def build(
         runner=runner_fn,
         spec_hash=pieces.spec_hash,
         dtype=dtype_np,
+        rhs_source=pieces.rhs_source,
+        events_pre_source=pieces.events_pre_source,
+        events_post_source=pieces.events_post_source,
+        stepper_source=stepper_source if 'stepper_source' in locals() and stepper_source else None,
     )
+
+
+def export_model_sources(model: FullModel, output_dir: Union[str, Path]) -> Dict[str, Path]:
+    """
+    Export all source code files from a compiled model to a directory for inspection.
+    
+    Args:
+        model: The compiled FullModel instance
+        output_dir: Directory path where source files will be written
+        
+    Returns:
+        Dictionary mapping component names to their file paths
+        
+    Example:
+        >>> from dynlib import build
+        >>> from dynlib.compiler.build import export_model_sources
+        >>> model = build("decay.toml", stepper="euler")
+        >>> files = export_model_sources(model, "./compiled_sources")
+        >>> print(files)
+        {'rhs': Path('./compiled_sources/rhs.py'), 
+         'events_pre': Path('./compiled_sources/events_pre.py'), ...}
+    """
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    exported = {}
+    
+    # Export each component's source if available
+    components = [
+        ("rhs", model.rhs_source),
+        ("events_pre", model.events_pre_source),
+        ("events_post", model.events_post_source),
+        ("stepper", model.stepper_source),
+    ]
+    
+    for name, source in components:
+        if source is not None:
+            file_path = output_path / f"{name}.py"
+            file_path.write_text(source, encoding="utf-8")
+            exported[name] = file_path
+    
+    # Also export model spec summary as text file
+    spec_path = output_path / "model_info.txt"
+    info_lines = [
+        f"Model Information",
+        f"=" * 60,
+        f"Spec Hash: {model.spec_hash}",
+        f"Kind: {model.spec.kind}",
+        f"Stepper: {model.stepper_name}",
+        f"Dtype: {model.dtype}",
+        f"",
+        f"States: {', '.join(model.spec.states)}",
+        f"Parameters: {', '.join(model.spec.params)}",
+        f"",
+    ]
+    
+    if model.spec.equations_rhs:
+        info_lines.append("Equations (RHS):")
+        for state, expr in model.spec.equations_rhs.items():
+            info_lines.append(f"  {state} = {expr}")
+        info_lines.append("")
+    
+    if model.spec.events:
+        info_lines.append(f"Events ({len(model.spec.events)}):")
+        for i, event in enumerate(model.spec.events, 1):
+            info_lines.append(f"  [{i}] phase={event.phase}, cond={event.cond}")
+            if event.action_block:
+                action_preview = event.action_block[:50] + "..." if len(event.action_block) > 50 else event.action_block
+                info_lines.append(f"      action={action_preview}")
+            elif event.action_keyed:
+                info_lines.append(f"      action={event.action_keyed}")
+        info_lines.append("")
+    
+    spec_path.write_text("\n".join(info_lines), encoding="utf-8")
+    exported["info"] = spec_path
+    
+    return exported

@@ -2,6 +2,28 @@
 
 ---
 
+## [2.18.0] – 2025-11-11
+### Added
+- Added source code export functionality for compiled models. All compiled models now store the 
+  generated Python source code for RHS, events, and stepper functions.
+- Added `export_model_sources(model, output_dir)` function in `src/dynlib/compiler/build.py` to 
+  export all compiled sources to a directory for inspection and debugging.
+- Added source code fields to `FullModel` and `Model` classes:
+  - `rhs_source`: Generated RHS (right-hand side) function source code
+  - `events_pre_source`: Pre-step event handler source code
+  - `events_post_source`: Post-step event handler source code
+  - `stepper_source`: Numerical integration stepper source code
+- Added `examples/export_sources_demo.py` demonstrating basic source export.
+- Added comprehensive documentation in `docs/export_sources.md`.
+
+### Changed
+- Modified `CompiledPieces` dataclass to store source code from compilation.
+- Updated `build_callables()` to preserve source code through the compilation pipeline.
+- Enhanced `_StepperCacheEntry` to cache stepper source code for reuse.
+- Source code is now available regardless of `disk_cache` setting (always stored in model object).
+
+---
+
 ## [2.17.1] – 2025-11-11
 ### Added
 - Added `setup()` helper to `src/dynlib/__init__.py`. It combines `build()` + `Sim()` calls. It is 
