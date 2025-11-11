@@ -2,6 +2,12 @@
 
 ---
 
+## [2.19.2] – 2025-11-11
+### Changed
+- Gathered all ode-solver steppers under `src/dynlib/steppers/ode` folder.
+
+---
+
 ## [2.19.1] – 2025-11-11
 ### Added
 - Added `examples/logistic_map.py` to demonstrate the logistic map simulation using the new 

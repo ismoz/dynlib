@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 import numpy as np
 
-from .base import StepperMeta, StructSpec
+from ..base import StepperMeta, StructSpec
 from dynlib.runtime.runner_api import OK, NAN_DETECTED
 
 if TYPE_CHECKING:
@@ -169,7 +169,7 @@ class RK4Spec:
 
 # Auto-register on module import
 def _auto_register():
-    from .registry import register
+    from ..registry import register
     spec = RK4Spec()
     register(spec)
 

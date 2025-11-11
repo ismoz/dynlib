@@ -18,11 +18,11 @@ x = "r * x * (1 - x)"
 '''
 
 sim = setup(model, stepper="map", jit=True, disk_cache=True)
-sim.run(N=200)
+sim.run(N=192, transient=40)
 sim.run(resume=True, N=400)
 
 res=sim.results()
-series.plot(x=res.t, y=res["x"], title="Logistic Map", 
+series.plot(x=res.step, y=res["x"], title="Logistic Map", 
             xlabel="Iteration", 
             ylabel="x",
             style="line",

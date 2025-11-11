@@ -9,7 +9,7 @@ import ast
 from typing import TYPE_CHECKING
 import numpy as np
 
-from .base import StepperMeta, StructSpec
+from ..base import StepperMeta, StructSpec
 from dynlib.runtime.runner_api import OK, NAN_DETECTED
 
 if TYPE_CHECKING:
@@ -143,7 +143,7 @@ class EulerSpec:
 
 # Auto-register on module import (optional; can also register explicitly in __init__.py)
 def _auto_register():
-    from .registry import register
+    from ..registry import register
     spec = EulerSpec()
     register(spec)
 
