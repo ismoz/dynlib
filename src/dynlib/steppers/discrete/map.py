@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ..base import StepperMeta, StructSpec
-from dynlib.runtime.runner_api import OK, NAN_DETECTED
+from dynlib.runtime.runner_api import OK
 
 if TYPE_CHECKING:
     from typing import Callable
@@ -111,13 +111,9 @@ class MapSpec:
             # Compute next state directly into scratch
             rhs(t, y_curr, y_next, params)
 
-            # Propose and finiteness check
+            # Copy proposal to output buffer; runner guard enforces finiteness
             for i in range(n):
-                val = y_next[i]
-                # Fast finiteness check: NaN and Inf fail this
-                if not (val == val and -1e308 < val < 1e308):
-                    return NAN_DETECTED
-                y_prop[i] = val
+                y_prop[i] = y_next[i]
 
             # Fixed label advance
             t_prop[0]  = t + dt

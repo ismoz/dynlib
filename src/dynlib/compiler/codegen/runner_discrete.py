@@ -46,6 +46,7 @@ from dynlib.runtime.runner_api import (
     OK, STEPFAIL, NAN_DETECTED,
     DONE, GROW_REC, GROW_EVT, USER_BREAK
 )
+from dynlib.runtime import guards
 
 # Import centralized JIT compilation helper
 from dynlib.compiler.jit.compile import jit_compile
@@ -247,6 +248,15 @@ def runner_discrete(
             status_out[0] = step_status
             hint_out[0] = m
             return step_status
+
+        # Universal guard: never commit non-finite proposals
+        if not guards.allfinite1d(y_prop):
+            i_out[0] = i
+            step_out[0] = step
+            t_out[0] = t
+            status_out[0] = NAN_DETECTED
+            hint_out[0] = m
+            return NAN_DETECTED
         
         # 4. Commit: y_prev <- y_curr, y_curr <- y_prop, step++
         for k in range(n_state):
@@ -433,12 +443,13 @@ def _render_runner_module_source_discrete() -> str:
             OK, STEPFAIL, NAN_DETECTED,
             DONE, GROW_REC, GROW_EVT, USER_BREAK
         )
+        from dynlib.runtime import guards
 
         if TYPE_CHECKING:
             from dynlib.steppers.base import StructSpec
 
 
-        __all__ = ["runner_discrete"]
+    __all__ = ["runner_discrete"]
         """
     ).strip()
     return f"{header}\n\n{decorated}\n"

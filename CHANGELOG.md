@@ -2,6 +2,24 @@
 
 ---
 
+## [2.19.3] – 2025-11-11
+### Added
+- Introduced `guards.py` in `src/dynlib/runtime/` to provide universal finiteness checks for 
+  steppers. This guard is applied universally to all steppers inside the runners and adaptive
+  steppers also use these checks internally inside their step size calculation loops.
+- Added `allfinite1d` function and `configure_allfinite_guard` to toggle between Python and 
+  JIT implementations.
+
+### Changed
+- Refactored `runner.py` and `runner_discrete.py` to use `guards.allfinite1d` for finiteness 
+  checks.
+- Updated `EulerSpec`, `RK4Spec`, `RK45Spec`, and `MapSpec` to remove redundant finiteness 
+  checks and rely on `guards.allfinite1d`.
+- Enhanced `build_callables` in `src/dynlib/compiler/build.py` to configure finiteness guards 
+  based on JIT settings.
+
+---
+
 ## [2.19.2] – 2025-11-11
 ### Changed
 - Gathered all ode-solver steppers under `src/dynlib/steppers/ode` folder.

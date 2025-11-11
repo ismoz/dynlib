@@ -27,7 +27,7 @@ This file lists the tasks and improvements planned for the project. Each task in
 
 2. **Map Model Support**
    - **Description**: Add support for discrete iterative systems in the modeling framework.
-   - **Status**: Planned.
+   - **Status**: DONE!
    - **Notes**: Ensure compatibility with existing solvers and validation mechanisms.
 
 3. **Multistep Methods**
