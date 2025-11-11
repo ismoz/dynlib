@@ -2,6 +2,13 @@
 
 ---
 
+## [2.17.1] – 2025-11-11
+### Added
+- Added `setup()` helper to `src/dynlib/__init__.py`. It combines `build()` + `Sim()` calls. It is 
+  more convenient for end users.
+
+---
+
 ## [2.17.0] – 2025-11-11
 ### Added
 - Added presets feature for quick storage of state/param values. Presets can be defined inside model

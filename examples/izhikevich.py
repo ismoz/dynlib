@@ -1,4 +1,4 @@
-from dynlib import build, Sim
+from dynlib import setup
 from dynlib.plot import series, export
 
 
@@ -33,8 +33,7 @@ u = u + d
 """
 '''
 
-model = build(DSL, stepper="euler", jit=False, dtype="float32")
-sim = Sim(model)
+sim = setup(DSL, stepper="euler", jit=False, dtype="float32")
 sim.run(t_end=300.0, dt=0.01, transient=50.0)
 sim.run(t_end=600.0, resume=True)
 
