@@ -21,21 +21,10 @@ The runner accepts the stepper as a callable parameter, matching the continuous 
 """
 from __future__ import annotations
 
-import contextlib
-import hashlib
-import importlib.util
 import inspect
-import json
-import os
 import platform
-import shutil
-import sys
 import textwrap
-import time
-import uuid
 import warnings
-from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Dict, Optional, Tuple
 
@@ -60,6 +49,13 @@ from dynlib.runtime.runner_api import (
 
 # Import centralized JIT compilation helper
 from dynlib.compiler.jit.compile import jit_compile
+from dynlib.compiler.codegen._runner_cache import (
+    RunnerCacheRequest,
+    RunnerCacheConfig,
+    RunnerDiskCache,
+    DiskCacheUnavailable,
+    gather_env_pins,
+)
 
 __all__ = [
     "runner_discrete",
@@ -320,24 +316,22 @@ def runner_discrete(
     hint_out[0] = m
     return DONE
 
-
-@dataclass(frozen=True)
-class _RunnerDiskCacheRequest:
-    spec_hash: str
-    stepper_name: str
-    structsig: Tuple[int, ...]
-    dtype: str
-    cache_root: Path
-
-
-class _DiskCacheUnavailable(RuntimeError):
-    pass
-
-
-_pending_cache_request: Optional[_RunnerDiskCacheRequest] = None
+_pending_cache_request: Optional[RunnerCacheRequest] = None
 _inproc_runner_cache: Dict[str, Callable] = {}
 _warned_reasons: set[str] = set()
 _last_runner_cache_hit: bool = False
+
+
+def _env_pins(platform_token: str) -> Dict[str, str]:
+    cpu_name = platform.processor() or platform.machine()
+    return gather_env_pins(
+        platform_token=platform_token,
+        dynlib_version=_DYNLIB_VERSION,
+        python_version=platform.python_version(),
+        numba_version=_NUMBA_VERSION,
+        llvmlite_version=_LLVMLITE_VERSION,
+        cpu_name=cpu_name,
+    )
 
 
 def configure_runner_disk_cache_discrete(
@@ -350,7 +344,7 @@ def configure_runner_disk_cache_discrete(
 ) -> None:
     """Store the cache context for the next disk-backed discrete runner build."""
     global _pending_cache_request
-    _pending_cache_request = _RunnerDiskCacheRequest(
+    _pending_cache_request = RunnerCacheRequest(
         spec_hash=spec_hash,
         stepper_name=stepper_name,
         structsig=tuple(int(x) for x in structsig),
@@ -359,7 +353,8 @@ def configure_runner_disk_cache_discrete(
     )
 
 
-def _consume_cache_request() -> Optional[_RunnerDiskCacheRequest]:
+
+def _consume_cache_request() -> Optional[RunnerCacheRequest]:
     global _pending_cache_request
     req = _pending_cache_request
     _pending_cache_request = None
@@ -388,292 +383,73 @@ def get_runner_discrete(*, jit: bool = True, disk_cache: bool = True) -> Callabl
     if not jit:
         return runner_discrete
     
+    if not disk_cache:
+        return jit_compile(runner_discrete, jit=True).fn
+
     if not _NUMBA_AVAILABLE:
-        warnings.warn(
-            "Numba not available; discrete runner will run in pure Python (slow).",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-        return runner_discrete
-    
-    # Check for cached request
-    req = _consume_cache_request()
-    
-    if req is None or not disk_cache:
-        # No disk cache request or disk cache disabled: use in-proc cache only
-        cache_key = "discrete_runner_nondisk"
-        if cache_key in _inproc_runner_cache:
-            _last_runner_cache_hit = True
-            return _inproc_runner_cache[cache_key]
-        
-        # JIT compile without disk cache
-        jitted = jit_compile(
-            runner_discrete,
-            cache=False,
-            function_name="runner_discrete",
-        )
-        _inproc_runner_cache[cache_key] = jitted
-        return jitted
-    
-    # Disk cache path
-    try:
-        cache_file = _build_disk_cache_path_discrete(req)
-        
-        # Check if cached module exists
-        if cache_file.exists():
-            # Attempt to load from disk
-            try:
-                loaded_fn = _load_cached_runner_discrete(cache_file, req)
-                _inproc_runner_cache[cache_file.name] = loaded_fn
-                _last_runner_cache_hit = True
-                return loaded_fn
-            except Exception as e:
-                warnings.warn(
-                    f"Discrete runner disk cache load failed ({e}); recompiling.",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
-        
-        # Compile and save to disk
-        jitted = _compile_and_cache_runner_discrete(cache_file, req)
-        _inproc_runner_cache[cache_file.name] = jitted
-        return jitted
-        
-    except _DiskCacheUnavailable as e:
-        # Disk cache unavailable: fall back to in-proc cache
-        reason = str(e)
-        if reason not in _warned_reasons:
-            warnings.warn(
-                f"Discrete runner disk cache unavailable ({reason}); using in-process cache.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-            _warned_reasons.add(reason)
-        
-        cache_key = f"discrete_{req.spec_hash}_{req.stepper_name}_{req.dtype}"
-        if cache_key in _inproc_runner_cache:
-            _last_runner_cache_hit = True
-            return _inproc_runner_cache[cache_key]
-        
-        jitted = jit_compile(
-            runner_discrete,
-            cache=False,
-            function_name="runner_discrete",
-        )
-        _inproc_runner_cache[cache_key] = jitted
-        return jitted
+        return jit_compile(runner_discrete, jit=True).fn
 
+    request = _consume_cache_request()
+    if request is None:
+        raise RuntimeError(
+            "get_runner_discrete(disk_cache=True) called without configure_runner_disk_cache_discrete()"
+        )
 
-def _build_disk_cache_path_discrete(req: _RunnerDiskCacheRequest) -> Path:
-    """Build the canonical path for a cached discrete runner module."""
-    if not req.cache_root:
-        raise _DiskCacheUnavailable("cache_root not set")
-    
-    # Platform triple
-    platform_token = _platform_triple()
-    
-    # Dtype token
-    dtype_token = _dtype_token(req.dtype)
-    
-    # Stepper name (sanitized)
-    stepper_token = _sanitize_token(req.stepper_name)
-    
-    # Struct signature as hex
-    structsig_token = hashlib.sha1(
-        str(req.structsig).encode("utf-8")
-    ).hexdigest()[:12]
-    
-    # Spec hash (first 12 chars)
-    spec_token = req.spec_hash[:12]
-    
-    # Environment pins (numba, llvmlite, dynlib versions)
-    env_pins = _gather_env_pins(platform_token)
-    env_hash = _hash_payload(env_pins)[:8]
-    
-    # Filename
-    filename = (
-        f"discrete_runner__{platform_token}__{dtype_token}__{stepper_token}__"
-        f"{structsig_token}__{spec_token}__{env_hash}.py"
+    cache_config = RunnerCacheConfig(
+        module_prefix="dynlib_runner_discrete",
+        export_name="runner_discrete",
+        render_module_source=_render_runner_module_source_discrete,
+        env_pins_factory=_env_pins,
     )
-    
-    return req.cache_root / "runners" / "discrete" / filename
 
-
-def _load_cached_runner_discrete(cache_file: Path, req: _RunnerDiskCacheRequest) -> Callable:
-    """Load and validate a cached discrete runner module."""
-    if not cache_file.exists():
-        raise _DiskCacheUnavailable(f"cache file missing: {cache_file}")
-    
-    # Read and validate metadata
-    content = cache_file.read_text(encoding="utf-8")
-    
-    if "# CACHE_META:" not in content:
-        raise _DiskCacheUnavailable("cache file missing metadata")
-    
-    # Extract metadata JSON
-    for line in content.splitlines():
-        if line.startswith("# CACHE_META:"):
-            meta_json = line[len("# CACHE_META:"):].strip()
-            meta = json.loads(meta_json)
-            
-            # Validate version compatibility
-            if meta.get("dynlib_version") != _DYNLIB_VERSION:
-                raise _DiskCacheUnavailable(
-                    f"version mismatch: cached={meta.get('dynlib_version')}, "
-                    f"current={_DYNLIB_VERSION}"
-                )
-            
-            break
-    else:
-        raise _DiskCacheUnavailable("metadata not found in cache file")
-    
-    # Load module
-    spec = importlib.util.spec_from_file_location(
-        f"_discrete_runner_cached_{uuid.uuid4().hex[:8]}",
-        cache_file,
+    cache = RunnerDiskCache(
+        request,
+        inproc_cache=_inproc_runner_cache,
+        config=cache_config,
     )
-    if spec is None or spec.loader is None:
-        raise _DiskCacheUnavailable("failed to create module spec")
-    
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    
-    if not hasattr(module, "runner_discrete"):
-        raise _DiskCacheUnavailable("cached module missing runner_discrete function")
-    
-    return module.runner_discrete
-
-
-def _compile_and_cache_runner_discrete(cache_file: Path, req: _RunnerDiskCacheRequest) -> Callable:
-    """JIT compile discrete runner and save to disk cache."""
-    # Generate source module with @njit decorator
-    source = _render_runner_module_source_discrete()
-    
-    # Add metadata header
-    platform_token = _platform_triple()
-    env_pins = _gather_env_pins(platform_token)
-    metadata = {
-        "dynlib_version": _DYNLIB_VERSION,
-        "numba_version": _NUMBA_VERSION,
-        "llvmlite_version": _LLVMLITE_VERSION,
-        "platform": platform_token,
-        "spec_hash": req.spec_hash,
-        "stepper_name": req.stepper_name,
-        "dtype": req.dtype,
-        "structsig": list(req.structsig),
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-    metadata.update(env_pins)
-    
-    header = f"# CACHE_META: {json.dumps(metadata)}\n"
-    full_source = header + source
-    
-    # Write to temp file first
-    cache_file.parent.mkdir(parents=True, exist_ok=True)
-    temp_file = cache_file.with_suffix(".tmp")
-    
     try:
-        temp_file.write_text(full_source, encoding="utf-8")
-        
-        # Load and compile
-        spec = importlib.util.spec_from_file_location(
-            f"_discrete_runner_{uuid.uuid4().hex[:8]}",
-            temp_file,
-        )
-        if spec is None or spec.loader is None:
-            raise _DiskCacheUnavailable("failed to create module spec for compilation")
-        
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        
-        if not hasattr(module, "runner_discrete"):
-            raise _DiskCacheUnavailable("compiled module missing runner_discrete function")
-        
-        # Atomic move
-        temp_file.replace(cache_file)
-        
-        return module.runner_discrete
-        
-    except Exception as e:
-        # Clean up temp file on error
-        if temp_file.exists():
-            temp_file.unlink()
-        raise _DiskCacheUnavailable(f"compilation failed: {e}")
+        cached, from_disk = cache.get_or_build()
+        _last_runner_cache_hit = from_disk
+        return cached
+    except DiskCacheUnavailable as exc:
+        _warn_disk_cache_disabled(str(exc))
+        _last_runner_cache_hit = False
+        return jit_compile(runner_discrete, jit=True).fn
 
 
 def _render_runner_module_source_discrete() -> str:
-    """Generate source code for a standalone discrete runner module with @njit."""
-    runner_src = inspect.getsource(runner_discrete)
-    decorated = runner_src.replace("def runner_discrete(", "@njit(cache=True)\ndef runner_discrete(", 1)
-    
-    imports = textwrap.dedent("""
+    runner_src = textwrap.dedent(inspect.getsource(runner_discrete)).lstrip()
+    decorated = runner_src.replace(
+        "def runner_discrete(", "@njit(cache=True)\ndef runner_discrete(", 1
+    )
+    header = textwrap.dedent(
+        """
+        # Auto-generated by dynlib.compiler.codegen.runner_discrete
+        from __future__ import annotations
+        from typing import TYPE_CHECKING
+
         from numba import njit
-        
-        # Status codes (must match runner_api.py)
-        OK = 0
-        STEPFAIL = 2
-        NAN_DETECTED = 3
-        DONE = 9
-        GROW_REC = 10
-        GROW_EVT = 11
-        USER_BREAK = 12
-    """)
-    
-    return imports + "\n\n" + decorated
+        from dynlib.runtime.runner_api import (
+            OK, STEPFAIL, NAN_DETECTED,
+            DONE, GROW_REC, GROW_EVT, USER_BREAK
+        )
+
+        if TYPE_CHECKING:
+            from dynlib.steppers.base import StructSpec
 
 
-# Shared utility functions (same as continuous runner)
-
-def _platform_triple() -> str:
-    """Return a platform identifier triple."""
-    system = platform.system().lower()
-    machine = platform.machine().lower()
-    
-    # Normalize common variations
-    if machine in ("x86_64", "amd64"):
-        machine = "x86_64"
-    elif machine in ("aarch64", "arm64"):
-        machine = "aarch64"
-    
-    return f"{system}-{machine}-py{sys.version_info.major}{sys.version_info.minor}"
+        __all__ = ["runner_discrete"]
+        """
+    ).strip()
+    return f"{header}\n\n{decorated}\n"
 
 
-def _canonical_dtype_name(dtype: str) -> str:
-    """Normalize dtype string for caching."""
-    import numpy as np
-    return str(np.dtype(dtype))
-
-
-def _dtype_token(dtype: str) -> str:
-    """Convert dtype to short cache token."""
-    canonical = _canonical_dtype_name(dtype)
-    if "float64" in canonical:
-        return "f64"
-    elif "float32" in canonical:
-        return "f32"
-    else:
-        return hashlib.sha1(canonical.encode("utf-8")).hexdigest()[:6]
-
-
-def _sanitize_token(value: str) -> str:
-    """Sanitize a string for use in filenames."""
-    import re
-    sanitized = re.sub(r'[^a-zA-Z0-9_-]', '_', value)
-    return sanitized[:32]
-
-
-def _gather_env_pins(platform_token: str) -> Dict[str, str]:
-    """Gather environment version pins for cache validation."""
-    return {
-        "platform_token": platform_token,
-        "numba_version": _NUMBA_VERSION or "none",
-        "llvmlite_version": _LLVMLITE_VERSION or "none",
-        "dynlib_version": _DYNLIB_VERSION,
-        "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
-    }
-
-
-def _hash_payload(payload: Dict[str, object]) -> str:
-    """Hash a dictionary payload for cache keying."""
-    serialized = json.dumps(payload, sort_keys=True).encode("utf-8")
-    return hashlib.sha1(serialized).hexdigest()
+def _warn_disk_cache_disabled(reason: str) -> None:
+    if reason in _warned_reasons:
+        return
+    _warned_reasons.add(reason)
+    warnings.warn(
+        f"dynlib disk runner cache disabled: {reason}. Falling back to in-memory JIT.",
+        RuntimeWarning,
+        stacklevel=3,
+    )

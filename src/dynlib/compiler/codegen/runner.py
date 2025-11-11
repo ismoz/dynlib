@@ -20,7 +20,6 @@ only in compiler/jit/*.
 from __future__ import annotations
 
 import contextlib
-import hashlib
 import importlib.util
 import inspect
 import json
@@ -58,6 +57,19 @@ from dynlib.runtime.runner_api import (
 
 # Import centralized JIT compilation helper
 from dynlib.compiler.jit.compile import jit_compile
+from dynlib.compiler.codegen._runner_cache import (
+    RunnerCacheRequest,
+    RunnerCacheConfig,
+    RunnerDiskCache,
+    CacheLock,
+    DiskCacheUnavailable,
+    canonical_dtype_name,
+    dtype_token,
+    sanitize_token,
+    platform_triple,
+    gather_env_pins,
+    hash_payload,
+)
 
 __all__ = [
     "runner",
@@ -319,15 +331,6 @@ def runner(
 
 
 @dataclass(frozen=True)
-class _RunnerDiskCacheRequest:
-    spec_hash: str
-    stepper_name: str
-    structsig: Tuple[int, ...]
-    dtype: str
-    cache_root: Path
-
-
-@dataclass(frozen=True)
 class _CallableDiskCacheRequest:
     family: str            # "triplet" or "stepper"
     component: str
@@ -340,11 +343,7 @@ class _CallableDiskCacheRequest:
     source: str
 
 
-class _DiskCacheUnavailable(RuntimeError):
-    pass
-
-
-_pending_cache_request: Optional[_RunnerDiskCacheRequest] = None
+_pending_cache_request: Optional[RunnerCacheRequest] = None
 _pending_callable_cache_request: Optional[_CallableDiskCacheRequest] = None
 _inproc_runner_cache: Dict[str, Callable] = {}
 _inproc_callable_cache: Dict[Tuple[str, str], Callable] = {}
@@ -362,7 +361,7 @@ def configure_runner_disk_cache(
 ) -> None:
     """Store the cache context for the next disk-backed runner build."""
     global _pending_cache_request
-    _pending_cache_request = _RunnerDiskCacheRequest(
+    _pending_cache_request = RunnerCacheRequest(
         spec_hash=spec_hash,
         stepper_name=stepper_name,
         structsig=tuple(int(x) for x in structsig),
@@ -371,11 +370,23 @@ def configure_runner_disk_cache(
     )
 
 
-def _consume_cache_request() -> Optional[_RunnerDiskCacheRequest]:
+def _consume_cache_request() -> Optional[RunnerCacheRequest]:
     global _pending_cache_request
     req = _pending_cache_request
     _pending_cache_request = None
     return req
+
+
+def _env_pins(platform_token: str) -> Dict[str, str]:
+    cpu_name = platform.processor() or platform.machine()
+    return gather_env_pins(
+        platform_token=platform_token,
+        dynlib_version=_DYNLIB_VERSION,
+        python_version=platform.python_version(),
+        numba_version=_NUMBA_VERSION,
+        llvmlite_version=_LLVMLITE_VERSION,
+        cpu_name=cpu_name,
+    )
 
 
 def configure_triplet_disk_cache(
@@ -474,185 +485,26 @@ def get_runner(*, jit: bool = True, disk_cache: bool = True) -> Callable:
             "get_runner(disk_cache=True) called without configure_runner_disk_cache()"
         )
 
-    cache = _RunnerDiskCache(request)
+    cache_config = RunnerCacheConfig(
+        module_prefix="dynlib_runner",
+        export_name="runner",
+        render_module_source=_render_runner_module_source,
+        env_pins_factory=_env_pins,
+    )
+
+    cache = RunnerDiskCache(
+        request,
+        inproc_cache=_inproc_runner_cache,
+        config=cache_config,
+    )
     try:
         cached, from_disk = cache.get_or_build()
         _last_runner_cache_hit = from_disk
         return cached
-    except _DiskCacheUnavailable as exc:
+    except DiskCacheUnavailable as exc:
         _warn_disk_cache_disabled(str(exc))
         _last_runner_cache_hit = False
         return jit_compile(runner, jit=True).fn
-
-
-class _RunnerDiskCache:
-    def __init__(self, request: _RunnerDiskCacheRequest):
-        self.request = request
-        self.stepper_token = _sanitize_token(request.stepper_name)
-        self.dtype_token = _dtype_token(request.dtype)
-        self.platform_token = _platform_triple()
-        self.payload = self._build_digest_payload()
-        self.digest = _hash_payload(self.payload)
-        shard = self.digest[:2]
-        self.cache_dir = (
-            request.cache_root
-            / "jit"
-            / "runners"
-            / self.stepper_token
-            / self.dtype_token
-            / self.platform_token
-            / shard
-            / self.digest
-        )
-        self.module_name = f"dynlib_runner_{self.digest}"
-
-    def get_or_build(self) -> Tuple[Callable, bool]:
-        cached = _inproc_runner_cache.get(self.digest)
-        module_path = self.cache_dir / "runner_mod.py"
-        if cached is not None:
-            if module_path.exists():
-                return cached, True
-            # Disk copy missing for this root: attempt to materialize, but keep
-            # using the already-compiled in-process runner instance.
-            self._materialize()
-            return cached, False
-        runner_fn, from_disk = self._load_or_build()
-        _inproc_runner_cache[self.digest] = runner_fn
-        return runner_fn, from_disk
-
-    def _load_or_build(self) -> Tuple[Callable, bool]:
-        regen_attempted = False
-        built = False
-        while True:
-            runner_fn = self._try_import()
-            if runner_fn is not None:
-                return runner_fn, not built
-            if regen_attempted:
-                raise _DiskCacheUnavailable(
-                    f"runner cache at {self.cache_dir} is corrupt and could not be rebuilt"
-                )
-            self._materialize()
-            regen_attempted = True
-            built = True
-
-    def _try_import(self) -> Optional[Callable]:
-        module_path = self.cache_dir / "runner_mod.py"
-        if not module_path.exists():
-            return None
-        try:
-            return self._import_runner(module_path)
-        except _DiskCacheUnavailable:
-            raise
-        except Exception:
-            # Corrupt cache: delete and allow rebuild
-            self._delete_cache_dir()
-            return None
-
-    def _import_runner(self, module_path: Path) -> Callable:
-        spec = importlib.util.spec_from_file_location(self.module_name, module_path)
-        if spec is None or spec.loader is None:
-            raise ImportError(f"unable to load runner module from {module_path}")
-        module = importlib.util.module_from_spec(spec)
-        try:
-            spec.loader.exec_module(module)  # type: ignore[attr-defined]
-        except RuntimeError as exc:
-            message = str(exc)
-            if "cannot cache function" in message:
-                raise _DiskCacheUnavailable(
-                    f"Numba cannot cache runner under {module_path.parent}: {message}"
-                ) from exc
-            raise
-        except Exception:
-            with contextlib.suppress(KeyError):
-                del sys.modules[self.module_name]
-            raise
-        sys.modules[self.module_name] = module
-        runner_fn = getattr(module, "runner", None)
-        if runner_fn is None:
-            raise AttributeError("Cached runner module missing 'runner' callable")
-        return runner_fn
-
-    def _materialize(self) -> None:
-        parent = self.cache_dir.parent
-        try:
-            parent.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            raise _DiskCacheUnavailable(
-                f"cannot create cache directory {parent}: {exc}"
-            ) from exc
-
-        lock_path = parent / f".{self.cache_dir.name}.lock"
-        lock = _CacheLock(lock_path)
-        acquired = lock.acquire()
-        try:
-            if not acquired and self._wait_for_existing_builder():
-                return
-            if self.cache_dir.exists():
-                # Another builder finished while we waited
-                return
-
-            tmp_dir = parent / f".{self.cache_dir.name}.tmp-{uuid.uuid4().hex[:8]}"
-            if tmp_dir.exists():
-                shutil.rmtree(tmp_dir, ignore_errors=True)
-            tmp_dir.mkdir()
-            try:
-                self._write_runner_package(tmp_dir)
-                tmp_dir.replace(self.cache_dir)
-            finally:
-                if tmp_dir.exists():
-                    shutil.rmtree(tmp_dir, ignore_errors=True)
-        except OSError as exc:
-            raise _DiskCacheUnavailable(
-                f"failed to materialize runner cache at {self.cache_dir}: {exc}"
-            ) from exc
-        finally:
-            lock.release()
-
-    def _wait_for_existing_builder(self, timeout: float = 5.0) -> bool:
-        module_path = self.cache_dir / "runner_mod.py"
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            if module_path.exists():
-                return True
-            time.sleep(0.05)
-        return False
-
-    def _write_runner_package(self, tmp_dir: Path) -> None:
-        init_path = tmp_dir / "__init__.py"
-        init_path.write_text("__all__ = ['runner']\n", encoding="utf-8")
-
-        module_source = _render_runner_module_source()
-        (tmp_dir / "runner_mod.py").write_text(module_source, encoding="utf-8")
-
-        meta_payload = {
-            "hash": self.digest,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "inputs": self.payload,
-        }
-        meta_text = json.dumps(meta_payload, indent=2, sort_keys=True) + "\n"
-        (tmp_dir / "meta.json").write_text(meta_text, encoding="utf-8")
-
-    def _delete_cache_dir(self) -> None:
-        if not self.cache_dir.exists():
-            return
-        tombstone = self.cache_dir.with_name(
-            f"{self.cache_dir.name}.corrupt-{uuid.uuid4().hex[:6]}"
-        )
-        try:
-            self.cache_dir.replace(tombstone)
-        except OSError:
-            shutil.rmtree(self.cache_dir, ignore_errors=True)
-            return
-        shutil.rmtree(tombstone, ignore_errors=True)
-
-    def _build_digest_payload(self) -> Dict[str, object]:
-        return {
-            "spec_hash": self.request.spec_hash,
-            "stepper": self.request.stepper_name,
-            "structsig": list(self.request.structsig),
-            "dtype": _canonical_dtype_name(self.request.dtype),
-            "env": _gather_env_pins(self.platform_token),
-        }
 
 
 class JitTripletCache:
@@ -661,11 +513,11 @@ class JitTripletCache:
         self.component = request.component
         self.function_name = request.function_name
         self.source = request.source
-        self.stepper_token = _sanitize_token(request.stepper_name)
-        self.dtype_token = _dtype_token(request.dtype)
-        self.platform_token = _platform_triple()
+        self.stepper_token = sanitize_token(request.stepper_name)
+        self.dtype_token = dtype_token(request.dtype)
+        self.platform_token = platform_triple()
         self.payload = self._build_digest_payload()
-        self.digest = _hash_payload(self.payload)
+        self.digest = hash_payload(self.payload)
         shard = self.digest[:2]
         self.cache_dir = (
             request.cache_root
@@ -700,7 +552,7 @@ class JitTripletCache:
             if fn is not None:
                 return fn, not built
             if regen_attempted:
-                raise _DiskCacheUnavailable(
+                raise DiskCacheUnavailable(
                     f"{self.component} cache at {self.cache_dir} is corrupt and could not be rebuilt"
                 )
             self._materialize(module_path)
@@ -734,12 +586,12 @@ class JitTripletCache:
         try:
             parent.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
-            raise _DiskCacheUnavailable(
+            raise DiskCacheUnavailable(
                 f"cannot create cache directory {parent}: {exc}"
             ) from exc
 
         lock_path = parent / f".{self.cache_dir.name}.lock"
-        lock = _CacheLock(lock_path)
+        lock = CacheLock(lock_path)
         acquired = lock.acquire()
         try:
             if not acquired and self._wait_for_existing_builder(module_path):
@@ -755,7 +607,7 @@ class JitTripletCache:
                     tmp_path.unlink()
             self._write_metadata(self.component)
         except OSError as exc:
-            raise _DiskCacheUnavailable(
+            raise DiskCacheUnavailable(
                 f"failed to materialize callable cache at {self.cache_dir}: {exc}"
             ) from exc
         finally:
@@ -807,8 +659,8 @@ class JitTripletCache:
             "spec_hash": self.request.spec_hash,
             "stepper": self.request.stepper_name,
             "structsig": list(self.request.structsig),
-            "dtype": _canonical_dtype_name(self.request.dtype),
-            "env": _gather_env_pins(self.platform_token),
+            "dtype": canonical_dtype_name(self.request.dtype),
+            "env": _env_pins(self.platform_token),
         }
 
 
@@ -817,11 +669,11 @@ class _StepperDiskCache:
         self.request = request
         self.function_name = request.function_name
         self.source = request.source
-        self.stepper_token = _sanitize_token(request.stepper_name)
-        self.dtype_token = _dtype_token(request.dtype)
-        self.platform_token = _platform_triple()
+        self.stepper_token = sanitize_token(request.stepper_name)
+        self.dtype_token = dtype_token(request.dtype)
+        self.platform_token = platform_triple()
         self.payload = self._build_digest_payload()
-        self.digest = _hash_payload(self.payload)
+        self.digest = hash_payload(self.payload)
         shard = self.digest[:2]
         self.cache_dir = (
             request.cache_root
@@ -856,7 +708,7 @@ class _StepperDiskCache:
             if fn is not None:
                 return fn, not built
             if regen_attempted:
-                raise _DiskCacheUnavailable(
+                raise DiskCacheUnavailable(
                     f"stepper cache at {self.cache_dir} is corrupt and could not be rebuilt"
                 )
             self._materialize(module_path)
@@ -890,12 +742,12 @@ class _StepperDiskCache:
         try:
             parent.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
-            raise _DiskCacheUnavailable(
+            raise DiskCacheUnavailable(
                 f"cannot create cache directory {parent}: {exc}"
             ) from exc
 
         lock_path = parent / f".{self.cache_dir.name}.lock"
-        lock = _CacheLock(lock_path)
+        lock = CacheLock(lock_path)
         acquired = lock.acquire()
         try:
             if not acquired and self._wait_for_existing_builder(module_path):
@@ -911,7 +763,7 @@ class _StepperDiskCache:
                     tmp_path.unlink()
             self._write_metadata()
         except OSError as exc:
-            raise _DiskCacheUnavailable(
+            raise DiskCacheUnavailable(
                 f"failed to materialize stepper cache at {self.cache_dir}: {exc}"
             ) from exc
         finally:
@@ -952,35 +804,9 @@ class _StepperDiskCache:
             "spec_hash": self.request.spec_hash,
             "stepper": self.request.stepper_name,
             "structsig": list(self.request.structsig),
-            "dtype": _canonical_dtype_name(self.request.dtype),
-            "env": _gather_env_pins(self.platform_token),
+            "dtype": canonical_dtype_name(self.request.dtype),
+            "env": _env_pins(self.platform_token),
         }
-
-
-class _CacheLock:
-    def __init__(self, path: Path):
-        self.path = path
-        self._fd: Optional[int] = None
-
-    def acquire(self) -> bool:
-        try:
-            self._fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            os.write(self._fd, str(os.getpid()).encode())
-            return True
-        except FileExistsError:
-            return False
-        except OSError:
-            return False
-
-    def release(self) -> None:
-        if self._fd is None:
-            return
-        try:
-            os.close(self._fd)
-        finally:
-            self._fd = None
-            with contextlib.suppress(FileNotFoundError):
-                os.unlink(self.path)
 
 
 def _render_runner_module_source() -> str:
@@ -1042,59 +868,6 @@ def _render_stepper_module_source(source: str, function_name: str) -> str:
     ]
     sections = [header, body, "\n".join(footer)]
     return "\n\n".join(part for part in sections if part).strip() + "\n"
-
-
-def _platform_triple() -> str:
-    os_part = {
-        "darwin": "macos",
-        "linux": "linux",
-        "win32": "windows",
-    }.get(sys.platform, sys.platform)
-    arch = platform.machine().lower() or "unknown"
-    arch = arch.replace(" ", "-")
-    endian = sys.byteorder
-    return f"{os_part}-{arch}-{endian}"
-
-
-def _canonical_dtype_name(dtype: str) -> str:
-    token = dtype.strip().lower()
-    if token.startswith("f") and token[1:].isdigit():
-        return f"float{token[1:]}"
-    return token
-
-
-def _dtype_token(dtype: str) -> str:
-    canonical = _canonical_dtype_name(dtype)
-    if canonical.startswith("float") and canonical[5:].isdigit():
-        return f"f{canonical[5:]}"
-    return canonical.replace("/", "-").replace(" ", "_")
-
-
-def _sanitize_token(value: str) -> str:
-    token = value.strip().lower()
-    safe = [ch if ch.isalnum() or ch in ("-", "_") else "-" for ch in token]
-    collapsed = "".join(safe).strip("-")
-    return collapsed or "default"
-
-
-def _gather_env_pins(platform_token: str) -> Dict[str, str]:
-    pins = {
-        "dynlib": _DYNLIB_VERSION,
-        "python": platform.python_version(),
-        "platform": platform_token,
-        "numba": _NUMBA_VERSION or "unknown",
-        "llvmlite": _LLVMLITE_VERSION or "unknown",
-    }
-    cpu_name = platform.processor() or platform.machine()
-    if cpu_name:
-        pins["cpu_name"] = cpu_name.strip()
-    return pins
-
-
-def _hash_payload(payload: Dict[str, object]) -> str:
-    blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
-    digest = hashlib.blake2b(blob.encode("utf-8"), digest_size=16)
-    return digest.hexdigest()
 
 
 def _warn_disk_cache_disabled(reason: str) -> None:

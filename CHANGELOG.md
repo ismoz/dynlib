@@ -2,6 +2,25 @@
 
 ---
 
+## [2.19.1] – 2025-11-11
+### Added
+- Added `examples/logistic_map.py` to demonstrate the logistic map simulation using the new 
+  discrete runner.
+- Implemented `RunnerDiskCache` in `src/dynlib/compiler/codegen/_runner_cache.py` for managing 
+  disk-backed runner caching.
+
+### Changed
+- Refactored `runner` and `runner_discrete` to use `RunnerDiskCache` for caching.
+- Enhanced `src/dynlib/compiler/codegen/runner.py` and `runner_discrete.py` to improve modularity
+  and maintainability.
+
+### Fixed
+- `runner_discrete` jit option was not implemented properly and it was accepting a wrong argument. 
+  Refactored `runner_discrete` so that now it completely mirrors `runner`. The caching was also 
+  not working properly. The new common `RunnerDiskCache` solved that issue.
+
+---
+
 ## [2.19.0] – 2025-11-11
 ### Changed
 - Split runners into two: `runner_discrete` for discrete-time models; `runner` (old `runner` 
