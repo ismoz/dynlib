@@ -160,7 +160,7 @@ def parse_model_v2(doc: Dict[str, Any]) -> Dict[str, Any]:
 
     # Preserve order of declaration
     states_in = doc["states"]
-    params_in = doc["params"]
+    params_in = doc.get("params", {})  # params is optional, default to empty
     states = {k: states_in[k] for k in states_in.keys()}
     params = {k: params_in[k] for k in params_in.keys()}
 

@@ -107,9 +107,10 @@ def run_with_wrapper(
 
     # Proposals / outs (len-1 where applicable)
     y_prop  = np.zeros((n_state,), dtype=dtype)
-    t_prop  = np.zeros((1,), dtype=dtype)
-    dt_next = np.zeros((1,), dtype=dtype)
-    err_est = np.zeros((1,), dtype=dtype)
+    # Stepper control values must be float64 (not model dtype) to avoid truncation
+    t_prop  = np.zeros((1,), dtype=np.float64)
+    dt_next = np.zeros((1,), dtype=np.float64)
+    err_est = np.zeros((1,), dtype=np.float64)
     
     # Event log scratch buffer
     evt_log_scratch = np.zeros((max(1, max_log_width),), dtype=dtype)

@@ -505,7 +505,7 @@ def build(
     stepper: Optional[str] = None,
     mods: Optional[List[str]] = None,
     jit: bool = True,
-    dtype: str = "float64",
+    dtype: Optional[str] = None,
     disk_cache: bool = True,
     config: Optional[PathConfig] = None,
     validate_stepper: bool = True,
@@ -528,7 +528,7 @@ def build(
             Mods are applied in order after loading the base model.
         jit: Enable JIT compilation (default True)
         disk_cache: Enable persistent runner cache on disk (default True)
-        dtype: Model dtype string (default "float64")
+        dtype: Model dtype string. If None (default), uses the dtype from the model spec.
         config: PathConfig for URI resolution (loads default if None)
         validate_stepper: Enable build-time stepper validation (default True)
     
@@ -560,6 +560,9 @@ def build(
     if stepper_name is None:
         stepper_name = spec.sim.stepper
     
+    # Use spec's dtype if not specified
+    dtype_str = dtype if dtype is not None else spec.dtype
+    
     # Get stepper spec
     stepper_spec = get_stepper(stepper_name)
     
@@ -583,7 +586,7 @@ def build(
         spec,
         stepper_name=stepper_name,
         jit=jit,
-        dtype=dtype,
+        dtype=dtype_str,
         cache_root=cache_root_path,
         disk_cache=disk_cache,
     )
@@ -606,7 +609,7 @@ def build(
                 spec_hash=pieces.spec_hash,
                 stepper_name=stepper_name,
                 structsig=structsig,
-                dtype=dtype,
+                dtype=dtype_str,
                 cache_root=cache_root_path,
                 source=stepper_source,
                 function_name=stepper_py.__name__,
@@ -636,7 +639,7 @@ def build(
                 spec_hash=pieces.spec_hash,
                 stepper_name=stepper_name,
                 structsig=structsig,
-                dtype=dtype,
+                dtype=dtype_str,
                 cache_root=cache_root_path,
             )
         runner_fn = runner_discrete_codegen.get_runner_discrete(jit=jit, disk_cache=disk_cache)
@@ -647,7 +650,7 @@ def build(
                 spec_hash=pieces.spec_hash,
                 stepper_name=stepper_name,
                 structsig=structsig,
-                dtype=dtype,
+                dtype=dtype_str,
                 cache_root=cache_root_path,
             )
         runner_fn = runner_codegen.get_runner(jit=jit, disk_cache=disk_cache)
@@ -662,10 +665,10 @@ def build(
     if jit and not _all_compiled():
         _warmup_jit_runner(
             runner_fn, stepper_fn, pieces.rhs, pieces.events_pre, pieces.events_post,
-            struct, spec, dtype, stepper_spec  # NEW: pass stepper_spec
+            struct, spec, dtype_str, stepper_spec  # NEW: pass stepper_spec
         )
     
-    dtype_np = np.dtype(dtype)
+    dtype_np = np.dtype(dtype_str)
     
     return FullModel(
         spec=spec,

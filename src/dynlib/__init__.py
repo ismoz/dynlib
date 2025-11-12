@@ -33,7 +33,7 @@ def setup(
     stepper=None,
     mods=None,
     jit=True,
-    dtype="float64",
+    dtype=None,
     disk_cache=True,
     config=None,
     validate_stepper=True,
@@ -57,7 +57,7 @@ def setup(
             If None, uses the model's sim.stepper default.
         mods: Optional list of mod URIs to apply during compilation.
         jit: Whether to use JIT compilation (default True).
-        dtype: The data type for computations (default "float64").
+        dtype: The data type for computations. If None (default), uses the dtype from the model spec.
         disk_cache: Whether to use disk caching for compiled models (default True).
         config: Optional PathConfig for URI resolution.
         validate_stepper: Whether to validate the stepper against the model (default True).

@@ -2,6 +2,27 @@
 
 ---
 
+## [2.19.4] – 2025-11-12
+### Added
+- Added `examples/collatz.py` to demonstrate map simulation with integer dtype and ternary if 
+  usage.
+
+### Changed
+- [params] table was mandatory in DSL model declarations. Made it optional.
+
+### Fixed
+- Fixed a bug in `src/dynlib/compiler/codegen/runner_discrete.py` where the `header` variable was 
+  causing caching issues. Replaced `textwrap.dedent` with `inspect.cleandoc`during header creation.
+  Did the same with `runner.py` for symmetry.
+- When using `dtype=int64` (or other integer dtypes) for models, the stepper control arrays (dt_next, 
+  t_prop, err_est) were incorrectly being created with the model's dtype instead of float64. This
+  was causing non-monotone time series. Now they are always float64 alongside tracked time. 
+
+### Tests
+- Added `test_int_dtype.py` for testing integer data type usage with maps.
+
+---
+
 ## [2.19.3] – 2025-11-11
 ### Added
 - Introduced `guards.py` in `src/dynlib/runtime/` to provide universal finiteness checks for 

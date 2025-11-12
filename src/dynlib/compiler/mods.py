@@ -264,7 +264,7 @@ def apply_mods_v2(normal: Dict[str, Any], selected: List[ModSpec]) -> Dict[str, 
     out = {
         "model": dict(normal["model"]),
         "states": dict(normal["states"]),
-        "params": dict(normal["params"]),
+        "params": dict(normal.get("params", {})),  # params is optional
         "equations": dict(normal["equations"]),
         "aux": dict(normal.get("aux", {})),
         "functions": dict(normal.get("functions", {})),
