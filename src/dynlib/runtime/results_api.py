@@ -20,11 +20,14 @@
 
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Tuple, Union
+from typing import TYPE_CHECKING, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 import numpy as np
 
 from dynlib.runtime.results import Results as _RawResults
-from dynlib.dsl.spec import ModelSpec, EventSpec
+from dynlib.dsl.spec import ModelSpec
+
+if TYPE_CHECKING:
+    from .sim import Segment
 
 __all__ = [
     "ResultsView",
@@ -51,7 +54,8 @@ class ResultsView:
     """User-facing, name-aware view on top of the low-level :class:`Results`.
 
     Construct with the raw results and a frozen :class:`ModelSpec` to enable
-    named access. No mutation, no copies for trajectory access.
+    named access. No mutation, no copies for trajectory access. Per-run
+    segments are exposed via ``res.segment[...]`` mirroring the main view API.
     """
 
     # ---- construction ----
@@ -61,6 +65,7 @@ class ResultsView:
         spec: ModelSpec,
         *,
         event_code_map: Optional[Mapping[str, int]] = None,
+        segments: Optional[Sequence["Segment"]] = None,
     ) -> None:
         self._raw = raw
         self._spec = spec
@@ -85,6 +90,7 @@ class ResultsView:
 
         # Single accessor object, callable + discovery helpers
         self.event: EventAccessor = EventAccessor(self)
+        self.segment = SegmentsView(self, list(segments) if segments else [])
 
     # ---- core trajectory access ----
     @property
@@ -177,6 +183,100 @@ class ResultsView:
         m = int(self._raw.m)
         return np.nonzero(codes[:m] == code)[0]
 
+
+# ------------------------------ segment views --------------------------------
+
+def _segment_auto_name(seg: "Segment") -> str:
+    return f"run#{seg.id}"
+
+
+def _segment_effective_name(seg: "Segment") -> str:
+    return seg.name if seg.name is not None else _segment_auto_name(seg)
+
+
+class SegmentView:
+    """Read-only view over a single recorded segment."""
+
+    def __init__(self, owner: "ResultsView", seg: "Segment") -> None:
+        self._o = owner
+        self._s = seg
+
+    @property
+    def id(self) -> int:
+        return int(self._s.id)
+
+    @property
+    def name(self) -> str:
+        return _segment_effective_name(self._s)
+
+    @property
+    def meta(self) -> "Segment":
+        return self._s
+
+    @property
+    def t(self) -> np.ndarray:
+        i0, n = self._s.rec_start, self._s.rec_len
+        return self._o.t[i0 : i0 + n]
+
+    @property
+    def step(self) -> np.ndarray:
+        i0, n = self._s.rec_start, self._s.rec_len
+        return self._o.step[i0 : i0 + n]
+
+    @property
+    def flags(self) -> np.ndarray:
+        i0, n = self._s.rec_start, self._s.rec_len
+        return self._o.flags[i0 : i0 + n]
+
+    def events(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        j0, m = self._s.evt_start, self._s.evt_len
+        codes = self._o._raw.EVT_CODE_view[j0 : j0 + m]
+        idx = self._o._raw.EVT_INDEX_view[j0 : j0 + m]
+        logs = self._o._raw.EVT_LOG_DATA_view[j0 : j0 + m, :]
+        return codes, idx, logs
+
+    def __getitem__(self, key: Union[str, Sequence[str]]) -> np.ndarray:
+        arr = self._o[key]
+        i0, n = self._s.rec_start, self._s.rec_len
+        return arr[i0 : i0 + n, ...] if arr.ndim >= 1 else arr
+
+
+class SegmentsView:
+    """Container providing subscriptable access to recorded segments."""
+
+    def __init__(self, owner: "ResultsView", segments: Sequence["Segment"]) -> None:
+        self._o = owner
+        self._segments: List["Segment"] = list(segments)
+        self._name_to_idx: Dict[str, int] = {}
+        for idx, seg in enumerate(self._segments):
+            # Auto alias always available
+            auto = _segment_auto_name(seg)
+            self._name_to_idx.setdefault(auto, idx)
+            effective = _segment_effective_name(seg)
+            self._name_to_idx[effective] = idx
+
+    def __getitem__(self, key: Union[int, str]) -> SegmentView:
+        if isinstance(key, int):
+            seg = self._segments[key]
+            return SegmentView(self._o, seg)
+        if key not in self._name_to_idx:
+            known = ", ".join(self.names()) or "<none>"
+            raise KeyError(f"Unknown segment '{key}'. Known names: {known}")
+        idx = self._name_to_idx[key]
+        return SegmentView(self._o, self._segments[idx])
+
+    def __len__(self) -> int:
+        return len(self._segments)
+
+    def __iter__(self):
+        for seg in self._segments:
+            yield SegmentView(self._o, seg)
+
+    def __contains__(self, name: str) -> bool:
+        return name in self._name_to_idx
+
+    def names(self) -> List[str]:
+        return [_segment_effective_name(seg) for seg in self._segments]
 
 # ----------------------------- event accessor ---------------------------------
 

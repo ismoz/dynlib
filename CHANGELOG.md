@@ -2,6 +2,24 @@
 
 ---
 
+## [2.20.0] – 2025-11-12
+### Added
+- Introduced `Segment` dataclass in `src/dynlib/runtime/sim.py` to represent simulation segments.
+- Added `SegmentsView` and `SegmentView` classes in `src/dynlib/runtime/results_api.py` for 
+  accessing recorded simulation segments.
+- Implemented `Sim.name_segment` and `Sim.name_last_segment` methods for renaming simulation 
+  segments.
+
+### Changed
+- Enhanced `Sim.run` in `src/dynlib/runtime/sim.py` to support tagging and recording simulation 
+  segments.
+- Updated `Sim.results` to include segment metadata in `ResultsView`.
+
+### Tests
+- Added new tests to `tests/steppers/common/test_sim_session.py` to validate segment functionality.
+
+---
+
 ## [2.19.4] – 2025-11-12
 ### Added
 - Added `examples/collatz.py` to demonstrate map simulation with integer dtype and ternary if 

@@ -94,6 +94,23 @@ class Snapshot:
     nominal_dt: float
 
 
+@dataclass(frozen=True)
+class Segment:
+    id: int
+    name: Optional[str]
+    rec_start: int
+    rec_len: int
+    evt_start: int
+    evt_len: int
+    t_start: float
+    t_end: float
+    step_start: int
+    step_end: int
+    resume: bool
+    cfg_hash: str
+    note: str = ""
+
+
 @dataclass
 class IntegratorSeed:
     t: float
@@ -278,6 +295,10 @@ class Sim:
         self._event_time_columns = _event_time_column_map(self.model.spec)
         self._time_shift = 0.0
         self._nominal_dt = float(self.model.spec.sim.dt)
+        self._segments: list[Segment] = []
+        self._pending_run_tag: Optional[str] = None
+        self._pending_run_cfg_hash: Optional[str] = None
+        self._last_run_was_resume = False
         
         # Initialize presets bank with inline presets from model DSL
         self._presets: Dict[str, _PresetData] = {}
@@ -312,6 +333,7 @@ class Sim:
         transient: Optional[float] = None,
         resume: bool = False,
         # Note: legacy `t_end` removed from public API; use `T` instead.
+        tag: Optional[str] = None,
         **stepper_kwargs,
     ) -> None:
         """
@@ -331,6 +353,7 @@ class Sim:
             cap_evt: Initial event log buffer capacity
             transient: Transient warm-up period (continuous) or iterations (discrete)
             resume: Continue from last session state
+            tag: Optional name recorded for this segment when samples are kept
             **stepper_kwargs: Runtime stepper configuration parameters
         
         Notes:
@@ -339,6 +362,11 @@ class Sim:
             - If transient > 0: warm-up period before recording (no effect on resume)
         """
         sim_defaults = self.model.spec.sim
+        if tag is not None:
+            if not isinstance(tag, str):
+                raise TypeError("tag must be a string or None")
+            if tag == "":
+                raise ValueError("tag cannot be empty")
         record = record if record is not None else sim_defaults.record
         run_t0 = t0 if t0 is not None else sim_defaults.t0
         
@@ -401,6 +429,10 @@ class Sim:
             self._raw_results = None
             self._results_view = None
             self._time_shift = 0.0
+            self._segments = []
+            self._pending_run_tag = None
+            self._pending_run_cfg_hash = None
+            self._last_run_was_resume = False
 
         seed = self._select_seed(
             resume=resume,
@@ -499,6 +531,10 @@ class Sim:
             if is_discrete:
                 record_target_steps = _remaining_steps(recorded_completed)
 
+        self._pending_run_tag = tag
+        self._pending_run_cfg_hash = _config_digest(stepper_config)
+        self._last_run_was_resume = bool(resume)
+
         # Recorded run (or the only run when transient==0)
         recorded_result = self._execute_run(
             seed=run_seed,
@@ -518,7 +554,14 @@ class Sim:
             base_steps=base_steps_for_session,
             stepper_config=stepper_config,
         )
-        self._append_results(recorded_result, step_offset_initial=step_offset_initial)
+        try:
+            self._append_results(
+                recorded_result,
+                step_offset_initial=step_offset_initial,
+            )
+        finally:
+            self._pending_run_tag = None
+            self._pending_run_cfg_hash = None
         self._publish_results(recorded_result)
 
     def raw_results(self) -> Results:
@@ -531,7 +574,7 @@ class Sim:
         """Return a cached ResultsView wrapper over the stitched run history."""
         if self._results_view is None:
             raw = self.raw_results()
-            self._results_view = ResultsView(raw, self.model.spec)
+            self._results_view = ResultsView(raw, self.model.spec, segments=list(self._segments))
         return self._results_view
 
     def create_snapshot(self, name: str, description: str = "") -> None:
@@ -564,6 +607,10 @@ class Sim:
         self._results_view = None
         self._time_shift = snapshot.time_shift
         self._nominal_dt = snapshot.nominal_dt
+        self._segments = []
+        self._pending_run_tag = None
+        self._pending_run_cfg_hash = None
+        self._last_run_was_resume = False
 
     def list_snapshots(self) -> list[dict[str, Any]]:
         """Return metadata for all snapshots (auto-creating the initial snapshot if needed)."""
@@ -580,6 +627,33 @@ class Sim:
                 }
             )
         return out
+
+    def name_last_segment(self, name: str) -> None:
+        """Rename the most recently recorded segment.
+
+        Args:
+            name: New unique name to assign.
+        """
+        if not self._segments:
+            raise RuntimeError("No recorded segments available to rename")
+        self.name_segment(len(self._segments) - 1, name)
+
+    def name_segment(self, index_or_old: int | str, new_name: str) -> None:
+        """Rename a recorded segment by index or existing name/alias."""
+        if not isinstance(new_name, str):
+            raise TypeError("segment name must be a string")
+        if new_name == "":
+            raise ValueError("segment name cannot be empty")
+        if not self._segments:
+            raise RuntimeError("No recorded segments available to rename")
+        idx = self._resolve_segment_index(index_or_old)
+        unique = self._unique_segment_name(new_name, skip_index=idx)
+        if self._segments[idx].name == unique:
+            return
+        import dataclasses
+
+        self._segments[idx] = dataclasses.replace(self._segments[idx], name=unique)
+        self._results_view = None
 
     def session_state_summary(self) -> dict[str, Any]:
         """Return a small diagnostic summary of the current SessionState."""
@@ -692,6 +766,10 @@ class Sim:
         self._results_view = None
         self._time_shift = float(meta["time_shift"])
         self._nominal_dt = float(meta["nominal_dt"])
+        self._segments = []
+        self._pending_run_tag = None
+        self._pending_run_cfg_hash = None
+        self._last_run_was_resume = False
 
     def inspect_snapshot(self, path: str | Path) -> dict[str, Any]:
         """
@@ -1393,6 +1471,7 @@ class Sim:
     def _append_results(self, chunk: Results, *, step_offset_initial: int) -> None:
         accum = self._ensure_accumulator()
         prev_n = accum.n
+        prev_m = accum.m
         n_curr = chunk.n
         m_curr = chunk.m
         if prev_n == 0 and n_curr == 0 and m_curr == 0:
@@ -1408,6 +1487,7 @@ class Sim:
 
         start = 1 if drop_first else 0
         trimmed_n = max(n_curr - start, 0)
+        rec_start = prev_n
         if trimmed_n > 0:
             if prev_n > 0:
                 step_offset = accum.STEP[prev_n - 1]
@@ -1420,6 +1500,7 @@ class Sim:
                 chunk.FLAGS_view[start:],
             )
 
+        appended_evt_len = 0
         if chunk.m > 0:
             codes = chunk.EVT_CODE_view
             idxs = np.array(chunk.EVT_INDEX_view, dtype=np.int64, copy=True)
@@ -1438,8 +1519,34 @@ class Sim:
             idxs[pos_mask] = idxs[pos_mask] + evt_offset
 
             accum.append_events(codes, idxs.astype(np.int32, copy=False), logs)
+            appended_evt_len = accum.m - prev_m
 
         accum.assert_monotone_time()
+
+        if trimmed_n > 0:
+            t_view = chunk.T_view
+            t_start = float(t_view[start])
+            t_end = float(t_view[n_curr - 1])
+            step_start = int(accum.STEP[rec_start])
+            step_end = int(accum.STEP[rec_start + trimmed_n - 1])
+            seg_id = len(self._segments)
+            cfg_hash = self._pending_run_cfg_hash or _config_digest(self._session_state.stepper_cfg)
+            seg_name = self._unique_segment_name(self._pending_run_tag)
+            segment = Segment(
+                id=seg_id,
+                name=seg_name,
+                rec_start=rec_start,
+                rec_len=trimmed_n,
+                evt_start=prev_m,
+                evt_len=appended_evt_len,
+                t_start=t_start,
+                t_end=t_end,
+                step_start=step_start,
+                step_end=step_end,
+                resume=self._last_run_was_resume,
+                cfg_hash=cfg_hash,
+            )
+            self._segments.append(segment)
 
     def _rebase_times(self, result: Results, shift: float) -> None:
         if shift == 0.0:
@@ -1479,6 +1586,57 @@ class Sim:
                 max_log_width=self._max_log_width,
             )
         return self._result_accum
+
+    def _resolve_segment_index(self, key: int | str) -> int:
+        if isinstance(key, int):
+            if key < 0 or key >= len(self._segments):
+                raise IndexError(f"segment index {key} out of range")
+            return key
+        for idx, seg in enumerate(self._segments):
+            if seg.name == key or self._segment_auto_name(seg) == key:
+                return idx
+        available = ", ".join(self._segment_available_names()) or "<none>"
+        raise KeyError(f"Unknown segment '{key}'. Known names: {available}")
+
+    def _unique_segment_name(self, base: Optional[str], *, skip_index: Optional[int] = None) -> Optional[str]:
+        if base is None:
+            return None
+        if base == "":
+            raise ValueError("segment name cannot be empty")
+        reserved = self._segment_reserved_names(skip_index=skip_index)
+        candidate = base
+        suffix = 2
+        while candidate in reserved:
+            candidate = f"{base}-{suffix}"
+            suffix += 1
+        return candidate
+
+    def _segment_available_names(self) -> list[str]:
+        names: list[str] = []
+        for seg in self._segments:
+            effective = self._segment_effective_name(seg)
+            auto = self._segment_auto_name(seg)
+            names.append(effective)
+            if auto not in names:
+                names.append(auto)
+        return names
+
+    def _segment_reserved_names(self, *, skip_index: Optional[int] = None) -> set[str]:
+        reserved: set[str] = set()
+        for idx, seg in enumerate(self._segments):
+            if skip_index is not None and idx == skip_index:
+                continue
+            reserved.add(self._segment_effective_name(seg))
+            reserved.add(self._segment_auto_name(seg))
+            if seg.name is not None:
+                reserved.add(seg.name)
+        return reserved
+
+    def _segment_auto_name(self, segment: Segment) -> str:
+        return f"run#{segment.id}"
+
+    def _segment_effective_name(self, segment: Segment) -> str:
+        return segment.name if segment.name is not None else self._segment_auto_name(segment)
 
     def _resolve_snapshot(self, snapshot: Snapshot | str) -> Snapshot:
         if isinstance(snapshot, Snapshot):
