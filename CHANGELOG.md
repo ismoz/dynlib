@@ -2,6 +2,22 @@
 
 ---
 
+## [2.20.1] – 2025-11-12
+### Fixed
+- `build()` warm-up function `_warmup_jit_runner` was generating the wrong runner when dtype is not 
+  float64. Updated `_warmup_jit_runner` in `src/dynlib/compiler/build.py` to ensure stepper control 
+  values are always float64, regardless of model dtype. This fixed wrong runner caching issue during 
+  warm-up.
+- Enhanced comments in `src/dynlib/compiler/build.py` to clarify the use of Python floats for stepper 
+  configurations.
+- Fixed exception handling in `_jit_compile_with_disk_cache` in `src/dynlib/compiler/jit/compile.py` 
+  to catch `DiskCacheUnavailable` correctly.
+
+### Known Issues
+- `rk45.py` tests are failing. 
+
+---
+
 ## [2.20.0] – 2025-11-12
 ### Added
 - Introduced `Segment` dataclass in `src/dynlib/runtime/sim.py` to represent simulation segments.

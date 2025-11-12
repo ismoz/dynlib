@@ -124,6 +124,6 @@ def _jit_compile_with_disk_cache(fn: Callable) -> Optional[JittedCallable]:
             cache_hit=hit,
             component=request.component,
         )
-    except runner_codegen._DiskCacheUnavailable as exc:
+    except runner_codegen.DiskCacheUnavailable as exc:
         runner_codegen._warn_disk_cache_disabled(str(exc))
         return None

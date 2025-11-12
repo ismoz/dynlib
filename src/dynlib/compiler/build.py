@@ -285,9 +285,10 @@ def _warmup_jit_runner(
     params = np.array(list(spec.param_vals), dtype=dtype_np)
     
     y_prop = np.zeros((n_state,), dtype=dtype_np)
-    t_prop = np.zeros((1,), dtype=dtype_np)
-    dt_next = np.zeros((1,), dtype=dtype_np)
-    err_est = np.zeros((1,), dtype=dtype_np)
+    # Stepper control values must be float64 (not model dtype) to match runtime
+    t_prop = np.zeros((1,), dtype=np.float64)
+    dt_next = np.zeros((1,), dtype=np.float64)
+    err_est = np.zeros((1,), dtype=np.float64)
     evt_log_scratch = np.zeros((1,), dtype=dtype_np)
     
     user_break_flag = np.zeros((1,), dtype=np.int32)
@@ -295,9 +296,10 @@ def _warmup_jit_runner(
     hint_out = np.zeros((1,), dtype=np.int32)
     i_out = np.zeros((1,), dtype=np.int64)
     step_out = np.zeros((1,), dtype=np.int64)
-    t_out = np.zeros((1,), dtype=np.float64)
+    t_out = np.zeros((1,), dtype=np.float64)  # Always float64, regardless of model dtype
     
     # Create stepper config (use defaults from model_spec)
+    # NOTE: stepper_config is always float64, regardless of model dtype
     if stepper_spec is not None:
         default_config = stepper_spec.default_config(spec)
         stepper_config = stepper_spec.pack_config(default_config)
@@ -307,12 +309,12 @@ def _warmup_jit_runner(
     # Warmup call: run for a single tiny step
     try:
         runner(
-            0.0, 0.1, 0.1,  # t0, t_end, dt_init
+            0.0, 0.1, 0.1,  # t0, t_end, dt_init - use Python floats (float64), not model dtype
             100, n_state, 0,  # max_steps, n_state, record_interval (0 = no recording)
             y_curr, y_prev, params,
             banks.sp, banks.ss, banks.sw0, banks.sw1, banks.sw2, banks.sw3,
             banks.iw0, banks.bw0,
-            stepper_config,  # NEW: stepper config
+            stepper_config,
             y_prop, t_prop, dt_next, err_est,
             rec.T, rec.Y, rec.STEP, rec.FLAGS,
             ev.EVT_CODE, ev.EVT_INDEX, ev.EVT_LOG_DATA,
@@ -325,6 +327,7 @@ def _warmup_jit_runner(
     except Exception:
         # Warmup failure is not critical - the JIT will compile on first real call
         # This might happen if the model has issues, but those will be caught later
+        # Silently continue - errors will surface during actual usage
         pass
 
 
