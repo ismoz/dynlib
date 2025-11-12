@@ -14,7 +14,6 @@ from dynlib.compiler.codegen import runner as runner_codegen
 from dynlib.compiler.codegen import runner_discrete as runner_discrete_codegen
 from dynlib.compiler.codegen.validate import validate_stepper_function, report_validation_issues
 from dynlib.compiler.jit.compile import maybe_jit_triplet, jit_compile
-from dynlib.runtime import guards
 from dynlib.compiler.jit.cache import JITCache, CacheKey
 from dynlib.compiler.paths import resolve_uri, load_config, PathConfig, resolve_cache_root
 from dynlib.compiler.mods import apply_mods_v2, ModSpec
@@ -153,7 +152,8 @@ def build_callables(
     produce (rhs, events_pre, events_post) with optional JIT.
     Also caches the stepper if jit=True to avoid recompilation.
     """
-    guards.configure_allfinite_guard(bool(jit))
+    # TODO: Place Inf / NaN check
+    # guards.configure_allfinite_guard(bool(jit))
 
     s_hash = compute_spec_hash(spec)
     structsig = _structsig_from_stepper(stepper_name)
@@ -556,7 +556,8 @@ def build(
         spec = load_model_from_uri(model, mods=mods, config=config_in_use)
     
     # Configure finiteness guard according to jit toggle
-    guards.configure_allfinite_guard(bool(jit))
+    # TODO: Place Inf / NaN check
+    # guards.configure_allfinite_guard(bool(jit))
 
     # Use spec's default stepper if not specified
     stepper_name = stepper

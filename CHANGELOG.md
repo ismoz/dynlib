@@ -2,6 +2,16 @@
 
 ---
 
+## [2.20.2] – 2025-11-12
+### Changed
+- Removed `guards.py` because it was poorly designed and implemented; was causing a lot of numba
+  compatibility and caching issues.
+
+### Known Issues
+- All tests pass now but there is no NaN/Inf checks anywhere at this point.
+
+---
+
 ## [2.20.1] – 2025-11-12
 ### Fixed
 - `build()` warm-up function `_warmup_jit_runner` was generating the wrong runner when dtype is not 
