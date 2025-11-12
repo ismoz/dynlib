@@ -2,6 +2,22 @@
 
 ---
 
+## [2.21.0] – 2025-11-12
+### Added
+- Reintroduced `guards.py` in `src/dynlib/compiler/` to provide universal finiteness checks for 
+  steppers. This guard is applied universally to all steppers inside the runners and adaptive 
+  steppers also use these checks internally inside their step size calculation loops.
+- Added `allfinite1d` and `allfinite_scalar` functions for finiteness checks.
+- Integrated `guards` with `runner`, `runner_discrete`, and `rk45` stepper for NaN/Inf detection.
+- Added `test_nan_inf_guards.py` to validate the functionality of `guards`.
+
+### Changed
+- Updated `RK45Spec` to use `guards` for internal loops.
+- Enhanced `build_callables` in `src/dynlib/compiler/build.py` to configure finiteness guards 
+  based on JIT settings.
+
+---
+
 ## [2.20.2] – 2025-11-12
 ### Changed
 - Removed `guards.py` because it was poorly designed and implemented; was causing a lot of numba

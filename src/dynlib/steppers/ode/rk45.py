@@ -14,6 +14,21 @@ import numpy as np
 from ..base import StepperMeta, StructSpec
 from dynlib.runtime.runner_api import OK, STEPFAIL
 
+# Import guards for NaN/Inf detection
+# When jit=False, this makes allfinite1d available in the closure
+# When jit=True, the stepper source is rendered with guards inlined
+try:
+    from dynlib.compiler.guards import allfinite1d, allfinite_scalar
+except ImportError:
+    # Fallback if guards not available (shouldn't happen in normal use)
+    def allfinite1d(arr):
+        for val in arr:
+            if math.isnan(val) or math.isinf(val):
+                return False
+        return True
+    def allfinite_scalar(val):
+        return not (math.isnan(val) or math.isinf(val))
+
 if TYPE_CHECKING:
     from typing import Callable
 
@@ -289,61 +304,57 @@ class RK45Spec:
             for attempt in range(max_tries):
                 # Stage 1: k1 = f(t, y)
                 rhs(t, y_curr, k1, params)
-                # TODO: Place Inf / NaN check
-                # if not guards.allfinite1d(k1):
-                #     error = float("inf")
-                #     if h <= min_step:
-                #         err_est[0] = error
-                #         return STEPFAIL
-                #     h = h * min_factor
-                #     if h < min_step:
-                #         h = min_step
-                #     continue
+                if not allfinite1d(k1):
+                    error = float("inf")
+                    if h <= min_step:
+                        err_est[0] = error
+                        return STEPFAIL
+                    h = h * min_factor
+                    if h < min_step:
+                        h = min_step
+                    continue
 
                 # Stage 2: k2 = f(t + c2*h, y + h*(a21*k1))
                 for i in range(n):
                     y_stage[i] = y_curr[i] + h * a21 * k1[i]
                 rhs(t + c2 * h, y_stage, k2, params)
-                # TODO: Place Inf / NaN check
-                # if not guards.allfinite1d(k2):
-                #     error = float("inf")
-                #     if h <= min_step:
-                #         err_est[0] = error
-                #         return STEPFAIL
-                #     h = h * min_factor
-                #     if h < min_step:
-                #         h = min_step
-                #     continue
+                if not allfinite1d(k2):
+                    error = float("inf")
+                    if h <= min_step:
+                        err_est[0] = error
+                        return STEPFAIL
+                    h = h * min_factor
+                    if h < min_step:
+                        h = min_step
+                    continue
 
                 # Stage 3: k3 = f(t + c3*h, y + h*(a31*k1 + a32*k2))
                 for i in range(n):
                     y_stage[i] = y_curr[i] + h * (a31 * k1[i] + a32 * k2[i])
                 rhs(t + c3 * h, y_stage, k3, params)
-                # TODO: Place Inf / NaN check
-                # if not guards.allfinite1d(k3):
-                #     error = float("inf")
-                #     if h <= min_step:
-                #         err_est[0] = error
-                #         return STEPFAIL
-                #     h = h * min_factor
-                #     if h < min_step:
-                #         h = min_step
-                #     continue
+                if not allfinite1d(k3):
+                    error = float("inf")
+                    if h <= min_step:
+                        err_est[0] = error
+                        return STEPFAIL
+                    h = h * min_factor
+                    if h < min_step:
+                        h = min_step
+                    continue
 
                 # Stage 4: k4 = f(t + c4*h, y + h*(a41*k1 + a42*k2 + a43*k3))
                 for i in range(n):
                     y_stage[i] = y_curr[i] + h * (a41 * k1[i] + a42 * k2[i] + a43 * k3[i])
                 rhs(t + c4 * h, y_stage, k4, params)
-                # TODO: Place Inf / NaN check
-                # if not guards.allfinite1d(k4):
-                #     error = float("inf")
-                #     if h <= min_step:
-                #         err_est[0] = error
-                #         return STEPFAIL
-                #     h = h * min_factor
-                #     if h < min_step:
-                #         h = min_step
-                #     continue
+                if not allfinite1d(k4):
+                    error = float("inf")
+                    if h <= min_step:
+                        err_est[0] = error
+                        return STEPFAIL
+                    h = h * min_factor
+                    if h < min_step:
+                        h = min_step
+                    continue
 
                 # Stage 5: k5 = f(t + c5*h, y + h*(a51*k1 + a52*k2 + a53*k3 + a54*k4))
                 for i in range(n):
@@ -351,16 +362,15 @@ class RK45Spec:
                         a51 * k1[i] + a52 * k2[i] + a53 * k3[i] + a54 * k4[i]
                     )
                 rhs(t + c5 * h, y_stage, k5, params)
-                # TODO: Place Inf / NaN check
-                # if not guards.allfinite1d(k5):
-                #     error = float("inf")
-                #     if h <= min_step:
-                #         err_est[0] = error
-                #         return STEPFAIL
-                #     h = h * min_factor
-                #     if h < min_step:
-                #         h = min_step
-                #     continue
+                if not allfinite1d(k5):
+                    error = float("inf")
+                    if h <= min_step:
+                        err_est[0] = error
+                        return STEPFAIL
+                    h = h * min_factor
+                    if h < min_step:
+                        h = min_step
+                    continue
 
                 # Stage 6: k6 = f(t + c6*h, y + h*(a61*k1 + a62*k2 + a63*k3 + a64*k4 + a65*k5))
                 for i in range(n):
@@ -369,16 +379,15 @@ class RK45Spec:
                         a64 * k4[i] + a65 * k5[i]
                     )
                 rhs(t + c6 * h, y_stage, k6, params)
-                # TODO: Place Inf / NaN check
-                # if not guards.allfinite1d(k6):
-                #     error = float("inf")
-                #     if h <= min_step:
-                #         err_est[0] = error
-                #         return STEPFAIL
-                #     h = h * min_factor
-                #     if h < min_step:
-                #         h = min_step
-                #     continue
+                if not allfinite1d(k6):
+                    error = float("inf")
+                    if h <= min_step:
+                        err_est[0] = error
+                        return STEPFAIL
+                    h = h * min_factor
+                    if h < min_step:
+                        h = min_step
+                    continue
 
                 # Compute 5th order solution (y_prop = y5)
                 for i in range(n):
@@ -386,29 +395,27 @@ class RK45Spec:
                         b1 * k1[i] + b3 * k3[i] + b4 * k4[i] +
                         b5 * k5[i] + b6 * k6[i]
                     )
-                # TODO: Place Inf / NaN check
-                # if not guards.allfinite1d(y_prop):
-                #     error = float("inf")
-                #     if h <= min_step:
-                #         err_est[0] = error
-                #         return STEPFAIL
-                #     h = h * min_factor
-                #     if h < min_step:
-                #         h = min_step
-                #     continue
+                if not allfinite1d(y_prop):
+                    error = float("inf")
+                    if h <= min_step:
+                        err_est[0] = error
+                        return STEPFAIL
+                    h = h * min_factor
+                    if h < min_step:
+                        h = min_step
+                    continue
 
                 # Stage 7: k7 = f(t + h, y5) for embedded error estimate
                 rhs(t + h, y_prop, k7, params)
-                # TODO: Place Inf / NaN check
-                # if not guards.allfinite1d(k7):
-                #     error = float("inf")
-                #     if h <= min_step:
-                #         err_est[0] = error
-                #         return STEPFAIL
-                #     h = h * min_factor
-                #     if h < min_step:
-                #         h = min_step
-                #     continue
+                if not allfinite1d(k7):
+                    error = float("inf")
+                    if h <= min_step:
+                        err_est[0] = error
+                        return STEPFAIL
+                    h = h * min_factor
+                    if h < min_step:
+                        h = min_step
+                    continue
 
                 # Error estimate: e_i = h * |(b1-bs1)*k1 + ... + (b6-bs6)*k6 - bs7*k7|
                 err_acc = 0.0

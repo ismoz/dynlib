@@ -17,6 +17,7 @@ from dynlib.compiler.jit.compile import maybe_jit_triplet, jit_compile
 from dynlib.compiler.jit.cache import JITCache, CacheKey
 from dynlib.compiler.paths import resolve_uri, load_config, PathConfig, resolve_cache_root
 from dynlib.compiler.mods import apply_mods_v2, ModSpec
+from dynlib.compiler.guards import get_guards, configure_guards_disk_cache
 from dynlib.errors import ModelLoadError, StepperKindMismatchError
 
 __all__ = ["CompiledPieces", "build_callables", "FullModel", "build", "load_model_from_uri", "export_model_sources"]
@@ -48,6 +49,7 @@ class FullModel:
     runner: Callable
     spec_hash: str
     dtype: np.dtype
+    guards: Optional[Tuple[Callable, Callable]] = None  # (allfinite1d, allfinite_scalar)
     rhs_source: Optional[str] = None
     events_pre_source: Optional[str] = None
     events_post_source: Optional[str] = None
@@ -152,8 +154,7 @@ def build_callables(
     produce (rhs, events_pre, events_post) with optional JIT.
     Also caches the stepper if jit=True to avoid recompilation.
     """
-    # TODO: Place Inf / NaN check
-    # guards.configure_allfinite_guard(bool(jit))
+    # Guards are configured in build() and passed to runner via FullModel
 
     s_hash = compute_spec_hash(spec)
     structsig = _structsig_from_stepper(stepper_name)
@@ -659,6 +660,9 @@ def build(
             )
         runner_fn = runner_codegen.get_runner(jit=jit, disk_cache=disk_cache)
 
+    # Get guards (NaN/Inf detection utilities)
+    # Guards follow the same JIT toggle as other components
+    guards_tuple = get_guards(jit=jit, disk_cache=False)  # disk_cache for guards not needed (inline functions)
     
     def _all_compiled() -> bool:
         return all(
@@ -685,6 +689,7 @@ def build(
         runner=runner_fn,
         spec_hash=pieces.spec_hash,
         dtype=dtype_np,
+        guards=guards_tuple,
         rhs_source=pieces.rhs_source,
         events_pre_source=pieces.events_pre_source,
         events_post_source=pieces.events_post_source,
