@@ -1169,20 +1169,21 @@ class Sim:
     def apply_preset(self, name: str) -> None:
         """
         Apply a preset from this Sim's bank to current session.
-        
-        Updates params and (optionally) states. Does NOT touch time, dt, step_count,
-        stepper workspace, or results/history.
-        
+
+        Updates params and/or states present in the preset. Does NOT touch time, dt,
+        step_count, stepper workspace, or results/history.
+
         Args:
             name: Preset name (must exist in bank)
-        
+
         Raises:
             KeyError: Preset not found
             ValueError: Validation failures (unknown names, type mismatches, overflow)
         
         Validation:
-          - All param keys must exist in model
-          - If states present, must match model states exactly (all-or-none)
+          - All preset param keys must exist in model params
+          - All preset state keys must exist in model states
+          - Preset must define at least one param or state
           - Values cast to model dtype with warnings on precision loss
           - Atomic: validates everything before applying
         """
@@ -1203,24 +1204,25 @@ class Sim:
         casted_params = _cast_values_to_dtype(
             preset.params, self._dtype, preset.name, "param"
         )
-        casted_states = None
-        if preset.states is not None:
-            casted_states = _cast_values_to_dtype(
-                preset.states, self._dtype, preset.name, "state"
-            )
-        
+        state_values = preset.states or {}
+        casted_states = _cast_values_to_dtype(
+            state_values, self._dtype, preset.name, "state"
+        ) if state_values else {}
+
         # Atomic apply: params first, then states
         # Update params
         param_array = self._session_state.params_curr
-        for i, pname in enumerate(self.model.spec.params):
-            if pname in casted_params:
-                param_array[i] = casted_params[pname]
-        
+        if casted_params:
+            for i, pname in enumerate(self.model.spec.params):
+                if pname in casted_params:
+                    param_array[i] = casted_params[pname]
+
         # Update states (if present)
-        if casted_states is not None:
+        if casted_states:
             state_array = self._session_state.y_curr
             for i, sname in enumerate(self.model.spec.states):
-                state_array[i] = casted_states[sname]
+                if sname in casted_states:
+                    state_array[i] = casted_states[sname]
 
     def load_preset(
         self,
@@ -1295,27 +1297,33 @@ class Sim:
             if not isinstance(preset_table, dict):
                 raise ValueError(f"[presets.{pname}] must be a table in {path}")
             
-            # Parse params (required)
+            # Parse params (optional, may be empty)
             params_table = preset_table.get("params")
-            if not isinstance(params_table, dict) or len(params_table) == 0:
-                raise ValueError(
-                    f"[presets.{pname}].params must be a non-empty table in {path}"
-                )
+            if params_table is None:
+                params_table = {}
+            elif not isinstance(params_table, dict):
+                raise ValueError(f"[presets.{pname}].params must be a table in {path}")
             
-            # Parse states (optional)
+            # Parse states (optional, may be empty)
             states_table = preset_table.get("states")
-            if states_table is not None:
-                if not isinstance(states_table, dict):
-                    raise ValueError(f"[presets.{pname}].states must be a table in {path}")
-                if len(states_table) == 0:
-                    raise ValueError(
-                        f"[presets.{pname}].states cannot be empty; omit for param-only in {path}"
-                    )
+            if states_table is None:
+                states_table = {}
+            elif not isinstance(states_table, dict):
+                raise ValueError(f"[presets.{pname}].states must be a table in {path}")
+
+            if len(params_table) == 0 and len(states_table) == 0:
+                raise ValueError(
+                    f"[presets.{pname}] must define at least one param or state"
+                )
             
             preset_data = _PresetData(
                 name=pname,
                 params={k: float(v) for k, v in params_table.items()},
-                states={k: float(v) for k, v in states_table.items()} if states_table else None,
+                states=(
+                    {k: float(v) for k, v in states_table.items()}
+                    if states_table
+                    else None
+                ),
                 source="file",
             )
             
@@ -1358,111 +1366,278 @@ class Sim:
         
         return loaded_count
 
+    def add_preset(
+        self,
+        name: str,
+        *,
+        states: Mapping[str, float] | np.ndarray | None = None,
+        params: Mapping[str, float] | np.ndarray | None = None,
+        overwrite: bool = False,
+    ) -> None:
+        """
+        Add or update a preset in this Sim's in-memory preset bank.
+
+        Args:
+            name:
+                Preset name (key in the bank).
+            states:
+                Optional state values for this preset.
+
+                - If both `states` and `params` are None:
+                      use the current session's states and params.
+                - If `states` is provided:
+                      use only these values for states (no fallback).
+                      Can be:
+                        * 1D ndarray: interpreted in state declaration order.
+                        * Mapping: keys are state names (can be partial).
+            params:
+                Optional parameter values for this preset.
+
+                - If both `states` and `params` are None:
+                      use the current session's states and params.
+                - If `params` is provided:
+                      use only these values for params (no fallback).
+                      Can be:
+                        * 1D ndarray: interpreted in param declaration order.
+                        * Mapping: keys are param names (can be partial).
+            overwrite:
+                If False, raise ValueError when a preset with this name
+                already exists in the bank. If True, replace it.
+
+        Behavior:
+            - If both `states` and `params` are None:
+                  preset = {states = current session states,
+                            params = current session params}
+            - If at least one of `states` / `params` is provided:
+                  preset contains only those sections that are provided
+                  (params-only, states-only, or both).
+
+        Raises:
+            ValueError:
+                - if overwrite is False and the name already exists.
+                - if neither states nor params can be determined.
+            TypeError:
+                - if `states` / `params` are of an unsupported type.
+        """
+        # ----------------------- basic conflict handling -----------------------
+        bank = self._presets
+
+        if not overwrite and name in bank:
+            raise ValueError(
+                f"Preset {name!r} already exists in this Sim's bank "
+                "(use overwrite=True to replace it)."
+            )
+
+        state_dict: dict[str, float] | None = None
+        param_dict: dict[str, float] | None = None
+
+        # ----------------------------------------------------------------------
+        # Helper: normalize ndarray or mapping into {name: float} dict
+        # ----------------------------------------------------------------------
+        def _normalize(
+            names: list[str],
+            values: Mapping[str, float] | np.ndarray,
+        ) -> dict[str, float]:
+            if isinstance(values, np.ndarray):
+                if values.ndim != 1 or values.shape[0] != len(names):
+                    raise ValueError(
+                        f"Expected 1D vector of length {len(names)} for preset "
+                        f"values, got shape {values.shape!r}"
+                    )
+                return {
+                    name: float(v) for name, v in zip(names, values, strict=True)
+                }
+
+            if isinstance(values, Mapping):
+                # allow partial mappings, just coerce to float
+                return {str(k): float(v) for k, v in values.items()}
+
+            raise TypeError(
+                f"Preset values must be a mapping or 1D numpy array, "
+                f"got {type(values)!r}"
+            )
+
+        # ----------------------------------------------------------------------
+        # Case 1: both states and params None -> use current session
+        # ----------------------------------------------------------------------
+        if states is None and params is None:
+            session = self._session_state
+            state_names = list(self.model.spec.states)
+            param_names = list(self.model.spec.params)
+
+            if state_names and session.y_curr.size:
+                state_dict = {
+                    n: float(v)
+                    for n, v in zip(state_names, np.asarray(session.y_curr), strict=True)
+                }
+
+            if param_names and session.params_curr.size:
+                param_dict = {
+                    n: float(v)
+                    for n, v in zip(param_names, np.asarray(session.params_curr), strict=True)
+                }
+
+        # ----------------------------------------------------------------------
+        # Case 2: at least one explicit argument -> use only those sections
+        # ----------------------------------------------------------------------
+        else:
+            if states is not None:
+                state_names = list(self.model.spec.states)
+                state_dict = _normalize(state_names, states)
+
+            if params is not None:
+                param_names = list(self.model.spec.params)
+                param_dict = _normalize(param_names, params)
+
+        if state_dict is None and param_dict is None:
+            raise ValueError(
+                "Cannot create preset: neither states nor params are defined. "
+                "Provide values explicitly or ensure the session has states/params."
+            )
+
+        param_values = param_dict or {}
+        state_values = state_dict if state_dict else None
+
+        preset = _PresetData(
+            name=name,
+            params=param_values,
+            states=state_values,
+            source="session",
+        )
+
+        _validate_preset_names(
+            preset,
+            set(self.model.spec.params),
+            set(self.model.spec.states),
+        )
+
+        bank[name] = preset
+
     def save_preset(
         self,
         name: str,
         path: str | Path,
         *,
-        include_states: bool = False,
         overwrite: bool = False,
     ) -> None:
         """
         Export a preset from this Sim's bank to a TOML file.
-        
+
         Args:
-            name: Preset name (must exist in bank)
-            path: Target TOML file path (create or append)
-            include_states: If True, write all current states; if False, params only
-            overwrite: If True, replace existing preset in file; if False, error on conflict
-        
+            name:
+                Preset name (must exist in this Sim's preset bank).
+            path:
+                Target TOML file path (created if missing).
+            overwrite:
+                If True, replace existing preset with this name in the file.
+                If False, raise ValueError if a preset with this name already
+                exists in the file.
+
+        Behavior:
+            - Reads the preset entry from self._presets[name].
+            - Writes:
+                  [presets.<name>.states]   (if present)
+                  [presets.<name>.params]   (if present)
+              into the TOML file at `path`, using existing TOML helpers.
+
         Raises:
-            KeyError: Preset not found in bank
-            ValueError: File conflicts when overwrite=False
-        
-        File handling:
-          - Creates file if missing with [__presets__].schema header
-          - Appends/updates if file exists
-          - Atomic write using temp file + replace
-          - Serializes NaN/Inf as strings: "nan", "+inf", "-inf"
+            KeyError:
+                If the preset name is not found in this Sim's bank.
+            ValueError:
+                On conflicts when overwrite=False, or invalid existing [presets].
         """
-        if name not in self._presets:
-            available = sorted(self._presets.keys())
-            raise KeyError(
-                f"Preset '{name}' not found in bank. Available: {available}"
-            )
-        
         path = Path(path)
-        preset = self._presets[name]
-        
-        # Read existing file or create new structure
+
+        bank = self._presets
+        try:
+            preset = bank[name]
+        except KeyError as exc:
+            raise KeyError(f"Preset {name!r} not found in this Sim's bank") from exc
+
+        # --------------------------- load existing TOML ------------------------
         if path.exists():
-            doc = _toml_read(path)
-            # Validate schema
-            header = doc.get("__presets__", {})
-            if header.get("schema") != "dynlib-presets-v1":
-                raise ValueError(
-                    f"File {path} has invalid schema. "
-                    f"Expected [__presets__].schema = 'dynlib-presets-v1'"
-                )
-            
-            # Use setdefault to ensure we get a reference that's attached to doc
-            presets_section = doc.setdefault("presets", {})
-            if not isinstance(presets_section, dict):
-                raise ValueError(f"[presets] must be a table in {path}")
-            
-            # Check for conflict
-            if name in presets_section and not overwrite:
-                raise ValueError(
-                    f"Preset '{name}' already exists in {path}. "
-                    f"Use overwrite=True to replace."
-                )
+            data = _toml_read(path)  # type: ignore[name-defined]
         else:
-            doc = {
-                "__presets__": {"schema": "dynlib-presets-v1"},
-                "presets": {},
-            }
-            presets_section = doc["presets"]
-        
-        # Build preset data to write
-        preset_table: Dict[str, Any] = {}
-        
-        # Params (from current session state)
-        params_dict = {}
-        param_array = self._session_state.params_curr
-        for i, pname in enumerate(self.model.spec.params):
-            if pname in preset.params:  # Only save params that were in original preset
-                params_dict[pname] = float(param_array[i])
-        preset_table["params"] = params_dict
-        
-        # States (if requested, write ALL states from current session)
-        if include_states:
-            states_dict = {}
-            state_array = self._session_state.y_curr
-            for i, sname in enumerate(self.model.spec.states):
-                states_dict[sname] = float(state_array[i])
-            preset_table["states"] = states_dict
-        
-        # Update document
-        presets_section[name] = preset_table
-        
-        # Write atomically
-        _toml_write_atomic(path, doc)
+            data = {}
+
+        header = data.setdefault("__presets__", {})
+        if not isinstance(header, dict):
+            raise ValueError(
+                f"Expected [__presets__] table in {path}, "
+                f"found {type(header).__name__}"
+            )
+        schema = header.setdefault("schema", "dynlib-presets-v1")
+        if schema != "dynlib-presets-v1":
+            raise ValueError(
+                f"[__presets__].schema in {path} must be 'dynlib-presets-v1', "
+                f"found {schema!r}"
+            )
+
+        presets_tbl = data.setdefault("presets", {})
+        if not isinstance(presets_tbl, dict):
+            raise ValueError(
+                f"Expected [presets] table in {path}, "
+                f"found {type(presets_tbl).__name__}"
+            )
+
+        if not overwrite and name in presets_tbl:
+            raise ValueError(
+                f"Preset {name!r} already exists in {path} "
+                "(use overwrite=True to replace it)."
+            )
+
+        # preset is expected to be dict-like with optional 'states'/'params' keys
+        states = getattr(preset, "states", None)
+        params = getattr(preset, "params", None)
+        if isinstance(preset, dict):
+            # prefer dict keys if present
+            states = preset.get("states", states)
+            params = preset.get("params", params)
+
+        entry: dict[str, dict[str, float]] = {}
+        if states:
+            entry["states"] = dict(states)
+        if params:
+            entry["params"] = dict(params)
+
+        if not entry:
+            raise ValueError(
+                f"Preset {name!r} has neither states nor params; "
+                "nothing to save."
+            )
+
+        presets_tbl[name] = entry
+
+        # ----------------------------- atomic write ----------------------------
+        _toml_write_atomic(path, data)  # type: ignore[name-defined]
 
     # ---------------------------- internal helpers -----------------------------
 
     def _load_inline_presets(self) -> None:
         """Auto-populate presets bank from model.spec.presets."""
+        param_names = set(self.model.spec.params)
+        state_names = set(self.model.spec.states)
         for preset_spec in self.model.spec.presets:
+            params_dict = {k: float(v) for k, v in preset_spec.params.items()}
+            states_dict = (
+                {k: float(v) for k, v in preset_spec.states.items()}
+                if preset_spec.states
+                else {}
+            )
+            if not params_dict and not states_dict:
+                raise ValueError(
+                    f"Inline preset '{preset_spec.name}' is empty; "
+                    "must define at least one param or state."
+                )
+
             preset_data = _PresetData(
                 name=preset_spec.name,
-                params={k: float(v) for k, v in preset_spec.params.items()},
-                states=(
-                    {k: float(v) for k, v in preset_spec.states.items()}
-                    if preset_spec.states
-                    else None
-                ),
+                params=params_dict,
+                states=states_dict or None,
                 source="inline",
             )
+
+            _validate_preset_names(preset_data, param_names, state_names)
             
             # Defensive: shouldn't happen with fresh Sim, but log if it does
             if preset_data.name in self._presets:
@@ -2098,7 +2273,7 @@ class _PresetData:
     name: str
     params: Dict[str, float]
     states: Optional[Dict[str, float]]
-    source: Literal["inline", "file"]
+    source: Literal["inline", "file", "session"]
 
 
 def _did_you_mean(name: str, candidates: list[str], max_distance: int = 2) -> Optional[str]:
@@ -2139,6 +2314,11 @@ def _validate_preset_names(
     
     Raises ValueError with suggestions if any names are unknown.
     """
+    if not preset.params and not (preset.states or {}):
+        raise ValueError(
+            f"Preset '{preset.name}' is empty; must define at least one param or state."
+        )
+
     # Check params
     unknown_params = set(preset.params.keys()) - param_names
     if unknown_params:
@@ -2153,28 +2333,22 @@ def _validate_preset_names(
             f"Preset '{preset.name}' has unknown param(s): {', '.join(suggestions)}. "
             f"Valid params: {sorted(param_names)}"
         )
-    
-    # Check states (if present, must be exact match)
-    if preset.states is not None:
-        preset_state_names = set(preset.states.keys())
-        if preset_state_names != state_names:
-            missing = state_names - preset_state_names
-            extra = preset_state_names - state_names
-            
-            msg_parts = [f"Preset '{preset.name}' has mismatched states (all-or-none rule violated)"]
-            if missing:
-                msg_parts.append(f"Missing: {sorted(missing)}")
-            if extra:
-                suggestions = []
-                for uk in sorted(extra):
-                    suggestion = _did_you_mean(uk, list(state_names))
-                    if suggestion:
-                        suggestions.append(f"'{uk}' (did you mean '{suggestion}'?)")
-                    else:
-                        suggestions.append(f"'{uk}' (unknown)")
-                msg_parts.append(f"Extra: {', '.join(suggestions)}")
-            
-            raise ValueError(". ".join(msg_parts))
+
+    # Check states (subset allowed)
+    state_values = preset.states or {}
+    unknown_states = set(state_values.keys()) - state_names
+    if unknown_states:
+        suggestions = []
+        for uk in sorted(unknown_states):
+            suggestion = _did_you_mean(uk, list(state_names))
+            if suggestion:
+                suggestions.append(f"'{uk}' (did you mean '{suggestion}'?)")
+            else:
+                suggestions.append(f"'{uk}'")
+        raise ValueError(
+            f"Preset '{preset.name}' has unknown state(s): {', '.join(suggestions)}. "
+            f"Valid states: {sorted(state_names)}"
+        )
 
 
 def _cast_values_to_dtype(

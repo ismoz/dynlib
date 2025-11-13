@@ -36,10 +36,10 @@ u = u + d
 sim = setup(DSL, stepper="euler", jit=False, dtype="float32")
 sim.config(dt=0.01)
 
-I0, T0 = 0.0, 100.0
-I1, T1 = 5.0, 400.0
-I2, T2 = 10.0, 700.0
-I3, T3 = 15.0, 1000.0
+I0, T0 = 0.0, 300.0
+I1, T1 = 5.0, 600.0
+I2, T2 = 10.0, 900.0
+I3, T3 = 15.0, 1200.0
 
 sim.assign(I=I0)
 sim.run(T=T0, transient=50.0)

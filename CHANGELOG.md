@@ -1,5 +1,24 @@
 ## Changelog
 
+## [2.21.6] – 2025-11-13
+### Added
+- Added `add_preset()` method to `Sim` class. It lets you create new presets from the current 
+  session state or by providing specific values for states and parameters.
+- Added support for partial presets. You can now define presets with only some states or 
+  parameters instead of requiring all of them. Parameters are no longer mandatory.
+
+### Changed
+- Updated preset validation to allow empty states or params sections, as long as at least one is 
+  defined.
+- Modified `apply_preset()` to update only the provided values, leaving other states and parameters
+  unchanged.
+- Enhanced `load_preset()` and `save_preset()` to handle partial presets and provide better error 
+  messages.
+- Updated presets demo in examples to show how to use the new preset features.
+
+### Tests
+- Added new tests for partial presets to the `test_presets.py` and updated existing ones.
+
 ---
 
 ## [2.21.5] – 2025-11-13

@@ -105,14 +105,12 @@ def _read_presets(presets_tbl: Dict[str, Any]) -> List[Dict[str, Any]]:
         if not isinstance(body, dict):
             raise ModelLoadError(f"[presets.{name}] must be a table")
         
-        # Read params (required, must have at least one key)
+        # Read params (optional, may be empty)
         params = body.get("params")
         if params is None:
-            raise ModelLoadError(f"[presets.{name}] must have a 'params' table")
-        if not isinstance(params, dict):
+            params = {}
+        elif not isinstance(params, dict):
             raise ModelLoadError(f"[presets.{name}].params must be a table")
-        if len(params) == 0:
-            raise ModelLoadError(f"[presets.{name}].params must have at least one key")
         
         # Validate param values are numeric
         for key, val in params.items():
@@ -121,13 +119,11 @@ def _read_presets(presets_tbl: Dict[str, Any]) -> List[Dict[str, Any]]:
                     f"[presets.{name}].params.{key} must be a number, got {type(val).__name__}"
                 )
         
-        # Read states (optional, but if present must be a table)
+        # Read states (optional, may be empty)
         states = body.get("states")
         if states is not None:
             if not isinstance(states, dict):
                 raise ModelLoadError(f"[presets.{name}].states must be a table if present")
-            if len(states) == 0:
-                raise ModelLoadError(f"[presets.{name}].states cannot be empty; omit it for param-only presets")
             
             # Validate state values are numeric
             for key, val in states.items():
@@ -135,6 +131,13 @@ def _read_presets(presets_tbl: Dict[str, Any]) -> List[Dict[str, Any]]:
                     raise ModelLoadError(
                         f"[presets.{name}].states.{key} must be a number, got {type(val).__name__}"
                     )
+        else:
+            states = {}
+
+        if len(params) == 0 and len(states) == 0:
+            raise ModelLoadError(
+                f"[presets.{name}] must define at least one param or state"
+            )
         
         presets.append({
             "name": name,

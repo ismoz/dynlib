@@ -246,8 +246,46 @@ def test_apply_preset_unknown_param():
     assert "did you mean 'alpha'" in str(exc.value).lower()
 
 
-def test_apply_preset_partial_states_error():
-    """apply_preset should error if preset has partial states (violates all-or-none)."""
+def test_apply_preset_unknown_state():
+    """apply_preset should error with suggestion on unknown state name."""
+    model = _compile_model_from_toml(
+        """
+        [model]
+        type = "ode"
+        
+        [states]
+        x = 1.0
+        y = 0.0
+        
+        [params]
+        alpha = 1.0
+        
+        [equations.rhs]
+        x = "-alpha*x"
+        y = "alpha*y"
+        """
+    )
+    from dynlib.runtime.sim import Sim
+    
+    sim = Sim(model)
+    
+    from dynlib.runtime.sim import _PresetData
+    sim._presets["bad"] = _PresetData(
+        name="bad",
+        params={},
+        states={"xe": 2.0},  # typo for "x"
+        source="inline",
+    )
+    
+    with pytest.raises(ValueError) as exc:
+        sim.apply_preset("bad")
+    
+    assert "unknown state" in str(exc.value).lower()
+    assert "did you mean 'x'" in str(exc.value).lower()
+
+
+def test_apply_preset_partial_states_update_only_listed():
+    """apply_preset should allow partial states and leave others untouched."""
     model = _compile_model_from_toml(
         """
         [model]
@@ -278,11 +316,98 @@ def test_apply_preset_partial_states_error():
         source="inline",
     )
     
-    with pytest.raises(ValueError) as exc:
-        sim.apply_preset("partial")
+    # Should update only listed targets
+    sim.apply_preset("partial")
     
-    assert "all-or-none" in str(exc.value).lower()
-    assert "missing" in str(exc.value).lower()
+    state = sim._session_state
+    assert state.y_curr[0] == 10.0  # updated x
+    assert state.y_curr[1] == 2.0   # y untouched
+    assert state.params_curr[0] == 2.0  # param updated
+
+
+def test_model_without_params_supports_state_only_presets(tmp_path):
+    """Models with zero params should accept state-only presets inline and from file."""
+    model = _compile_model_from_toml(
+        """
+        [model]
+        type = "ode"
+        
+        [states]
+        x = 1.0
+        
+        [params]
+        
+        [equations.rhs]
+        x = "-x"
+        
+        [presets.bump.states]
+        x = 5.0
+        """
+    )
+    from dynlib.runtime.sim import Sim
+    
+    sim = Sim(model)
+    assert sim._session_state.params_curr.size == 0
+    
+    sim.apply_preset("bump")
+    assert sim._session_state.y_curr[0] == 5.0
+    
+    preset_file = tmp_path / "states_only.toml"
+    preset_file.write_text(
+        """
+        [__presets__]
+        schema = "dynlib-presets-v1"
+        
+        [presets.file_state.states]
+        x = 7.5
+        """
+    )
+    
+    sim.load_preset("file_state", preset_file)
+    sim.apply_preset("file_state")
+    assert sim._session_state.y_curr[0] == 7.5
+
+
+def test_model_without_states_supports_param_only_presets(tmp_path):
+    """Models with zero states should accept param-only presets."""
+    model = _compile_model_from_toml(
+        """
+        [model]
+        type = "ode"
+        
+        [states]
+        
+        [params]
+        alpha = 1.0
+        
+        [equations.rhs]
+        
+        [presets.boost.params]
+        alpha = 3.0
+        """
+    )
+    from dynlib.runtime.sim import Sim
+    
+    sim = Sim(model)
+    assert sim._session_state.y_curr.size == 0
+    
+    sim.apply_preset("boost")
+    assert sim._session_state.params_curr[0] == 3.0
+    
+    preset_file = tmp_path / "params_only.toml"
+    preset_file.write_text(
+        """
+        [__presets__]
+        schema = "dynlib-presets-v1"
+        
+        [presets.from_file.params]
+        alpha = 4.0
+        """
+    )
+    
+    sim.load_preset("from_file", preset_file)
+    sim.apply_preset("from_file")
+    assert sim._session_state.params_curr[0] == 4.0
 
 
 def test_load_preset_from_file(tmp_path):
@@ -330,6 +455,43 @@ def test_load_preset_from_file(tmp_path):
     sim.apply_preset("file_preset")
     assert sim._session_state.params_curr[0] == 3.0
     assert sim._session_state.params_curr[1] == 4.0
+
+
+def test_load_preset_rejects_empty_definition(tmp_path):
+    """load_preset should reject presets that define neither params nor states."""
+    model = _compile_model_from_toml(
+        """
+        [model]
+        type = "ode"
+        
+        [states]
+        x = 1.0
+        
+        [params]
+        a = 1.0
+        
+        [equations.rhs]
+        x = "-a*x"
+        """
+    )
+    from dynlib.runtime.sim import Sim
+    
+    sim = Sim(model)
+    
+    preset_file = tmp_path / "empty.toml"
+    preset_file.write_text(
+        """
+        [__presets__]
+        schema = "dynlib-presets-v1"
+        
+        [presets.empty]
+        """
+    )
+    
+    with pytest.raises(ValueError) as exc:
+        sim.load_preset("empty", preset_file)
+    
+    assert "at least one param or state" in str(exc.value).lower()
 
 
 def test_load_preset_glob(tmp_path):
@@ -514,6 +676,119 @@ def test_load_preset_conflict_replace(tmp_path):
     assert sim._session_state.params_curr[0] == 10.0
 
 
+def test_add_preset_captures_session_state():
+    """add_preset with no args should snapshot the current session values."""
+    model = _compile_model_from_toml(
+        """
+        [model]
+        type = "ode"
+        
+        [states]
+        x = 1.0
+        y = 2.0
+        
+        [params]
+        a = 1.0
+        b = 2.0
+        
+        [equations.rhs]
+        x = "a - x"
+        y = "b - y"
+        """
+    )
+    from dynlib.runtime.sim import Sim
+    
+    sim = Sim(model)
+    
+    # Mutate current session
+    sim._session_state.y_curr[:] = [42.0, -3.0]
+    sim._session_state.params_curr[:] = [8.0, 9.0]
+    
+    # Capture preset from session state
+    sim.add_preset("snapshot")
+    assert "snapshot" in sim.list_presets("*")
+    
+    # Change session again to ensure preset restores captured values
+    sim._session_state.y_curr[:] = [0.0, 0.0]
+    sim._session_state.params_curr[:] = [0.0, 0.0]
+    
+    sim.apply_preset("snapshot")
+    np.testing.assert_allclose(sim._session_state.y_curr, [42.0, -3.0])
+    np.testing.assert_allclose(sim._session_state.params_curr, [8.0, 9.0])
+
+
+def test_add_preset_supports_arrays_and_overwrite():
+    """add_preset should accept ndarray inputs and honor overwrite flag."""
+    model = _compile_model_from_toml(
+        """
+        [model]
+        type = "ode"
+        
+        [states]
+        x = 1.0
+        
+        [params]
+        a = 1.0
+        
+        [equations.rhs]
+        x = "-a*x"
+        """
+    )
+    from dynlib.runtime.sim import Sim
+    
+    sim = Sim(model)
+    
+    sim.add_preset("runtime_copy")
+    with pytest.raises(ValueError):
+        sim.add_preset("runtime_copy")
+    
+    sim.add_preset(
+        "runtime_copy",
+        states=np.array([10.0]),
+        params=np.array([20.0]),
+        overwrite=True,
+    )
+    sim.apply_preset("runtime_copy")
+    
+    assert sim._session_state.y_curr[0] == 10.0
+    assert sim._session_state.params_curr[0] == 20.0
+
+
+def test_save_preset_requires_non_empty_payload(tmp_path):
+    """save_preset should refuse to write when preset has no params/states."""
+    model = _compile_model_from_toml(
+        """
+        [model]
+        type = "ode"
+        
+        [states]
+        x = 1.0
+        
+        [params]
+        a = 1.0
+        
+        [equations.rhs]
+        x = "-a*x"
+        """
+    )
+    from dynlib.runtime.sim import Sim, _PresetData
+    
+    sim = Sim(model)
+    preset_file = tmp_path / "empty_save.toml"
+    
+    sim._presets["empty"] = _PresetData(
+        name="empty",
+        params={},
+        states=None,
+        source="session",
+    )
+    
+    with pytest.raises(ValueError) as exc:
+        sim.save_preset("empty", preset_file)
+    
+    assert "nothing to save" in str(exc.value).lower()
+
+
 def test_save_preset_params_only(tmp_path):
     """save_preset should create file with param-only preset."""
     model = _compile_model_from_toml(
@@ -544,7 +819,7 @@ def test_save_preset_params_only(tmp_path):
     # Apply preset first so session has those values
     sim.apply_preset("test")
     
-    sim.save_preset("test", preset_file, include_states=False)
+    sim.save_preset("test", preset_file)
     
     # Verify file contents
     with open(preset_file, "rb") as f:
@@ -557,8 +832,58 @@ def test_save_preset_params_only(tmp_path):
     assert "states" not in doc["presets"]["test"]
 
 
+def test_save_preset_partial_states_subset(tmp_path):
+    """save_preset should only write state keys present in the preset entry."""
+    model = _compile_model_from_toml(
+        """
+        [model]
+        type = "ode"
+        
+        [states]
+        x = 1.0
+        y = 2.0
+        
+        [params]
+        a = 1.0
+        
+        [equations.rhs]
+        x = "-a*x"
+        y = "a*y"
+        
+        [presets.partial.params]
+        a = 2.0
+        
+        [presets.partial.states]
+        x = 9.0
+        """
+    )
+    from dynlib.runtime.sim import Sim
+    
+    sim = Sim(model)
+    sim._session_state.params_curr[0] = 12.0
+    sim._session_state.y_curr[:] = [6.0, 7.0]
+    
+    sim.add_preset(
+        "partial",
+        params={"a": float(sim._session_state.params_curr[0])},
+        states={"x": float(sim._session_state.y_curr[0])},
+        overwrite=True,
+    )
+    
+    preset_file = tmp_path / "partial_states.toml"
+    sim.save_preset("partial", preset_file, overwrite=True)
+    
+    with open(preset_file, "rb") as f:
+        doc = tomllib.load(f)
+    
+    saved = doc["presets"]["partial"]
+    assert saved["params"]["a"] == 12.0
+    assert saved["states"]["x"] == 6.0
+    assert "y" not in saved["states"]
+
+
 def test_save_preset_with_states(tmp_path):
-    """save_preset should write all states when include_states=True."""
+    """save_preset should write all states stored in the preset."""
     model = _compile_model_from_toml(
         """
         [model]
@@ -577,6 +902,10 @@ def test_save_preset_with_states(tmp_path):
         
         [presets.test.params]
         a = 5.0
+        
+        [presets.test.states]
+        x = 0.0
+        y = 0.0
         """
     )
     from dynlib.runtime.sim import Sim
@@ -587,8 +916,10 @@ def test_save_preset_with_states(tmp_path):
     sim._session_state.y_curr[0] = 100.0
     sim._session_state.y_curr[1] = 200.0
     
+    sim.add_preset("test", overwrite=True)
+    
     preset_file = tmp_path / "out.toml"
-    sim.save_preset("test", preset_file, include_states=True)
+    sim.save_preset("test", preset_file)
     
     # Verify
     with open(preset_file, "rb") as f:
@@ -675,6 +1006,8 @@ def test_save_preset_overwrite(tmp_path):
     # Modify param
     sim._session_state.params_curr[0] = 99.0
     
+    sim.add_preset("test", overwrite=True)
+    
     # Save again with overwrite
     sim.save_preset("test", preset_file, overwrite=True)
     
@@ -757,7 +1090,8 @@ def test_roundtrip_save_load(tmp_path):
     orig_states = sim._session_state.y_curr.copy()
     
     # Save
-    sim.save_preset("orig", preset_file, include_states=True, overwrite=True)
+    sim.add_preset("orig", overwrite=True)
+    sim.save_preset("orig", preset_file, overwrite=True)
     
     # Reset to defaults
     sim._session_state.params_curr[:] = [1.0, 2.0]

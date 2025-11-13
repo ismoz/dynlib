@@ -230,8 +230,8 @@ def validate_presets(normal: Dict[str, Any]) -> None:
     
     Checks:
     - All param keys in preset exist in model params
-    - All state keys in preset (if present) exist in model states
-    - States follow all-or-none rule (must define all states or none)
+    - State keys (if present) exist in model states
+    - Each preset defines at least one param or state
     
     This catches typos early during model loading instead of waiting until runtime.
     """
@@ -255,19 +255,16 @@ def validate_presets(normal: Dict[str, Any]) -> None:
             )
         
         # Validate state keys (if present)
-        if preset.get("states") is not None:
-            preset_states = set(preset["states"].keys())
-            
-            # All-or-none rule: must define all states
-            if preset_states != state_names:
-                missing = state_names - preset_states
-                extra = preset_states - state_names
-                
-                msg_parts = [f"[presets.{name}].states violates all-or-none rule"]
-                if missing:
-                    msg_parts.append(f"Missing: {sorted(missing)}")
-                if extra:
-                    msg_parts.append(f"Unknown: {sorted(extra)}")
-                msg_parts.append(f"Valid states: {sorted(state_names)}")
-                
-                raise ModelLoadError(". ".join(msg_parts))
+        preset_states_dict = preset.get("states") or {}
+        preset_states = set(preset_states_dict.keys())
+        unknown_states = preset_states - state_names
+        if unknown_states:
+            raise ModelLoadError(
+                f"[presets.{name}].states contains unknown state(s): {sorted(unknown_states)}. "
+                f"Valid states: {sorted(state_names)}"
+            )
+
+        if not preset_params and not preset_states:
+            raise ModelLoadError(
+                f"[presets.{name}] must define at least one param or state"
+            )

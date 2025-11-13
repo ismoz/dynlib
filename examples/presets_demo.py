@@ -7,6 +7,7 @@ Shows:
 - Listing and applying presets
 - Loading presets from external files
 - Saving presets to files
+- Capturing runtime presets with add_preset
 - Round-trip preservation
 """
 
@@ -125,9 +126,11 @@ def main():
         print(f"\n=== Saving presets to {preset_file.name} ===")
         sim.reset()
         sim.apply_preset("regular_spiking")
+        sim.add_preset("regular_spiking", overwrite=True)
         sim.save_preset("regular_spiking", preset_file)
         
         sim.apply_preset("fast_spiking")
+        sim.add_preset("fast_spiking", overwrite=True)
         sim.save_preset("fast_spiking", preset_file)
         
         # Check file contents
