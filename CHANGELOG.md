@@ -2,6 +2,22 @@
 
 ---
 
+## [2.21.3] – 2025-11-13
+### Added
+- Added `Sim.config()` method to set default simulation settings like dt, max_steps, record options,
+  and capacities. Stepper specific parameters can also be set with this method. They are forwarded
+  to `stepper_config()`.
+- Added `facet.py` example showing how to create faceted plots with multiple subplots.
+- Added support for colored bands in plotting functions, allowing bands to have custom colors.
+
+### Changed
+- Renamed plotting parameters from `events` to `vlines` for better clarity in time series plots.
+- Updated `izhikevich.py` example to use `sim.config(dt=0.01)` and added enhanced plotting features 
+  like ylim, colored bands, and vertical lines.
+- Moved plot related examples into the `examples/plot` folder.
+
+---
+
 ## [2.21.2] – 2025-11-13
 ### Added
 - Introduced `Sim.assign()` method in `src/dynlib/runtime/sim.py` for assigning state and parameter

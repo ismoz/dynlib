@@ -259,38 +259,59 @@ def _apply_tick_fontsizes(ax: plt.Axes, *, xtick_fs: float | None, ytick_fs: flo
 
 def _apply_time_decor(
     ax: plt.Axes,
-    events: list[tuple[float, str]] | None,
-    bands: list[tuple[float, float]] | None,
-    events_kwargs: Mapping[str, Any] | None = None,
+    vlines: list[tuple[float, str]] | None,
+    bands: list[tuple[float, float] | tuple[float, float, str]] | None,
+    vlines_kwargs: Mapping[str, Any] | None = None,
 ) -> None:
     if bands:
-        for start, end in bands:
-            ax.axvspan(start, end, color="C0", alpha=0.1)
-    if events:
-        transform = ax.get_xaxis_transform()
-        yoff = 1.0 + float(_theme.get("event_label_pad"))
-        # Default styling for event vertical lines
-        default_ev_kw: dict[str, Any] = {
+        for band in bands:
+            if len(band) == 2:
+                start, end = band
+                color = "C0"
+            elif len(band) == 3:
+                start, end, color = band
+            else:
+                raise ValueError(f"Band tuple must have 2 or 3 elements, got {len(band)}")
+            if start >= end:
+                raise ValueError(f"Band start time must be less than end time, got start={start}, end={end}")
+            ax.axvspan(start, end, color=color, alpha=0.1)
+
+    if vlines:
+        # Draw vlines as usual (data x, span full y-range)
+        default_vl_kw: dict[str, Any] = {
             "color": "black",
             "linestyle": "--",
             "linewidth": 1.0,
             "alpha": 0.7,
         }
-        merged_ev_kw = {**default_ev_kw, **dict(events_kwargs)} if events_kwargs else default_ev_kw
-        for x, label in events:
-            ax.axvline(x, **merged_ev_kw)
+        merged_vl_kw = {**default_vl_kw, **dict(vlines_kwargs)} if vlines_kwargs else default_vl_kw
+
+        # Use current y-limits to place labels INSIDE the axes, in data coords
+        ymin, ymax = ax.get_ylim()
+        pad = float(_theme.get("vline_label_pad"))
+
+        # If pad < 1: interpret as fraction of axis height down from the top
+        # If pad >= 1: interpret as data-units down from the top
+        if pad < 1.0:
+            y_text = ymax - pad * (ymax - ymin)
+        else:
+            y_text = ymax - pad
+
+        for x, label in vlines:
+            ax.axvline(x, **merged_vl_kw)
             if label:
                 ax.text(
                     x,
-                    yoff,
+                    y_text,
                     label,
                     rotation=90,
-                    va="bottom",
+                    va="top",        # anchor top of text at y_text
                     ha="center",
-                    transform=transform,
-                    clip_on=False,
+                    transform=ax.transData,  # <-- data coordinates now
+                    clip_on=True,    # keep it inside the axes
                     rotation_mode="anchor",
                 )
+
 
 
 def _resolve_style(
@@ -466,10 +487,10 @@ class _SeriesPlot:
         xlabel: str | None = None,
         ylabel: str | None = None,
         title: str | None = None,
-        events: list[tuple[float, str]] | None = None,
-        events_color: str | None = None,
-        events_kwargs: Mapping[str, Any] | None = None,
-        bands: list[tuple[float, float]] | None = None,
+        vlines: list[tuple[float, str]] | None = None,
+        vlines_color: str | None = None,
+        vlines_kwargs: Mapping[str, Any] | None = None,
+        bands: list[tuple[float, float] | tuple[float, float, str]] | None = None,
         xlabel_rot: float | None = None,
         ylabel_rot: float | None = None,
         ax=None,
@@ -498,16 +519,16 @@ class _SeriesPlot:
             xpad=xpad, ypad=ypad, titlepad=titlepad,
             xlabel_fs=xlabel_fs, ylabel_fs=ylabel_fs, title_fs=title_fs,
         )
-        # Merge simple events_color into events_kwargs for convenience
-        merged_events_kwargs: Mapping[str, Any] | None
-        if events_color is not None:
-            base_ev_kw = {} if events_kwargs is None else dict(events_kwargs)
-            base_ev_kw["color"] = events_color
-            merged_events_kwargs = base_ev_kw
+        # Merge simple vlines_color into vlines_kwargs for convenience
+        merged_vlines_kwargs: Mapping[str, Any] | None
+        if vlines_color is not None:
+            base_vl_kw = {} if vlines_kwargs is None else dict(vlines_kwargs)
+            base_vl_kw["color"] = vlines_color
+            merged_vlines_kwargs = base_vl_kw
         else:
-            merged_events_kwargs = events_kwargs
+            merged_vlines_kwargs = vlines_kwargs
 
-        _apply_time_decor(plot_ax, events, bands, merged_events_kwargs)
+        _apply_time_decor(plot_ax, vlines, bands, merged_vlines_kwargs)
         _apply_tick_rotation(plot_ax, xlabel_rot=xlabel_rot, ylabel_rot=ylabel_rot, theme=_theme)
         _apply_tick_fontsizes(plot_ax, xtick_fs=xtick_fs, ytick_fs=ytick_fs)
         return plot_ax
@@ -528,10 +549,10 @@ class _SeriesPlot:
         xlabel: str | None = None,
         ylabel: str | None = None,
         title: str | None = None,
-        events: list[tuple[float, str]] | None = None,
-        events_color: str | None = None,
-        events_kwargs: Mapping[str, Any] | None = None,
-        bands: list[tuple[float, float]] | None = None,
+        vlines: list[tuple[float, str]] | None = None,
+        vlines_color: str | None = None,
+        vlines_kwargs: Mapping[str, Any] | None = None,
+        bands: list[tuple[float, float] | tuple[float, float, str]] | None = None,
         xlabel_rot: float | None = None,
         ylabel_rot: float | None = None,
         ax=None,
@@ -577,15 +598,15 @@ class _SeriesPlot:
             xpad=xpad, ypad=ypad, titlepad=titlepad,
             xlabel_fs=xlabel_fs, ylabel_fs=ylabel_fs, title_fs=title_fs,
         )
-        merged_events_kwargs: Mapping[str, Any] | None
-        if events_color is not None:
-            base_ev_kw = {} if events_kwargs is None else dict(events_kwargs)
-            base_ev_kw["color"] = events_color
-            merged_events_kwargs = base_ev_kw
+        merged_vlines_kwargs: Mapping[str, Any] | None
+        if vlines_color is not None:
+            base_vl_kw = {} if vlines_kwargs is None else dict(vlines_kwargs)
+            base_vl_kw["color"] = vlines_color
+            merged_vlines_kwargs = base_vl_kw
         else:
-            merged_events_kwargs = events_kwargs
+            merged_vlines_kwargs = vlines_kwargs
 
-        _apply_time_decor(plot_ax, events, bands, merged_events_kwargs)
+        _apply_time_decor(plot_ax, vlines, bands, merged_vlines_kwargs)
         _apply_tick_rotation(plot_ax, xlabel_rot=xlabel_rot, ylabel_rot=ylabel_rot, theme=_theme)
         _apply_tick_fontsizes(plot_ax, xtick_fs=xtick_fs, ytick_fs=ytick_fs)
         return plot_ax

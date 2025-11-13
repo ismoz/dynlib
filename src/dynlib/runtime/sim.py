@@ -118,6 +118,17 @@ class IntegratorSeed:
     workspace: WorkspaceSnapshot
 
 
+# Sim defaults that will be used with config()
+@dataclass
+class _RunDefaults:
+    max_steps: Optional[int] = None
+    record: Optional[bool] = None
+    record_interval: Optional[int] = None
+    cap_rec: Optional[int] = None
+    cap_evt: Optional[int] = None
+
+
+
 class _ResultAccumulator:
     """
     Mutable recording buffers that grow geometrically as stitched results append.
@@ -292,6 +303,7 @@ class Sim:
         self._event_time_columns = _event_time_column_map(self.model.spec)
         self._time_shift = 0.0
         self._nominal_dt = float(self.model.spec.sim.dt)
+        self._run_defaults = _RunDefaults()
         self._segments: list[Segment] = []
         self._pending_run_tag: Optional[str] = None
         self._pending_run_cfg_hash: Optional[str] = None
@@ -320,13 +332,13 @@ class Sim:
         T: Optional[float] = None,  # Continuous: end time
         N: Optional[int] = None,    # Discrete: number of iterations
         dt: Optional[float] = None,
-        max_steps: int = 100000,
+        max_steps: Optional[int] = None,
         record: Optional[bool] = None,
-        record_interval: int = 1,
+        record_interval: Optional[int] = None,
         ic: Optional[np.ndarray] = None,
         params: Optional[np.ndarray] = None,
-        cap_rec: int = 1024,
-        cap_evt: int = 1,
+        cap_rec: Optional[int] = None,
+        cap_evt: Optional[int] = None,
         transient: Optional[float] = None,
         resume: bool = False,
         # Note: legacy `t_end` removed from public API; use `T` instead.
@@ -353,6 +365,9 @@ class Sim:
             tag: Optional name recorded for this segment when samples are kept
             **stepper_kwargs: Runtime stepper configuration parameters
         
+        Default precedence:
+            explicit run() arg > Sim.config() defaults > DSL sim defaults
+        
         Notes:
             - For discrete systems: Specify N (iterations) or use max_steps as target
             - For continuous systems: Specify T (end time), max_steps is safety guard
@@ -364,24 +379,69 @@ class Sim:
                 raise TypeError("tag must be a string or None")
             if tag == "":
                 raise ValueError("tag cannot be empty")
-        record = record if record is not None else sim_defaults.record
+        
+        # Apply persistent defaults for run-level knobs
+        # record
+        if record is None:
+            if self._run_defaults.record is not None:
+                record = self._run_defaults.record
+            else:
+                record = sim_defaults.record
+
+        # record_interval
+        if record_interval is None:
+            if self._run_defaults.record_interval is not None:
+                record_interval = self._run_defaults.record_interval
+            else:
+                record_interval = 1
+
+        # max_steps
+        if max_steps is None:
+            if self._run_defaults.max_steps is not None:
+                max_steps = self._run_defaults.max_steps
+            else:
+                max_steps = 100000
+
+        # capacities
+        if cap_rec is None:
+            if self._run_defaults.cap_rec is not None:
+                cap_rec = self._run_defaults.cap_rec
+            else:
+                cap_rec = 1024
+
+        if cap_evt is None:
+            if self._run_defaults.cap_evt is not None:
+                cap_evt = self._run_defaults.cap_evt
+            else:
+                cap_evt = 1
+
         run_t0 = t0 if t0 is not None else sim_defaults.t0
         
         # Determine if we're running a discrete or continuous system
         is_discrete = self.model.spec.kind == "map"
         
+        # dt / nominal_dt handling
+        if resume and any(arg is not None for arg in (ic, params, t0, dt)):
+            raise ValueError("resume=True ignores ic/params/t0/dt overrides; omit them for clarity")
+
+        if not resume:
+            # Precedence: explicit dt > stored nominal_dt > DSL sim.dt
+            if dt is not None:
+                nominal_dt = float(dt)
+            else:
+                nominal_dt = float(self._nominal_dt if self._nominal_dt is not None else sim_defaults.dt)
+            if nominal_dt <= 0.0:
+                raise ValueError("dt must be positive")
+            self._nominal_dt = nominal_dt
+        else:
+            nominal_dt = self._nominal_dt
+
         # Handle T/N parameter conflicts and defaults
         
         if is_discrete:
             # Discrete system: N is primary, T is derived
             if T is not None and N is not None:
                 raise ValueError("For discrete systems, specify either N (iterations) or T (inferred), not both")
-            
-            if not resume:
-                nominal_dt = float(dt if dt is not None else sim_defaults.dt)
-                self._nominal_dt = nominal_dt
-            else:
-                nominal_dt = self._nominal_dt
             
             # Determine N (number of iterations)
             if N is not None:
@@ -403,23 +463,22 @@ class Sim:
             if N is not None:
                 raise ValueError("For continuous systems, use 'T' (end time), not 'N' (iterations)")
             
-            if not resume:
-                nominal_dt = float(dt if dt is not None else sim_defaults.dt)
-                self._nominal_dt = nominal_dt
-            else:
-                nominal_dt = self._nominal_dt
-            
             target_T = T if T is not None else sim_defaults.t_end
             target_N = None  # Not used for continuous
         
+        # Transient default (time for continuous, iterations for discrete)
+        # Prefer explicit run() arg; otherwise fall back to DSL sim default
+        # If the DSL doesn't declare a transient default, use 0.0.
         transient = 0.0 if transient is None else float(transient)
         if transient < 0.0:
             raise ValueError("transient must be non-negative")
         if resume and transient > 0.0:
             raise ValueError("transient warm-up is not allowed during resume")
 
-        if resume and any(arg is not None for arg in (ic, params, t0, dt)):
-            raise ValueError("resume=True ignores ic/params/t0/dt overrides; omit them for clarity")
+         # At this point:
+        #   - record, record_interval, max_steps, cap_rec, cap_evt, transient
+        #     have final values from (run arg > config > default)
+        #   - nominal_dt has final value from (run arg > _nominal_dt > DSL)
 
         if not resume:
             self._result_accum = None
@@ -684,6 +743,76 @@ class Sim:
         self._session_state.stepper_cfg = np.array(new_cfg, dtype=np.float64, copy=True)
         self._sync_initial_snapshot_config(new_cfg)
         return np.array(new_cfg, dtype=np.float64, copy=True)
+
+    def config(
+        self,
+        *,
+        dt: Optional[float] = None,
+        max_steps: Optional[int] = None,
+        record: Optional[bool] = None,
+        record_interval: Optional[int] = None,
+        cap_rec: Optional[int] = None,
+        cap_evt: Optional[int] = None,
+        **stepper_kwargs: Any,
+    ) -> None:
+        """
+        Configure persistent defaults for this Sim.
+
+        Simulation-level defaults:
+          - dt: nominal time step / label spacing
+          - max_steps: default safety / iteration limit
+          - record: default recording flag
+          - record_interval: default recording interval
+          - cap_rec: default initial record capacity
+          - cap_evt: default initial event capacity
+    (transient warm-up duration is configured per-run via run())
+
+        Any remaining keyword arguments are forwarded to stepper_config()
+        as stepper-specific runtime parameters.
+
+        Explicit arguments passed to run() always override these defaults.
+        """
+        # dt uses the same storage as run(): _nominal_dt
+        if dt is not None:
+            new_dt = float(dt)
+            if new_dt <= 0.0:
+                raise ValueError("dt must be positive")
+            self._nominal_dt = new_dt
+            # Keep session state summary consistent; snapshots remain historical.
+            self._session_state.dt_curr = new_dt
+
+        if max_steps is not None:
+            ms = int(max_steps)
+            if ms <= 0:
+                raise ValueError("max_steps must be positive")
+            self._run_defaults.max_steps = ms
+
+        if record is not None:
+            self._run_defaults.record = bool(record)
+
+        if record_interval is not None:
+            ri = int(record_interval)
+            if ri <= 0:
+                raise ValueError("record_interval must be >= 1")
+            self._run_defaults.record_interval = ri
+
+        if cap_rec is not None:
+            cr = int(cap_rec)
+            if cr <= 0:
+                raise ValueError("cap_rec must be positive")
+            self._run_defaults.cap_rec = cr
+
+        if cap_evt is not None:
+            ce = int(cap_evt)
+            if ce <= 0:
+                raise ValueError("cap_evt must be positive")
+            self._run_defaults.cap_evt = ce
+
+        # Note: transient is intentionally not stored here; transient
+        # warm-up duration should be provided to run() per invocation.
+
+        if stepper_kwargs:
+            self.stepper_config(**stepper_kwargs)
 
     def assign(
         self,

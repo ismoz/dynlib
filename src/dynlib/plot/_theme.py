@@ -28,7 +28,7 @@ _BASE_TOKENS: Dict[str, Any] = {
     "axis_w": 1.2,
     "xmargin": 0.02,
     "ymargin": 0.05,
-    "event_label_pad": 0.02,
+    "vline_label_pad": 0.07,
     "grid": True,
     "grid_alpha": 0.3,
     "palette": "cbf",
