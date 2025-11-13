@@ -42,11 +42,6 @@ try:
 except ImportError:  # pragma: no cover - Python <3.8 fallback
     import importlib_metadata  # type: ignore
 
-try:
-    import tomllib  # Python 3.11+
-except Exception:  # pragma: no cover - fallback for <3.11
-    import tomli as tomllib  # type: ignore
-
 if TYPE_CHECKING:
     from dynlib.steppers.base import StructSpec
 

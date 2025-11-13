@@ -20,16 +20,13 @@ from .results import Results
 from .results_api import ResultsView
 from .runner_api import Status
 from dynlib.steppers.registry import get_stepper
+import tomllib
 
 try:  # pragma: no cover - available on 3.8+
     from importlib import metadata as importlib_metadata
 except ImportError:  # pragma: no cover
     import importlib_metadata  # type: ignore
 
-try:  # pragma: no cover - Python >=3.11
-    import tomllib  # type: ignore
-except Exception:  # pragma: no cover
-    import tomli as tomllib  # type: ignore
 
 __all__ = ["Sim"]
 

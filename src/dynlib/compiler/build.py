@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Tuple, Callable, Dict, Any, Union, List, Optional
 from pathlib import Path
 import numpy as np
+import tomllib
 
 from dynlib.dsl.spec import ModelSpec, compute_spec_hash, build_spec
 from dynlib.dsl.parser import parse_model_v2
@@ -374,23 +375,11 @@ def load_model_from_uri(
     # Load base model TOML
     # Check if it's inline by looking at the stripped/normalized URI
     if model_uri.strip().startswith("inline:"):
-        # Parse inline content
-        try:
-            import tomllib
-        except ImportError:
-            import tomli as tomllib  # Python < 3.11
-        
         try:
             model_data = tomllib.loads(resolved_model)
         except Exception as e:
             raise ModelLoadError(f"Failed to parse inline model: {e}")
     else:
-        # Load from file
-        try:
-            import tomllib
-        except ImportError:
-            import tomli as tomllib  # Python < 3.11
-        
         try:
             with open(resolved_model, "rb") as f:
                 model_data = tomllib.load(f)
@@ -457,20 +446,10 @@ def _load_mod_from_uri(mod_uri: str, config: PathConfig) -> ModSpec:
     # Check if it's inline by looking at the stripped/normalized URI
     if mod_uri.strip().startswith("inline:"):
         try:
-            import tomllib
-        except ImportError:
-            import tomli as tomllib
-        
-        try:
             mod_data = tomllib.loads(resolved)
         except Exception as e:
             raise ModelLoadError(f"Failed to parse inline mod: {e}")
     else:
-        try:
-            import tomllib
-        except ImportError:
-            import tomli as tomllib
-        
         try:
             with open(resolved, "rb") as f:
                 mod_data = tomllib.load(f)

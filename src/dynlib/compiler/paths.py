@@ -15,6 +15,7 @@ import contextlib
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
+import tomllib
 
 from dynlib.errors import ModelNotFoundError, ConfigError, PathTraversalError, AmbiguousModelError
 
@@ -208,11 +209,6 @@ def load_config() -> PathConfig:
 
     # Load from config file if it exists
     if config_path.exists():
-        try:
-            import tomllib
-        except ImportError:
-            import tomli as tomllib  # Python < 3.11
-        
         try:
             with open(config_path, "rb") as f:
                 data = tomllib.load(f)

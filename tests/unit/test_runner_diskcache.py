@@ -5,13 +5,8 @@ import os
 import stat
 import subprocess
 from pathlib import Path
-
+import tomllib
 import pytest
-
-try:
-    import tomllib
-except Exception:  # pragma: no cover
-    import tomli as tomllib  # type: ignore
 
 pytest.importorskip("numba")
 

@@ -2,6 +2,12 @@
 
 ---
 
+## [2.21.1] – 2025-11-13
+### Changed
+- Removed `tomli` package fallbacks and updated Python requirement as >= 3.11 instead of 3.10.
+
+---
+
 ## [2.21.0] – 2025-11-12
 ### Added
 - Reintroduced `guards.py` in `src/dynlib/compiler/` to provide universal finiteness checks for 

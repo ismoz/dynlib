@@ -16,11 +16,7 @@ import warnings
 
 import numpy as np
 import pytest
-
-try:
-    import tomllib
-except ImportError:
-    import tomli as tomllib
+import tomllib
 
 from dynlib.dsl.parser import parse_model_v2
 from dynlib.dsl.spec import build_spec

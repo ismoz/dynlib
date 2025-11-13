@@ -12,11 +12,8 @@ Shows:
 
 import tempfile
 from pathlib import Path
+import tomllib
 
-try:
-    import tomllib
-except ImportError:
-    import tomli as tomllib
 
 from dynlib.dsl.parser import parse_model_v2
 from dynlib.dsl.spec import build_spec
