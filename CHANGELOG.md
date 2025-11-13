@@ -2,6 +2,21 @@
 
 ---
 
+## [2.21.2] – 2025-11-13
+### Added
+- Introduced `Sim.assign()` method in `src/dynlib/runtime/sim.py` for assigning state and parameter
+  values dynamically during a simulation session.
+
+### Changed
+- Enhanced `_select_seed()` in `Sim` to use current session state values as defaults for 
+  `resume=False` runs, allowing explicit overrides with `ic` and `params` arguments.
+- Updated `examples/izhikevich.py` to demonstrate dynamic parameter assignment using `Sim.assign()`.
+
+### Tests
+- Added `tests/unit/test_sim_assign.py` to validate the functionality of `Sim.assign()`.
+
+---
+
 ## [2.21.1] – 2025-11-13
 ### Changed
 - Removed `tomli` package fallbacks and updated Python requirement as >= 3.11 instead of 3.10.

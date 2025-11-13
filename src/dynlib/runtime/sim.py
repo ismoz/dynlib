@@ -685,6 +685,125 @@ class Sim:
         self._sync_initial_snapshot_config(new_cfg)
         return np.array(new_cfg, dtype=np.float64, copy=True)
 
+    def assign(
+        self,
+        mapping: Optional[Mapping[str, Any]] = None,
+        /,
+        *,
+        clear_history: bool = False,
+        **kwargs: Any,
+    ) -> None:
+        """
+        Assign values to states and parameters by name on the current session.
+
+        Accepts both mapping and keyword arguments. Values are resolved automatically:
+        names are first checked against state names, then parameter names. Unknown
+        names raise ValueError with suggestions.
+
+        Args:
+            mapping: Dictionary-like mapping of {name: value}
+            clear_history: If True, clears results/history but leaves session state unchanged
+            **kwargs: Keyword arguments override mapping for the same key
+
+        Examples:
+            >>> sim.assign({"v": -65.0, "I": 10.0})
+            >>> sim.assign(v=-65.0, I=12.0)
+            >>> sim.assign({"v": -65.0}, I=15.0, clear_history=True)
+
+        Notes:
+            - Names are resolved: states first, then params
+            - Unknown names raise ValueError with "did you mean?" suggestions
+            - Values are cast to model dtype (warnings on precision loss)
+            - clear_history=False: keeps results/history
+            - clear_history=True: clears results but not session state (time, workspace, etc.)
+            - Does not modify snapshots or stepper config
+            - Always affects the next run() unless overridden by explicit ic/params
+        """
+        # Merge mapping and kwargs
+        updates: Dict[str, Any] = {}
+        if mapping is not None:
+            if not isinstance(mapping, Mapping):
+                raise TypeError("mapping must be a Mapping (dict-like) or None")
+            updates.update(mapping)
+        updates.update(kwargs)
+
+        if not updates:
+            return
+
+        # Build lookup tables from model spec
+        state_names = list(self.model.spec.states)
+        param_names = list(self.model.spec.params)
+        state_idx = {name: i for i, name in enumerate(state_names)}
+        param_idx = {name: i for i, name in enumerate(param_names)}
+
+        # Partition updates into states, params, and unknown
+        state_updates: Dict[str, Any] = {}
+        param_updates: Dict[str, Any] = {}
+        unknown: list[str] = []
+
+        for key, val in updates.items():
+            if key in state_idx:
+                state_updates[key] = val
+            elif key in param_idx:
+                param_updates[key] = val
+            else:
+                unknown.append(key)
+
+        # Handle unknown names with suggestions
+        if unknown:
+            candidates = state_names + param_names
+            suggestions = []
+            for uk in sorted(unknown):
+                suggestion = _did_you_mean(uk, candidates)
+                if suggestion:
+                    suggestions.append(f"'{uk}' (did you mean '{suggestion}'?)")
+                else:
+                    suggestions.append(f"'{uk}'")
+            raise ValueError(
+                f"Unknown state/param name(s): {', '.join(suggestions)}. "
+                f"Valid states: {state_names}, params: {param_names}"
+            )
+
+        # Cast values to model dtype
+        casted_states: Dict[str, Any] = {}
+        if state_updates:
+            casted_states = _cast_values_to_dtype(
+                {k: float(v) for k, v in state_updates.items()},
+                self._dtype,
+                "<assign>",
+                "state",
+            )
+
+        casted_params: Dict[str, Any] = {}
+        if param_updates:
+            casted_params = _cast_values_to_dtype(
+                {k: float(v) for k, v in param_updates.items()},
+                self._dtype,
+                "<assign>",
+                "param",
+            )
+
+        # Apply updates in-place on current SessionState
+        if casted_states:
+            y = self._session_state.y_curr
+            for name, val in casted_states.items():
+                y[state_idx[name]] = val
+
+        if casted_params:
+            p = self._session_state.params_curr
+            for name, val in casted_params.items():
+                p[param_idx[name]] = val
+
+        # Handle clear_history
+        if clear_history:
+            self._result_accum = None
+            self._raw_results = None
+            self._results_view = None
+            self._segments = []
+            self._pending_run_tag = None
+            self._pending_run_cfg_hash = None
+            self._last_run_was_resume = False
+
     def can_resume(self) -> tuple[bool, Optional[str]]:
         """Return (bool, reason) describing whether resume() may be invoked safely."""
         diff = _diff_pins(self._pins, self._session_state.pins)
@@ -1391,16 +1510,25 @@ class Sim:
         ic: Optional[np.ndarray],
         params: Optional[np.ndarray],
     ) -> IntegratorSeed:
+        """
+        Build IntegratorSeed for run().
+        
+        For resume=True: continue from current SessionState (time, workspace, etc.).
+        For resume=False: restart integration from t0 with fresh workspace, but use
+                         current SessionState values (y_curr, params_curr) as defaults
+                         unless overridden by explicit ic/params arguments.
+        """
         if resume:
             return self._session_state.to_seed()
-        y0 = np.array(
-            ic if ic is not None else self.model.spec.state_ic, dtype=self._dtype, copy=True
-        )
-        p0 = np.array(
-            params if params is not None else self.model.spec.param_vals,
-            dtype=self._dtype,
-            copy=True,
-        )
+
+        # NEW behavior for resume=False:
+        # Use current SessionState values as defaults, overridable by ic/params
+        y_source = ic if ic is not None else self._session_state.y_curr
+        p_source = params if params is not None else self._session_state.params_curr
+
+        y0 = np.array(y_source, dtype=self._dtype, copy=True)
+        p0 = np.array(p_source, dtype=self._dtype, copy=True)
+
         return IntegratorSeed(
             t=float(t0),
             y=y0,

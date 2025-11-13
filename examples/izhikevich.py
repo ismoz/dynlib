@@ -34,12 +34,20 @@ u = u + d
 '''
 
 sim = setup(DSL, stepper="euler", jit=False, dtype="float32")
-sim.run(T=300.0, dt=0.01, transient=50.0)
-sim.run(T=600.0, resume=True)
+sim.stepper_config(dt=0.01)
+sim.assign(I=0.0)
+sim.run(T=100.0, transient=50.0)
+sim.assign(I=5.0)
+sim.run(T=400.0, resume=True)
+sim.assign(I=10.0)
+sim.run(T=700.0, resume=True)
+sim.assign(I=15.0)
+sim.run(T=1000.0, resume=True)
 
 res = sim.results()
 
-series.plot(x=res.t, y=res["v"], title="Membrane Potential (v)")
+series.plot(x=res.t, y=res["v"], 
+            title="Membrane Potential (v)")
 export.show()
 
 print(sim.list_snapshots())
