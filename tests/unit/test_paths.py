@@ -29,6 +29,7 @@ from dynlib.compiler.paths import (
     _get_config_path,
     _parse_env_model_path,
     resolve_cache_root,
+    _builtin_models_dir,
 )
 from dynlib.errors import (
     ModelNotFoundError,
@@ -178,13 +179,30 @@ def test_parse_env_model_path_invalid_empty_tag(monkeypatch):
 
 # ---- load_config tests ------------------------------------------------------
 
+def _tags_without_builtin(config: PathConfig):
+    """Return a shallow copy of tags with the builtin entry removed (if present)."""
+    tags = {key: list(value) for key, value in config.tags.items()}
+    builtin = _builtin_models_dir()
+    if builtin:
+        assert "builtin" in tags, "expected builtin tag to be registered"
+        assert builtin in tags["builtin"], "builtin directory missing from builtin tag"
+    else:
+        assert "builtin" not in tags, "builtin tag present without models directory"
+    tags.pop("builtin", None)
+    return tags
+
+
 def test_load_config_no_file(tmp_path, monkeypatch):
     """Config loads successfully even if file doesn't exist (empty config)."""
     fake_config = tmp_path / "nonexistent.toml"
     monkeypatch.setenv("DYNLIB_CONFIG", str(fake_config))
     
     config = load_config()
-    assert config.tags == {}
+    remaining = _tags_without_builtin(config)
+    assert remaining == {}
+    builtin = _builtin_models_dir()
+    if builtin:
+        assert config.tags["builtin"] == [builtin]
 
 
 def test_load_config_valid_file(tmp_path, monkeypatch):
@@ -198,7 +216,7 @@ user = "/home/user/models"
     monkeypatch.setenv("DYNLIB_CONFIG", str(config_file))
     
     config = load_config()
-    assert config.tags == {
+    assert _tags_without_builtin(config) == {
         "proj": ["/home/models", "/opt/models"],
         "user": ["/home/user/models"],
     }
@@ -217,7 +235,20 @@ proj = ["/home/models"]
     
     config = load_config()
     # Env path should come first
-    assert config.tags["proj"] == ["/env/models", "/home/models"]
+    assert _tags_without_builtin(config)["proj"] == ["/env/models", "/home/models"]
+
+
+def test_load_config_builtin_tag_points_to_internal_models(tmp_path, monkeypatch):
+    """Builtin tag contains the bundled models directory when available."""
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("[paths]\n", encoding="utf-8")
+    monkeypatch.setenv("DYNLIB_CONFIG", str(config_file))
+    config = load_config()
+    builtin = _builtin_models_dir()
+    if builtin:
+        assert config.tags["builtin"] == [builtin]
+    else:
+        assert "builtin" not in config.tags
 
 
 def test_load_config_malformed_toml(tmp_path, monkeypatch):

@@ -39,6 +39,19 @@ class PathConfig:
     cache_root: Optional[str] = None
 
 
+def _builtin_models_dir() -> Optional[str]:
+    """
+    Return the absolute path to the bundled builtin models directory.
+    
+    This resolves relative to the installed dynlib package so that it works
+    regardless of where the library is located on disk.
+    """
+    models_dir = Path(__file__).resolve().parents[1] / "models"
+    if models_dir.is_dir():
+        return str(models_dir)
+    return None
+
+
 def _get_config_path() -> Path:
     """
     Get platform-specific config file path.
@@ -259,6 +272,13 @@ def load_config() -> PathConfig:
         existing = tags.get(tag, [])
         # Prepend env roots so they win on first match
         tags[tag] = env_roots + existing
+
+    # Ensure builtin models are always available
+    builtin_root = _builtin_models_dir()
+    if builtin_root:
+        builtin_list = tags.setdefault("builtin", [])
+        if builtin_root not in builtin_list:
+            builtin_list.append(builtin_root)
     
     return PathConfig(tags=tags, cache_root=cache_root)
 

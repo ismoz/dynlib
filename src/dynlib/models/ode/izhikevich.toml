@@ -1,0 +1,65 @@
+[model]
+type = "ode"
+
+[states]
+v = -65.0
+u = -13.0
+
+[params]
+a = 0.02
+b = 0.2
+c = -65.0
+d = 8.0
+I = 10.0
+vth = 30.0
+
+[equations]
+expr = """
+dv = 0.04 * v * v + 5.0 * v + 140.0 - u + I
+du = a * (b * v - u)
+"""
+
+[events.reset]
+cond = "v >= vth"
+phase = "post"
+action = """
+v = c
+u = u + d
+"""
+
+# PRESETS:
+[presets.regular_spiking.params]
+a = 0.02
+b = 0.2
+c = -65.0
+d = 8.0
+
+[presets.intrinsic_bursting.params]
+a = 0.02
+b = 0.2
+c = -55.0
+d = 4.0
+
+[presets.bursting.params]
+a = 0.02
+b = 0.2
+c = -50
+d = 2
+
+[presets.fast_spiking.params]
+a = 0.1
+b = 0.2
+c = -65
+d = 2
+
+[presets.low_threshold.params]
+a = 0.02
+b = 0.25
+c = -65
+d = 2
+
+[presets.resonator.params]
+a = 0.1
+b = 0.26
+c = -65
+d = 2

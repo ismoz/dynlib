@@ -1,5 +1,24 @@
 ## Changelog
 
+---
+
+## [2.22.0] – 2025-11-13
+### Added
+- Added support for builtin models using the "builtin://" URI scheme. This lets users access bundled 
+  models without setting up paths manually.
+- Added Izhikevich neuron model as a builtin model with presets for different spiking patterns like 
+  regular spiking, bursting, and fast spiking.
+- Updated path resolution to automatically include the builtin models directory in the search paths.
+
+### Changed
+- Updated izhikevich.py example to use the builtin Izhikevich model and show how to apply presets 
+  during simulation runs.
+
+### Tests
+- Updated path resolution tests to check that the builtin tag is registered and models can be found.
+
+---
+
 ## [2.21.6] – 2025-11-13
 ### Added
 - Added `add_preset()` method to `Sim` class. It lets you create new presets from the current 
