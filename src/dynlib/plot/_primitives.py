@@ -172,6 +172,79 @@ def _resolve_unary_map_k(
 
         return g_model
 
+    # 3) v2 FullModel / ModelSpec path (no .map helper; use compiled rhs)
+    spec = getattr(obj, "spec", None)
+    rhs_fn = getattr(obj, "rhs", None)
+    if spec is not None and callable(rhs_fn):
+        if getattr(spec, "kind", None) != "map":
+            raise TypeError("cobweb requires a discrete map model (spec.kind == 'map').")
+
+        state_names = tuple(getattr(spec, "states", ()))
+        if not state_names:
+            raise TypeError("Model spec missing states.")
+        state_index = {name: idx for idx, name in enumerate(state_names)}
+
+        param_names = tuple(getattr(spec, "params", ()))
+        param_index = {name: idx for idx, name in enumerate(param_names)}
+
+        if isinstance(state, int):
+            tgt = int(state)
+            if tgt < 0 or tgt >= len(state_names):
+                raise IndexError("state index out of range.")
+        else:
+            if state is None and len(state_names) == 1:
+                tgt = 0
+            elif state is None:
+                raise ValueError("Multi-dimensional model requires 'state' (name or index).")
+            else:
+                nm = str(state)
+                if nm not in state_index:
+                    raise KeyError(f"Unknown state '{nm}'.")
+                tgt = state_index[nm]
+
+        dtype = np.dtype(getattr(obj, "dtype", float))
+        y_base = np.array(getattr(spec, "state_ic", ()), dtype=dtype, copy=True)
+        params_base = np.array(getattr(spec, "param_vals", ()), dtype=dtype, copy=True)
+
+        # apply fixed overrides (states/params; supports prefixes)
+        if fixed:
+            for k, v in fixed.items():
+                val = float(v)
+                if k.startswith("state__") or k.startswith("y__"):
+                    nm = k.split("__", 1)[1]
+                    if nm not in state_index:
+                        raise KeyError(f"Unknown state '{nm}'.")
+                    y_base[state_index[nm]] = val
+                elif k.startswith("param__") or k.startswith("p__"):
+                    nm = k.split("__", 1)[1]
+                    if nm not in param_index:
+                        raise KeyError(f"Unknown param '{nm}'.")
+                    params_base[param_index[nm]] = val
+                else:
+                    if k in state_index:
+                        y_base[state_index[k]] = val
+                    elif k in param_index:
+                        params_base[param_index[k]] = val
+                    else:
+                        raise KeyError(f"Unknown fixed key '{k}'.")
+
+        r_idx = param_index.get("r")
+        y_seed = y_base.copy()
+        params_seed = params_base.copy()
+
+        def g_model(k_iter: int, x: float) -> float:
+            t_k = float(t0 + k_iter * dt)
+            y = y_seed.copy()
+            y[tgt] = float(x)
+            params_arr = params_seed.copy()
+            if r is not None and r_idx is not None:
+                params_arr[r_idx] = float(r)
+            y_next = np.empty_like(y_seed)
+            rhs_fn(t_k, y, y_next, params_arr)
+            return float(y_next[tgt])
+
+        return g_model
+
     raise TypeError("cobweb: 'f' must be callable g(x) or a Model with map(k, t, y, p), or a Sim exposing .model.")
 
 

@@ -1,5 +1,5 @@
 from dynlib import setup
-from dynlib.plot import series, phase, export
+from dynlib.plot import series, phase, export, theme, fig, analysis
 
 model = '''
 inline:
@@ -20,17 +20,57 @@ x = "r * x * (1 - x)"
 sim = setup(model, stepper="map", jit=True, disk_cache=True)
 sim.run(N=192, transient=40)
 sim.run(resume=True, N=400)
-
 res=sim.results()
-series.plot(x=res.step, y=res["x"], title="Logistic Map", 
-            xlabel="Iteration", 
-            ylabel="x",
-            style="line",
-            lw=1.2)
 
-phase.return_map(x=res["x"], title="Return Map", 
-                 xlabel="x[n]", 
-                 ylabel="x[n+1]",
-                 ms=1.2)
+theme.use("notebook")
+theme.update(grid=False)
+
+# Create 1x2 grid for time series and return map
+ax = fig.grid(rows=1, cols=2, size=(12, 5))
+
+# Time series plot
+series.plot(
+    x=res.t,
+    y=res["x"],
+    style="line",
+    ax=ax[0, 0],
+    xlabel="n",
+    ylabel="$x_n$",
+    ylabel_rot=0,
+    title="Logistic Map (r=4)",
+    ypad=10,
+    xlabel_fs=13,
+    ylabel_fs=13,
+    title_fs=14,
+    xtick_fs=9,
+    ytick_fs=11,
+    lw=1.0
+)
+
+# Return map: x[n] vs x[n+1]
+phase.return_map(
+    x=res["x"],
+    step=1,
+    style="scatter",
+    ax=ax[0, 1],
+    ms=2,
+    color="C1",
+    title="Return Map: $x[n]$ vs $x[n+1]$",
+    xlabel_fs=13,
+    ylabel_fs=13,
+    title_fs=14,
+    xtick_fs=9,
+    ytick_fs=11,
+)
+
+analysis.cobweb(
+    f=sim.model,
+    x0=0.1,
+    xlim=(0, 1),
+    steps=50,
+    color="green",
+    stair_color="orange",
+    identity_color="red",
+)
 
 export.show()

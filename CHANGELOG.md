@@ -2,6 +2,13 @@
 
 ---
 
+## [2.21.5] – 2025-11-13
+### Changed
+- Updated cobweb plotting function so that it works with new v2 sim or model objects.
+- Updated logistic_map.py example to use themes, grid layouts, and cobweb plots.
+
+---
+
 ## [2.21.4] – 2025-11-13
 ### Added
 - Added `state_vector()`, `param_vector()`, `state_dict()`, and `param_dict()` methods to `Sim` 
