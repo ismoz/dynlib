@@ -27,6 +27,30 @@
 - **DDE/hist:** Heads/indices plus float history (with `iw0` for heads).
 - **RK45 (if not lane-packing `sw*`):** Spill `k5`, `k6` or store DO coeffs.
 
+### Ownership & Partitioning
+
+When the DSL model declares lagged states the runner automatically reserves a prefix
+of the `ss` bank for those circular buffers:
+
+- **`ss[0..ss_lag_reserved-1]`**: Managed by the lag system (runner)  
+  `StructSpec.ss_lag_reserved` equals the total number of reserved lanes
+  (one `buffer_len = lag_depth + 1` per lagged state). Steppers must treat this
+  region as read-only.
+
+- **`ss[ss_lag_reserved..]`**: Available for stepper-defined persistent state.  
+  Offset all lane calculations by `ss_lag_reserved` just like the `iw0` split.
+
+Stepper code pattern:
+
+```python
+LAG_RESERVED = struct.ss_lag_reserved  # compile-time constant
+lane0 = ss[LAG_RESERVED + 0 : LAG_RESERVED + n]
+lane1 = ss[LAG_RESERVED + n : LAG_RESERVED + 2 * n]
+```
+
+When no lags are present `ss_lag_reserved = 0`, so the entire bank belongs to
+the stepper with no offset needed.
+
 ---
 
 ## `sw0`, `sw1`, `sw2`, `sw3` — Stage Work (Ephemeral Within an Attempt)

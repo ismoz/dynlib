@@ -2,6 +2,18 @@
 
 ---
 
+## [2.23.1] – 2025-11-14
+### Added
+- Added `ss_lag_reserved` field to `StructSpec` for lag buffer allocation in stepper state. If
+  a stepper needs to use the ss bank, it should use starting from this index. iw0 bank already
+  has `iw0_lag_reserved` from the previous version.
+
+### Changed
+- Updated stepper banks documentation with lag system partitioning rules for `ss` banks.
+- Updated build process to include lag reservations in struct specification.
+
+---
+
 ## [2.23.0] – 2025-11-14
 ### Added
 - Added lag system to access historical state values in models using `lag_<name>(k)` for k steps
@@ -38,7 +50,7 @@
 - Updated existing tests to accommodate new function signatures with `ss` and `iw0` parameters.
 
 ### Known Issues
-- Some lag feature related issues will be solved in the following updates.
+- Some lag feature related issues will be resolved in the following updates.
 
 ---
 

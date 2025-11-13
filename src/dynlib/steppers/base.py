@@ -56,7 +56,8 @@ class StructSpec:
     embedded_order: int | None = None
     stiff_ok: bool = False
     
-    # Lag system metadata (reserved prefix in iw0)
+    # Lag system metadata (reserved prefix in iw0/ss)
+    ss_lag_reserved: int = 0  # Number of ss lanes reserved for lag buffers
     iw0_lag_reserved: int = 0  # Number of iw0 slots reserved for lag heads
 
 

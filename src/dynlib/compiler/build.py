@@ -582,6 +582,7 @@ def build(
         needs_jacobian=base_struct.needs_jacobian,
         embedded_order=base_struct.embedded_order,
         stiff_ok=base_struct.stiff_ok,
+        ss_lag_reserved=lag_ss_lanes,
         iw0_lag_reserved=num_lagged_states,  # First N slots reserved for lags
     )
     
