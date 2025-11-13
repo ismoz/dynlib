@@ -5,6 +5,7 @@ from dynlib.errors import ModelLoadError
 from dynlib.dsl.parser import parse_model_v2
 from dynlib.dsl.astcheck import (
     collect_names,
+    collect_lag_requests,
     validate_expr_acyclic,
     validate_event_legality,
     validate_functions_signature,
@@ -103,3 +104,27 @@ def test_validate_functions_signature_rejects_non_ident_or_duplicate_args():
     d["functions"] = {"f": {"args": ["not ident!"], "expr": "1"}}
     with pytest.raises(ModelLoadError):
         validate_functions_signature(parse_model_v2(d))
+
+
+def test_collect_lag_requests_accumulates_max_depths_across_sections():
+    d = base_doc()
+    d["equations"]["rhs"]["x"] = "lag_x(2) + prev_u"
+    d["aux"] = {"z": "lag_u(5) - prev_x"}
+    d["events"] = {
+        "kick": {
+            "phase": "post",
+            "cond": "lag_x(4) > 0",
+            "action.x": "x",
+        }
+    }
+    n = parse_model_v2(d)
+    lags = collect_lag_requests(n)
+    assert lags == {"x": 4, "u": 5}
+
+
+def test_collect_lag_requests_rejects_non_state_targets():
+    d = base_doc()
+    d["equations"]["rhs"]["x"] = "lag_a(2)"
+    n = parse_model_v2(d)
+    with pytest.raises(ModelLoadError, match="not a declared state"):
+        collect_lag_requests(n)

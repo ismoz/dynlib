@@ -35,7 +35,7 @@ def _build_name_maps(spec: ModelSpec) -> NameMaps:
     s2i, p2i = _state_param_maps(spec)
     aux_names = tuple((spec.aux or {}).keys())
     funcs = _functions_table(spec)
-    return NameMaps(s2i, p2i, aux_names, functions=funcs)
+    return NameMaps(s2i, p2i, aux_names, functions=funcs, lag_map=spec.lag_map)
 
 def _aux_defs(spec: ModelSpec) -> Dict[str, str]:
     return dict(spec.aux or {})
@@ -52,7 +52,9 @@ def _rhs_items(spec: ModelSpec) -> List[Tuple[int, str]]:
 def _compile_rhs(spec: ModelSpec, nmap: NameMaps):
     """
     Emit a single function:
-        def rhs(t, y_vec, dy_out, params): dy_out[i] = <lowered_expr>; ...
+        def rhs(t, y_vec, dy_out, params, ss, iw0): dy_out[i] = <lowered_expr>; ...
+    
+    ss and iw0 are only used if lag notation is present in expressions.
     """
     import ast
     body: List[ast.stmt] = []
@@ -136,6 +138,8 @@ def _compile_rhs(spec: ModelSpec, nmap: NameMaps):
                     ast.arg(arg="y_vec"),
                     ast.arg(arg="dy_out"),
                     ast.arg(arg="params"),
+                    ast.arg(arg="ss"),
+                    ast.arg(arg="iw0"),
                 ], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]),
                 body=body if body else [ast.Pass()],
                 decorator_list=[],
@@ -220,7 +224,7 @@ def _compile_action_block_ast(block_lines: List[Tuple[str, str]], spec: ModelSpe
 def _emit_events_function(spec: ModelSpec, phase: str, nmap: NameMaps):
     """
     Emit a single function:
-        def events_phase(t, y_vec, params, evt_log_scratch):
+        def events_phase(t, y_vec, params, evt_log_scratch, ss, iw0):
             if <cond>: 
                 <mutations>
                 [fill evt_log_scratch with log values if log is non-empty]
@@ -234,6 +238,8 @@ def _emit_events_function(spec: ModelSpec, phase: str, nmap: NameMaps):
     
     All log values (including "t" if present) are written to EVT_LOG_DATA.
     The "t" signal is treated like any other signal - no special EVT_TIME buffer.
+    
+    ss and iw0 are only used if lag notation is present in expressions.
     """
     import ast
     body: List[ast.stmt] = []
@@ -305,6 +311,8 @@ def _emit_events_function(spec: ModelSpec, phase: str, nmap: NameMaps):
                     ast.arg(arg="y_vec"), 
                     ast.arg(arg="params"),
                     ast.arg(arg="evt_log_scratch"),
+                    ast.arg(arg="ss"),
+                    ast.arg(arg="iw0"),
                 ], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]),
                 body=body if body else [ast.Return(value=ast.Tuple(elts=[
                     ast.Constant(value=-1),

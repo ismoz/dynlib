@@ -127,22 +127,22 @@ class RK4Spec:
             y_stage = sp[:n]
             
             # Stage 1: k1 = f(t, y)
-            rhs(t, y_curr, k1, params)
+            rhs(t, y_curr, k1, params, ss, iw0)
             
             # Stage 2: k2 = f(t + dt/2, y + dt/2 * k1)
             for i in range(n):
                 y_stage[i] = y_curr[i] + 0.5 * dt * k1[i]
-            rhs(t + 0.5 * dt, y_stage, k2, params)
+            rhs(t + 0.5 * dt, y_stage, k2, params, ss, iw0)
             
             # Stage 3: k3 = f(t + dt/2, y + dt/2 * k2)
             for i in range(n):
                 y_stage[i] = y_curr[i] + 0.5 * dt * k2[i]
-            rhs(t + 0.5 * dt, y_stage, k3, params)
+            rhs(t + 0.5 * dt, y_stage, k3, params, ss, iw0)
             
             # Stage 4: k4 = f(t + dt, y + dt * k3)
             for i in range(n):
                 y_stage[i] = y_curr[i] + dt * k3[i]
-            rhs(t + dt, y_stage, k4, params)
+            rhs(t + dt, y_stage, k4, params, ss, iw0)
             
             # Combine: y_prop = y + dt/6 * (k1 + 2*k2 + 2*k3 + k4)
             for i in range(n):

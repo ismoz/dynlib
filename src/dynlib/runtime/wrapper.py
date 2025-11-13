@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Callable, Mapping, Dict, Optional
+from typing import Callable, Mapping, Dict, Optional, Tuple
 import warnings
 import numpy as np
 
@@ -45,6 +45,7 @@ def run_with_wrapper(
     workspace_seed: Mapping[str, np.ndarray] | None = None,
     discrete: bool = False,
     target_steps: Optional[int] = None,
+    lag_state_info: list[Tuple[int, int, int, int]] | None = None,  # NEW: lag metadata as indices
 ) -> Results:
     """
     JIT-free orchestrator. Allocates banks/buffers, calls the compiled runner
@@ -104,6 +105,9 @@ def run_with_wrapper(
     # Apply workspace seed (for resume scenarios) before entering runner
     if workspace_seed:
         _apply_workspace_seed(banks, workspace_seed)
+    elif lag_state_info:
+        # Initialize lag buffers with IC (if any lags present and not resuming)
+        _initialize_lag_buffers_by_index(banks, y_curr, lag_state_info)
 
     # Proposals / outs (len-1 where applicable)
     y_prop  = np.zeros((n_state,), dtype=dtype)
@@ -260,3 +264,27 @@ def _capture_workspace(banks: WorkBanks) -> Dict[str, np.ndarray]:
             continue
         snapshot[name] = np.array(data, copy=True)
     return snapshot
+
+
+def _initialize_lag_buffers_by_index(
+    banks: WorkBanks,
+    y_curr: np.ndarray,
+    lag_state_info: list[Tuple[int, int, int, int]],  # [(state_idx, depth, ss_offset, iw0_index), ...]
+) -> None:
+    """
+    Initialize lag buffers with initial condition values using state indices.
+    
+    Args:
+        banks: WorkBanks containing ss and iw0 arrays
+        y_curr: Current state vector (IC at t0)
+        lag_state_info: List of (state_idx, depth, ss_offset, iw0_index) for each lagged state
+    """
+    for state_idx, depth, ss_offset, iw0_index in lag_state_info:
+        ic_value = y_curr[state_idx]
+        
+        # Fill circular buffer with IC
+        for i in range(depth):
+            banks.ss[ss_offset + i] = ic_value
+        
+        # Set head to last position (depth - 1)
+        banks.iw0[iw0_index] = depth - 1

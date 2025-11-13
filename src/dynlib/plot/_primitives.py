@@ -229,8 +229,13 @@ def _resolve_unary_map_k(
                         raise KeyError(f"Unknown fixed key '{k}'.")
 
         r_idx = param_index.get("r")
+        struct = getattr(obj, "struct", None)
+        ss_size = int(getattr(struct, "ss_size", 0)) if struct is not None else 0
+        iw0_size = int(getattr(struct, "iw0_size", 0)) if struct is not None else 0
         y_seed = y_base.copy()
         params_seed = params_base.copy()
+        ss_seed = np.zeros(ss_size, dtype=dtype)
+        iw0_seed = np.zeros(iw0_size, dtype=np.int32)
 
         def g_model(k_iter: int, x: float) -> float:
             t_k = float(t0 + k_iter * dt)
@@ -240,7 +245,9 @@ def _resolve_unary_map_k(
             if r is not None and r_idx is not None:
                 params_arr[r_idx] = float(r)
             y_next = np.empty_like(y_seed)
-            rhs_fn(t_k, y, y_next, params_arr)
+            ss_arr = ss_seed.copy() if ss_seed.size else ss_seed
+            iw0_arr = iw0_seed.copy() if iw0_seed.size else iw0_seed
+            rhs_fn(t_k, y, y_next, params_arr, ss_arr, iw0_arr)
             return float(y_next[tgt])
 
         return g_model

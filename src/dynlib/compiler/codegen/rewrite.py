@@ -24,6 +24,8 @@ class NameMaps:
     aux_names: Tuple[str, ...]
     # function table: name -> (argnames, expr_str)
     functions: Dict[str, Tuple[Tuple[str, ...], str]]
+    # lag map: state_name -> (max_depth, ss_offset, iw0_index)
+    lag_map: Dict[str, Tuple[int, int, int]] = None
 
 # Map DSL math names → math.<fn> (Numba-friendly)
 _MATH_FUNCS = {
@@ -74,6 +76,27 @@ class _NameLowerer(ast.NodeTransformer):
         return node
     
     def visit_Call(self, node: ast.Call):
+        # Check for lag_<name>(k) pattern
+        if isinstance(node.func, ast.Name) and node.func.id.startswith("lag_"):
+            state_name = node.func.id[4:]  # remove "lag_" prefix
+            if len(node.args) != 1 or not isinstance(node.args[0], ast.Constant):
+                from dynlib.errors import ModelLoadError
+                raise ModelLoadError(
+                    f"lag_{state_name}() requires exactly one integer literal argument"
+                )
+            k = int(node.args[0].value)
+            return self._make_lag_access(state_name, k, node)
+        
+        # Check for prev_<name> pattern (no args expected)
+        if isinstance(node.func, ast.Name) and node.func.id.startswith("prev_"):
+            state_name = node.func.id[5:]  # remove "prev_" prefix
+            if len(node.args) != 0:
+                from dynlib.errors import ModelLoadError
+                raise ModelLoadError(
+                    f"prev_{state_name} should be called without arguments (it's equivalent to lag_{state_name}(1))"
+                )
+            return self._make_lag_access(state_name, 1, node)
+        
         # Lower function calls: inline user-defined function bodies
         if isinstance(node.func, ast.Name) and node.func.id in self.fn_defs:
             argnames, body_ast = self.fn_defs[node.func.id]
@@ -100,6 +123,76 @@ class _NameLowerer(ast.NodeTransformer):
                 node,
             )
         return self.generic_visit(node)
+    
+    def _make_lag_access(self, state_name: str, k: int, node: ast.AST) -> ast.AST:
+        """
+        Generate AST for accessing lag buffer:
+        
+        ss[ss_offset + ((iw0[iw0_index] - k) % depth)]
+        
+        Where:
+          - ss_offset: starting lane in ss for this state's circular buffer
+          - iw0_index: slot in iw0 for this state's head pointer
+          - depth: max lag depth for this state
+          - k: lag amount (1, 2, 3, ...)
+        """
+        from dynlib.errors import ModelLoadError
+        
+        if self.nmap.lag_map is None or state_name not in self.nmap.lag_map:
+            raise ModelLoadError(
+                f"lag_{state_name}({k}) or prev_{state_name} used, "
+                f"but '{state_name}' is not available for lagging. "
+                f"This is an internal error - lag detection should have caught this."
+            )
+        
+        buffer_len, ss_offset, iw0_index = self.nmap.lag_map[state_name]
+        max_supported = buffer_len - 1
+        
+        if k > max_supported:
+            raise ModelLoadError(
+                f"lag_{state_name}({k}) exceeds detected max depth {max_supported}. "
+                f"This is an internal error - lag detection should have caught this."
+            )
+        
+        # Generate: ss[ss_offset + ((iw0[iw0_index] - k) % depth)]
+        # Note: ss is indexed by lanes, not elements, so ss_offset is already in lane units
+        
+        # iw0[iw0_index]
+        head_access = ast.Subscript(
+            value=ast.Name(id="iw0", ctx=ast.Load()),
+            slice=ast.Constant(value=iw0_index),
+            ctx=ast.Load(),
+        )
+        
+        # (iw0[iw0_index] - k)
+        head_minus_k = ast.BinOp(
+            left=head_access,
+            op=ast.Sub(),
+            right=ast.Constant(value=k),
+        )
+        
+        # (iw0[iw0_index] - k) % depth
+        modulo = ast.BinOp(
+            left=head_minus_k,
+            op=ast.Mod(),
+            right=ast.Constant(value=buffer_len),
+        )
+        
+        # ss_offset + ((iw0[iw0_index] - k) % depth)
+        index_expr = ast.BinOp(
+            left=ast.Constant(value=ss_offset),
+            op=ast.Add(),
+            right=modulo,
+        )
+        
+        # ss[...]
+        lag_access = ast.Subscript(
+            value=ast.Name(id="ss", ctx=ast.Load()),
+            slice=index_expr,
+            ctx=ast.Load(),
+        )
+        
+        return ast.copy_location(lag_access, node)
 
     @staticmethod
     def _clone(node: ast.AST) -> ast.AST:
@@ -130,7 +223,9 @@ def lower_expr_node(expr: str, nmap: NameMaps, *, aux_defs: Dict[str, str] | Non
 
 def compile_scalar_expr(expr: str, nmap: NameMaps, *, aux_defs: Dict[str, str] | None = None, fn_defs: Dict[str, Tuple[Tuple[str, ...], str]] | None = None) -> Callable:
     """
-    Return a pure-numeric callable: f(t, y_vec, params) -> float
+    Return a pure-numeric callable: f(t, y_vec, params, ss, iw0) -> float
+    
+    ss and iw0 are only used if lag notation is present in the expression.
     """
     lowered = lower_expr_node(expr, nmap, aux_defs=aux_defs, fn_defs=fn_defs)
     mod = ast.Module(
@@ -138,7 +233,13 @@ def compile_scalar_expr(expr: str, nmap: NameMaps, *, aux_defs: Dict[str, str] |
             ast.Import(names=[ast.alias(name="math", asname=None)]),
             ast.FunctionDef(
                 name="_f",
-                args=ast.arguments(posonlyargs=[], args=[ast.arg(arg="t"), ast.arg(arg="y_vec"), ast.arg(arg="params")], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]),
+                args=ast.arguments(posonlyargs=[], args=[
+                    ast.arg(arg="t"), 
+                    ast.arg(arg="y_vec"), 
+                    ast.arg(arg="params"),
+                    ast.arg(arg="ss"),
+                    ast.arg(arg="iw0"),
+                ], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]),
                 body=[ast.Return(value=lowered)],
                 decorator_list=[],
             ),
@@ -149,4 +250,3 @@ def compile_scalar_expr(expr: str, nmap: NameMaps, *, aux_defs: Dict[str, str] |
     ns: Dict[str, object] = {}
     exec(compile(mod, "<dsl-lowered>", "exec"), ns, ns)
     return ns["_f"]
-

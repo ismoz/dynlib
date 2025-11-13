@@ -1,7 +1,7 @@
 # src/dynlib/runtime/model.py
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Callable, Optional, Dict
+from typing import Callable, Optional, Dict, Tuple
 from pathlib import Path
 import numpy as np
 
@@ -45,6 +45,7 @@ class Model:
     events_pre_source: Optional[str] = None
     events_post_source: Optional[str] = None
     stepper_source: Optional[str] = None
+    lag_state_info: Optional[list[Tuple[int, int, int, int]]] = None
     
     def export_sources(self, output_dir: str | Path) -> Dict[str, Path]:
         """
@@ -85,4 +86,3 @@ class Model:
                 exported[name] = file_path
         
         return exported
-

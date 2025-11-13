@@ -36,8 +36,10 @@ def test_block_form_only():
     y_vec = np.array([1.0, 0.5], dtype=np.float64)
     dy_out = np.zeros(2, dtype=np.float64)
     params = np.array([2.0, 0.5], dtype=np.float64)
+    ss = np.zeros(0, dtype=np.float64)
+    iw0 = np.zeros(0, dtype=np.int32)
     
-    callables.rhs(0.0, y_vec, dy_out, params)
+    callables.rhs(0.0, y_vec, dy_out, params, ss, iw0)
     
     # dx = -a*x = -2.0*1.0 = -2.0
     # dy = x - b*y = 1.0 - 0.5*0.5 = 0.75
@@ -66,8 +68,10 @@ def test_block_form_d_paren_syntax():
     y_vec = np.array([1.0, 0.5], dtype=np.float64)
     dy_out = np.zeros(2, dtype=np.float64)
     params = np.array([2.0], dtype=np.float64)
+    ss = np.zeros(0, dtype=np.float64)
+    iw0 = np.zeros(0, dtype=np.int32)
     
-    callables.rhs(0.0, y_vec, dy_out, params)
+    callables.rhs(0.0, y_vec, dy_out, params, ss, iw0)
     
     # d(x) = -a*x = -2.0*1.0 = -2.0
     # d(y) = x = 1.0
@@ -94,8 +98,10 @@ def test_mixed_form_allowed():
     y_vec = np.array([1.0, 0.5], dtype=np.float64)
     dy_out = np.zeros(2, dtype=np.float64)
     params = np.array([2.0, 0.5], dtype=np.float64)
+    ss = np.zeros(0, dtype=np.float64)
+    iw0 = np.zeros(0, dtype=np.int32)
     
-    callables.rhs(0.0, y_vec, dy_out, params)
+    callables.rhs(0.0, y_vec, dy_out, params, ss, iw0)
     
     # x from rhs: dx = -a*x = -2.0
     # y from block: dy = x - b*y = 0.75
@@ -183,8 +189,10 @@ def test_block_form_with_aux():
     y_vec = np.array([1.0, 0.5], dtype=np.float64)
     dy_out = np.zeros(2, dtype=np.float64)
     params = np.array([2.0], dtype=np.float64)
+    ss = np.zeros(0, dtype=np.float64)
+    iw0 = np.zeros(0, dtype=np.int32)
     
-    callables.rhs(0.0, y_vec, dy_out, params)
+    callables.rhs(0.0, y_vec, dy_out, params, ss, iw0)
     
     # dx = -a*x = -2.0*1.0 = -2.0
     # dy = E = 0.5*a*x**2 = 0.5*2.0*1.0 = 1.0
@@ -213,8 +221,10 @@ def test_block_form_with_functions():
     y_vec = np.array([1.0], dtype=np.float64)
     dy_out = np.zeros(1, dtype=np.float64)
     params = np.array([2.0], dtype=np.float64)
+    ss = np.zeros(0, dtype=np.float64)
+    iw0 = np.zeros(0, dtype=np.int32)
     
-    callables.rhs(0.0, y_vec, dy_out, params)
+    callables.rhs(0.0, y_vec, dy_out, params, ss, iw0)
     
     # dx = decay(x, a) = -a*x = -2.0*1.0 = -2.0
     assert abs(dy_out[0] - (-2.0)) < 1e-10
@@ -244,8 +254,10 @@ def test_empty_lines_in_block_ignored():
     y_vec = np.array([1.0, 0.5], dtype=np.float64)
     dy_out = np.zeros(2, dtype=np.float64)
     params = np.array([2.0], dtype=np.float64)
+    ss = np.zeros(0, dtype=np.float64)
+    iw0 = np.zeros(0, dtype=np.int32)
     
-    callables.rhs(0.0, y_vec, dy_out, params)
+    callables.rhs(0.0, y_vec, dy_out, params, ss, iw0)
     
     assert abs(dy_out[0] - (-2.0)) < 1e-10
     assert abs(dy_out[1] - 1.0) < 1e-10
@@ -335,8 +347,10 @@ def test_map_model_with_direct_assignment():
     y_vec = np.array([1.0], dtype=np.float64)
     dy_out = np.zeros(1, dtype=np.float64)
     params = np.array([0.9], dtype=np.float64)
+    ss = np.zeros(0, dtype=np.float64)
+    iw0 = np.zeros(0, dtype=np.int32)
     
-    callables.rhs(0.0, y_vec, dy_out, params)
+    callables.rhs(0.0, y_vec, dy_out, params, ss, iw0)
     
     # For map: next state = a*x = 0.9*1.0 = 0.9
     assert abs(dy_out[0] - 0.9) < 1e-10
@@ -368,11 +382,11 @@ def test_map_model_with_variable_starting_with_d():
     dy_out = np.zeros(2, dtype=np.float64)
     params = np.array([0.95], dtype=np.float64)
     
-    callables.rhs(0.0, y_vec, dy_out, params)
+    ss = np.zeros(0, dtype=np.float64)
+    iw0 = np.zeros(0, dtype=np.int32)
+    callables.rhs(0.0, y_vec, dy_out, params, ss, iw0)
     
     # delta = delta * rate = 0.1 * 0.95 = 0.095
     # data = data + delta = 1.0 + 0.1 = 1.1
     assert abs(dy_out[0] - 0.095) < 1e-10
     assert abs(dy_out[1] - 1.1) < 1e-10
-
-

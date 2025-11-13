@@ -55,6 +55,9 @@ class StructSpec:
     # Capabilities (mirror metadata where relevant)
     embedded_order: int | None = None
     stiff_ok: bool = False
+    
+    # Lag system metadata (reserved prefix in iw0)
+    iw0_lag_reserved: int = 0  # Number of iw0 slots reserved for lag heads
 
 
 class StepperSpec(Protocol):

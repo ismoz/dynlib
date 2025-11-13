@@ -57,9 +57,58 @@ You may use multiple lanes per bank (e.g., `sw0[:n]`, `sw0[n:2*n]`).
 
 ## `iw0:int32` — Indices & Heads
 
-- **Who writes/reads:** Runner (maintenance hooks) and/or stepper.
-- **Lifetime:** Persistent across steps.
-- **Use for:** Ring heads, counters, small integer state (e.g., multi-step position, history window indices, retry counters if needed).
+### Ownership & Partitioning
+
+**When lag system is active** (`use_history=True` due to lagged variables in DSL):
+
+- **`iw0[0..iw0_lag_reserved-1]`**: Reserved for lag circular buffer heads
+  - One slot per lagged state
+  - Managed automatically by runner after step commit
+  - **DO NOT MODIFY** in stepper code
+
+- **`iw0[iw0_lag_reserved..]`**: Available for stepper-specific use
+  - Ring heads, step counters, retry flags, etc.
+  - Stepper must offset all accesses by `iw0_lag_reserved`
+
+**When no lags are present** (`use_history=False` or no lag notation in model):
+- `iw0_lag_reserved = 0`
+- Entire `iw0` is available to stepper
+- No offset needed
+
+### Stepper Implementation Pattern
+
+```python
+# In stepper emit():
+def my_stepper(..., iw0, ...):
+    # Access stepper-owned indices with offset
+    LAG_RESERVED = iw0_lag_reserved  # compile-time constant from metadata
+    
+    my_counter = iw0[LAG_RESERVED + 0]
+    my_ring_head = iw0[LAG_RESERVED + 1]
+    
+    # ... stepper logic ...
+    
+    iw0[LAG_RESERVED + 0] = my_counter + 1
+    iw0[LAG_RESERVED + 1] = (my_ring_head + 1) % history_depth
+```
+
+**Important:** The `iw0_lag_reserved` constant is embedded in generated stepper 
+source code, ensuring zero runtime overhead.
+
+### Who writes/reads
+
+- **Lag system (runner):** Writes to `iw0[0..iw0_lag_reserved-1]` only
+- **Stepper:** Reads/writes `iw0[iw0_lag_reserved..]` only
+- **Never overlap:** Strict partitioning enforced at compile time
+
+### Lifetime
+
+Persistent across steps.
+
+### Use for
+
+- **Lag heads (automatic):** Circular buffer positions for lagged states
+- **Stepper indices:** Ring heads, counters, small integer state (e.g., multi-step position, history window indices, retry counters if needed)
 
 ---
 

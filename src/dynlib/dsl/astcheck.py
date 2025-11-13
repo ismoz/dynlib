@@ -7,6 +7,7 @@ from dynlib.errors import ModelLoadError
 
 __all__ = [
     "collect_names",
+    "collect_lag_requests",
     "validate_expr_acyclic",
     "validate_event_legality",
     "validate_event_tags",
@@ -28,6 +29,10 @@ _TAG_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 _DFUNC_PAREN = re.compile(r'^d\(\s*([A-Za-z_]\w*)\s*\)$')
 _DFUNC_FLAT = re.compile(r'^d([A-Za-z_]\w*)$')
 
+# Regex patterns for lag notation
+_LAG_CALL = re.compile(r'lag_([A-Za-z_]\w*)\s*\(\s*(\d+)\s*\)')
+_PREV_CALL = re.compile(r'prev_([A-Za-z_]\w*)\b')
+
 
 def collect_names(normal: Dict[str, Any]) -> Dict[str, Set[str]]:
     states = set(normal["states"].keys())
@@ -46,6 +51,90 @@ def collect_names(normal: Dict[str, Any]) -> Dict[str, Set[str]]:
 
 def _find_idents(expr: str) -> Set[str]:
     return set(m.group(0) for m in _IDENT.finditer(expr))
+
+
+def _find_lag_requests(expr: str) -> Dict[str, int]:
+    """
+    Scan expression for lag_<name>(k) and prev_<name> patterns.
+    Returns {state_name: max_lag_depth}.
+    
+    Example: "lag_x(2) + lag_x(5) + prev_y" -> {"x": 5, "y": 1}
+    """
+    lag_depths: Dict[str, int] = {}
+    
+    # Find all lag_<name>(k) calls
+    for match in _LAG_CALL.finditer(expr):
+        name = match.group(1)
+        depth = int(match.group(2))
+        if depth < 1:
+            raise ModelLoadError(f"Lag depth must be positive, got lag_{name}({depth})")
+        if depth > 1000:
+            raise ModelLoadError(f"Lag depth {depth} exceeds sanity limit (1000) for lag_{name}")
+        lag_depths[name] = max(lag_depths.get(name, 0), depth)
+    
+    # Find all prev_<name> calls (equivalent to lag_<name>(1))
+    for match in _PREV_CALL.finditer(expr):
+        name = match.group(1)
+        lag_depths[name] = max(lag_depths.get(name, 0), 1)
+    
+    return lag_depths
+
+
+def collect_lag_requests(normal: Dict[str, Any]) -> Dict[str, int]:
+    """
+    Scan all expressions in the model for lag notation.
+    Returns {state_name: max_lag_depth} for all lagged states.
+    
+    Validates:
+    - Lagged names must be declared states (not params or aux)
+    - Lag depths are positive integers within sanity limits
+    """
+    states = set(normal["states"].keys())
+    lag_requests: Dict[str, int] = {}
+    
+    def merge_requests(expr: str, location: str) -> None:
+        if not expr:
+            return
+        found = _find_lag_requests(expr)
+        for name, depth in found.items():
+            # Validate that lagged variable is a state
+            if name not in states:
+                raise ModelLoadError(
+                    f"lag_{name}() or prev_{name} used in {location}, "
+                    f"but '{name}' is not a declared state. "
+                    f"Lag notation only applies to state variables."
+                )
+            lag_requests[name] = max(lag_requests.get(name, 0), depth)
+    
+    # Scan equations
+    eq = normal.get("equations", {})
+    if eq.get("rhs"):
+        for name, expr in eq["rhs"].items():
+            merge_requests(expr, f"[equations.rhs.{name}]")
+    if eq.get("expr"):
+        merge_requests(eq["expr"], "[equations].expr")
+    
+    # Scan aux
+    for name, expr in (normal.get("aux") or {}).items():
+        merge_requests(expr, f"[aux.{name}]")
+    
+    # Scan functions
+    for name, fdef in (normal.get("functions") or {}).items():
+        merge_requests(fdef.get("expr", ""), f"[functions.{name}].expr")
+    
+    # Scan events
+    for ev in (normal.get("events") or []):
+        ev_name = ev["name"]
+        merge_requests(ev.get("cond", ""), f"[events.{ev_name}].cond")
+        
+        if ev.get("action_keyed"):
+            for tgt, expr in ev["action_keyed"].items():
+                merge_requests(expr, f"[events.{ev_name}].action.{tgt}")
+        
+        if ev.get("action_block"):
+            merge_requests(ev["action_block"], f"[events.{ev_name}].action (block)")
+    
+    return lag_requests
 
 
 def _edges_for_aux_and_functions(normal: Dict[str, Any]) -> Dict[str, Set[str]]:

@@ -118,7 +118,7 @@ class EulerSpec:
             dy = sw0[:n]
             
             # Evaluate RHS
-            rhs(t, y_curr, dy, params)
+            rhs(t, y_curr, dy, params, ss, iw0)
             
             # Propose next state
             for i in range(n):

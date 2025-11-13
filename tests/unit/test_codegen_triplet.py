@@ -98,10 +98,12 @@ def test_rhs_eval_jit_parity():
     p = np.array([2.0], dtype=np.float64)
     dy0 = np.zeros_like(y)
     dy1 = np.zeros_like(y)
+    ss = np.zeros(0, dtype=np.float64)
+    iw0 = np.zeros(0, dtype=np.int32)
 
     t = 0.0
-    cp0.rhs(t, y, dy0, p)
-    cp1.rhs(t, y, dy1, p)
+    cp0.rhs(t, y, dy0, p, ss, iw0)
+    cp1.rhs(t, y, dy1, p, ss, iw0)
 
     # dx/dt = -a*x = -2*1 = -2
     assert dy0.shape == (1,)
@@ -117,12 +119,14 @@ def test_events_only_mutate_states_params_and_effect_is_visible():
     y = np.array([1.0], dtype=np.float64)
     p = np.array([2.0], dtype=np.float64)
     scratch = np.zeros(1, dtype=np.float64)  # event log scratch buffer
+    ss = np.zeros(0, dtype=np.float64)
+    iw0 = np.zeros(0, dtype=np.int32)
 
     # pre does nothing; post adds +1.0 to x
-    pre_code, pre_log = cp.events_pre(0.0, y, p, scratch)
+    pre_code, pre_log = cp.events_pre(0.0, y, p, scratch, ss, iw0)
     assert pre_code == -1  # no event fired
     assert y[0] == pytest.approx(1.0)
-    post_code, post_log = cp.events_post(0.0, y, p, scratch)
+    post_code, post_log = cp.events_post(0.0, y, p, scratch, ss, iw0)
     assert post_code == 0  # event fired (always fires since cond is implicit True)
     assert post_log == 0  # no log items
     assert y[0] == pytest.approx(2.0)
@@ -135,10 +139,12 @@ def test_aux_is_recomputed_inside_rhs_every_call():
     p = np.array([2.0], dtype=np.float64)
 
     dy = np.zeros_like(y)
-    cp.rhs(0.0, y, dy, p)
+    ss = np.zeros(0, dtype=np.float64)
+    iw0 = np.zeros(0, dtype=np.int32)
+    cp.rhs(0.0, y, dy, p, ss, iw0)
     assert dy[0] == pytest.approx(-6.0)
 
     # Change y; aux depends on x and must be recomputed
     y[0] = 4.0
-    cp.rhs(0.0, y, dy, p)
+    cp.rhs(0.0, y, dy, p, ss, iw0)
     assert dy[0] == pytest.approx(-8.0)

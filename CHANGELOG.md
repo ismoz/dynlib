@@ -2,6 +2,46 @@
 
 ---
 
+## [2.23.0] – 2025-11-14
+### Added
+- Added lag system to access historical state values in models using `lag_<name>(k)` for k steps
+  back or `prev_<name>` for one step back. This enables delay differential equations and lagged 
+  feedback in both ODE and map models.
+- Added automatic detection and validation of lag usage in model expressions, with sanity limits 
+  on lag depths.
+- Added circular buffer storage for lagged states using existing `ss` and `iw0` stepper banks with 
+  partitioning to avoid ABI changes.
+- Added lag buffer initialization with initial conditions and updates after committed steps only.
+- Added comprehensive documentation for the lag system in `docs/lag_system.md`.
+- Added `lag_state_info` metadata to `FullModel` and `Model` classes for runtime lag buffer 
+  management.
+
+### Changed
+- Updated all stepper implementations (`euler`, `rk4`, `rk45`, `map`) to pass `ss` and `iw0` 
+  parameters to RHS and event functions for lag support.
+- Updated runner functions (`runner.py`, `runner_discrete.py`) to maintain lag buffers after step 
+  commits and embed lag metadata as compile-time constants.
+- Updated code generation (`emitter.py`, `rewrite.py`) to handle lag notation in expressions and 
+  generate circular buffer access code.
+- Updated model building (`build.py`) to augment stepper struct specs with lag requirements and 
+  convert lag maps to runtime indices.
+- Updated DSL parsing and validation (`astcheck.py`, `spec.py`) to collect lag requests and build 
+  lag metadata.
+- Updated simulation wrapper (`wrapper.py`) to initialize lag buffers on first run.
+- Updated stepper banks documentation (`stepper_banks.md`) with `iw0` partitioning rules for lag 
+  heads.
+- Updated plotting primitives (`_primitives.py`) to handle lag buffers in cobweb plots.
+
+### Tests
+- Added comprehensive unit tests for lag system functionality in `tests/unit/test_lag_system.py`, 
+  including buffer tracking, resume behavior, and correctness validation.
+- Updated existing tests to accommodate new function signatures with `ss` and `iw0` parameters.
+
+### Known Issues
+- Some lag feature related issues will be solved in the following updates.
+
+---
+
 ## [2.22.0] – 2025-11-13
 ### Added
 - Added support for builtin models using the "builtin://" URI scheme. This lets users access bundled 

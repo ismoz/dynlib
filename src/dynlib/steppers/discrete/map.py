@@ -109,7 +109,7 @@ class MapSpec:
             y_next = sw0[:n]
 
             # Compute next state directly into scratch
-            rhs(t, y_curr, y_next, params)
+            rhs(t, y_curr, y_next, params, ss, iw0)
 
             # Copy proposal to output buffer; runner guard enforces finiteness
             for i in range(n):

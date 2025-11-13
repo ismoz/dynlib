@@ -40,13 +40,14 @@ class RunnerCacheRequest:
     structsig: Tuple[int, ...]
     dtype: str
     cache_root: Path
+    lag_state_info: Tuple[Tuple[int, int, int, int], ...] = ()
 
 
 @dataclass(frozen=True)
 class RunnerCacheConfig:
     module_prefix: str
     export_name: str
-    render_module_source: Callable[[], str]
+    render_module_source: Callable[[RunnerCacheRequest], str]
     env_pins_factory: Callable[[str], Dict[str, str]]
 
 
@@ -205,7 +206,7 @@ class RunnerDiskCache:
             encoding="utf-8",
         )
 
-        module_source = self._config.render_module_source()
+        module_source = self._config.render_module_source(self.request)
         (tmp_dir / "runner_mod.py").write_text(module_source, encoding="utf-8")
 
         meta_payload = {
@@ -235,6 +236,10 @@ class RunnerDiskCache:
             "stepper": self.request.stepper_name,
             "structsig": [int(x) for x in self.request.structsig],
             "dtype": canonical_dtype_name(self.request.dtype),
+            "lag_state_info": [
+                [int(a), int(b), int(c), int(d)]
+                for (a, b, c, d) in self.request.lag_state_info
+            ],
             "env": self.env_pins,
         }
 

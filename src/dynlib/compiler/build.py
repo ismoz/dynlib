@@ -55,6 +55,7 @@ class FullModel:
     events_pre_source: Optional[str] = None
     events_post_source: Optional[str] = None
     stepper_source: Optional[str] = None
+    lag_state_info: Optional[list[Tuple[int, int, int, int]]] = None  # [(state_idx, depth, ss_offset, iw0_index), ...]
 
 @dataclass
 class _StepperCacheEntry:
@@ -558,8 +559,42 @@ def build(
             model_kind=spec.kind
         )
     
-    struct = stepper_spec.struct_spec()
+    # Get base struct from stepper
+    base_struct = stepper_spec.struct_spec()
+    
+    # Augment struct with lag requirements from model
+    num_lagged_states = len(spec.lag_map)
+    lag_ss_lanes = sum(depth for depth, _, _ in spec.lag_map.values())
+    
+    # Create augmented struct with lag allocations
+    struct = StructSpec(
+        sp_size=base_struct.sp_size,
+        ss_size=base_struct.ss_size + lag_ss_lanes,  # Add lag buffer lanes
+        sw0_size=base_struct.sw0_size,
+        sw1_size=base_struct.sw1_size,
+        sw2_size=base_struct.sw2_size,
+        sw3_size=base_struct.sw3_size,
+        iw0_size=base_struct.iw0_size + num_lagged_states,  # Add lag head indices
+        bw0_size=base_struct.bw0_size,
+        use_history=base_struct.use_history or (num_lagged_states > 0),  # Enable if lags present
+        use_f_history=base_struct.use_f_history,
+        dense_output=base_struct.dense_output,
+        needs_jacobian=base_struct.needs_jacobian,
+        embedded_order=base_struct.embedded_order,
+        stiff_ok=base_struct.stiff_ok,
+        iw0_lag_reserved=num_lagged_states,  # First N slots reserved for lags
+    )
+    
     structsig = _structsig_from_struct(struct)
+
+    # Convert lag_map to lag_state_info format early for runner wiring
+    lag_state_info_list: Optional[list[Tuple[int, int, int, int]]] = None
+    if spec.lag_map:
+        state_to_idx = {name: idx for idx, name in enumerate(spec.states)}
+        lag_state_info_list = [
+            (state_to_idx[state_name], depth, ss_offset, iw0_index)
+            for state_name, (depth, ss_offset, iw0_index) in spec.lag_map.items()
+        ]
 
     cache_root_path: Optional[Path] = None
     if jit and disk_cache:
@@ -625,8 +660,13 @@ def build(
                 structsig=structsig,
                 dtype=dtype_str,
                 cache_root=cache_root_path,
+                lag_state_info=lag_state_info_list,
             )
-        runner_fn = runner_discrete_codegen.get_runner_discrete(jit=jit, disk_cache=disk_cache)
+        runner_fn = runner_discrete_codegen.get_runner_discrete(
+            jit=jit,
+            disk_cache=disk_cache,
+            lag_state_info=lag_state_info_list,
+        )
     else:
         # Use continuous runner (default)
         if jit and disk_cache and cache_root_path is not None:
@@ -636,8 +676,13 @@ def build(
                 structsig=structsig,
                 dtype=dtype_str,
                 cache_root=cache_root_path,
+                lag_state_info=lag_state_info_list,
             )
-        runner_fn = runner_codegen.get_runner(jit=jit, disk_cache=disk_cache)
+        runner_fn = runner_codegen.get_runner(
+            jit=jit,
+            disk_cache=disk_cache,
+            lag_state_info=lag_state_info_list,
+        )
 
     # Get guards (NaN/Inf detection utilities)
     # Guards follow the same JIT toggle as other components
@@ -673,6 +718,7 @@ def build(
         events_pre_source=pieces.events_pre_source,
         events_post_source=pieces.events_post_source,
         stepper_source=stepper_source if 'stepper_source' in locals() and stepper_source else None,
+        lag_state_info=lag_state_info_list,
     )
 
 

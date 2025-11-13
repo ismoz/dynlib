@@ -35,7 +35,7 @@ import warnings
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Callable, Dict, Optional, Sequence, Tuple
 
 try:
     from importlib import metadata as importlib_metadata
@@ -228,7 +228,7 @@ def runner(
             FLAGS[i] = OK
             i += 1
         # 1. Pre-events on committed state
-        event_code_pre, log_width_pre = events_pre(t, y_curr, params, evt_log_scratch)
+        event_code_pre, log_width_pre = events_pre(t, y_curr, params, evt_log_scratch, ss, iw0)
         
         # Record pre-event if it fired and has log data
         if event_code_pre >= 0 and log_width_pre > 0:
@@ -297,9 +297,17 @@ def runner(
         t = t_prop[0]
         dt = dt_next[0]
         step += 1
+
+        if _LAG_STATE_INFO:
+            for state_idx, depth, ss_offset, iw0_index in _LAG_STATE_INFO:
+                head = int(iw0[iw0_index]) + 1
+                if head >= depth:
+                    head = 0
+                iw0[iw0_index] = head
+                ss[ss_offset + head] = y_curr[state_idx]
         
         # 5. Post-events on committed state
-        event_code_post, log_width_post = events_post(t, y_curr, params, evt_log_scratch)
+        event_code_post, log_width_post = events_post(t, y_curr, params, evt_log_scratch, ss, iw0)
         
         # Record post-event if it fired and has log data
         if event_code_post >= 0 and log_width_post > 0:
@@ -380,6 +388,27 @@ _inproc_callable_cache: Dict[Tuple[str, str], Callable] = {}
 _warned_reasons: set[str] = set()
 _last_runner_cache_hit: bool = False
 
+# Lag metadata injected per model (state_idx, depth, ss_offset, iw0_index)
+_LAG_STATE_INFO: Tuple[Tuple[int, int, int, int], ...] = ()
+
+
+def _normalize_lag_state_info(
+    lag_state_info: Optional[Sequence[Tuple[int, int, int, int]]]
+) -> Tuple[Tuple[int, int, int, int], ...]:
+    if not lag_state_info:
+        return ()
+    return tuple(
+        (int(state_idx), int(depth), int(ss_offset), int(iw0_index))
+        for state_idx, depth, ss_offset, iw0_index in lag_state_info
+    )
+
+
+def _set_runtime_lag_state_info(
+    lag_state_info: Optional[Sequence[Tuple[int, int, int, int]]]
+) -> None:
+    global _LAG_STATE_INFO
+    _LAG_STATE_INFO = _normalize_lag_state_info(lag_state_info)
+
 
 def configure_runner_disk_cache(
     *,
@@ -388,6 +417,7 @@ def configure_runner_disk_cache(
     structsig: Tuple[int, ...],
     dtype: str,
     cache_root: Path,
+    lag_state_info: Optional[Sequence[Tuple[int, int, int, int]]] = None,
 ) -> None:
     """Store the cache context for the next disk-backed runner build."""
     global _pending_cache_request
@@ -397,6 +427,7 @@ def configure_runner_disk_cache(
         structsig=tuple(int(x) for x in structsig),
         dtype=str(dtype),
         cache_root=Path(cache_root).expanduser().resolve(),
+        lag_state_info=_normalize_lag_state_info(lag_state_info),
     )
 
 
@@ -478,7 +509,12 @@ def consume_callable_disk_cache_request() -> Optional[_CallableDiskCacheRequest]
     return req
 
 
-def get_runner(*, jit: bool = True, disk_cache: bool = True) -> Callable:
+def get_runner(
+    *,
+    jit: bool = True,
+    disk_cache: bool = True,
+    lag_state_info: Optional[Sequence[Tuple[int, int, int, int]]] = None,
+) -> Callable:
     """
     Get the runner function, optionally JIT-compiled.
     
@@ -487,6 +523,7 @@ def get_runner(*, jit: bool = True, disk_cache: bool = True) -> Callable:
     
     Args:
         jit: Whether to apply JIT compilation (default True)
+        lag_state_info: Sequence of (state_idx, depth, ss_offset, iw0_index) for lagged states
     
     Returns:
         Runner function (JIT-compiled if requested and available)
@@ -497,6 +534,7 @@ def get_runner(*, jit: bool = True, disk_cache: bool = True) -> Callable:
         - If jit=True and numba installed but compilation fails: raises RuntimeError
     """
     global _last_runner_cache_hit
+    _set_runtime_lag_state_info(lag_state_info)
     _last_runner_cache_hit = False
 
     if not jit:
@@ -839,13 +877,15 @@ class _StepperDiskCache:
         }
 
 
-def _render_runner_module_source() -> str:
+def _render_runner_module_source(request: RunnerCacheRequest) -> str:
     runner_src = textwrap.dedent(inspect.getsource(runner)).lstrip()
     decorated = runner_src.replace("def runner(", "@njit(cache=True)\ndef runner(", 1)
     
     # Import guards inline in the module
     from dynlib.compiler.guards import _render_guards_inline_source
     guards_src = _render_guards_inline_source()
+    lag_literal = _format_lag_state_info_literal(request.lag_state_info)
+    lag_block = f"_LAG_STATE_INFO = {lag_literal}\n"
     
     header = inspect.cleandoc(
         """
@@ -866,7 +906,19 @@ def _render_runner_module_source() -> str:
         __all__ = ["runner"]
         """
     )
-    return f"{header}\n\n{guards_src}\n\n{decorated}\n"
+    return f"{header}\n\n{guards_src}\n\n{lag_block}\n{decorated}\n"
+
+
+def _format_lag_state_info_literal(
+    data: Tuple[Tuple[int, int, int, int], ...]
+) -> str:
+    if not data:
+        return "()"
+    normalized = tuple(
+        (int(a), int(b), int(c), int(d))
+        for (a, b, c, d) in data
+    )
+    return repr(normalized)
 
 
 def _render_callable_module_source(source: str, function_name: str) -> str:

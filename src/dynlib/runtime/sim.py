@@ -1983,6 +1983,7 @@ class Sim:
             workspace_seed=seed.workspace,
             discrete=(target_steps is not None),
             target_steps=target_steps,
+            lag_state_info=getattr(self.model, "lag_state_info", None),  # Pass lag metadata when available
         )
 
     def _state_from_results(

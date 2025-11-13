@@ -63,6 +63,7 @@ class ModelSpec:
     sim: SimDefaults
     tag_index: Dict[str, Tuple[str, ...]]  # tag -> event names, compile-time only
     presets: Tuple[PresetSpec, ...]  # inline presets from DSL
+    lag_map: Dict[str, Tuple[int, int, int]]  # state_name -> (max_depth, ss_offset, iw0_index)
 
 
 # ---- builders ----------------------------------------------------------------
@@ -102,6 +103,7 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
         validate_functions_signature,
         validate_no_duplicate_equation_targets,
         validate_presets,
+        collect_lag_requests,
     )
     
     validate_expr_acyclic(normal)
@@ -110,6 +112,9 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
     validate_functions_signature(normal)
     validate_no_duplicate_equation_targets(normal)
     validate_presets(normal)
+    
+    # Collect lag requests from all expressions
+    lag_requests = collect_lag_requests(normal)
     
     model = normal["model"]
     kind = model["type"]
@@ -161,6 +166,23 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
         )
         for p in (normal.get("presets") or [])
     )
+    
+    # Build lag_map: state_name -> (buffer_len, ss_offset, iw0_index)
+    # buffer_len = max_requested_lag + 1 (extra slot preserves current head)
+    # ss_offset is the starting lane in ss for this state's circular buffer
+    # iw0_index is the slot in iw0 for this state's head pointer
+    lag_map: Dict[str, Tuple[int, int, int]] = {}
+    ss_offset = 0
+    iw0_index = 0
+
+    # Process lagged states in the order they appear in states tuple (deterministic)
+    for state_name in states:
+        if state_name in lag_requests:
+            requested_depth = lag_requests[state_name]
+            buffer_len = requested_depth + 1  # extra slot ensures lag_depth indexing works
+            lag_map[state_name] = (buffer_len, ss_offset, iw0_index)
+            ss_offset += buffer_len  # each lagged state gets buffer_len lanes
+            iw0_index += 1           # each lagged state gets one iw0 slot
 
     return ModelSpec(
         kind=kind,
@@ -178,6 +200,7 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
         sim=sim,
         tag_index=_build_tag_index(events),
         presets=presets,
+        lag_map=lag_map,
     )
 
 
@@ -203,6 +226,7 @@ def _json_canon(obj: Any) -> str:
                 "sim": encode(o.sim),
                 "tag_index": {k: list(v) for k, v in o.tag_index.items()},
                 "presets": [encode(p) for p in o.presets],
+                "lag_map": {k: list(v) for k, v in o.lag_map.items()},
             }
         if isinstance(o, PresetSpec):
             return {
