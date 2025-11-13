@@ -933,6 +933,110 @@ class Sim:
             self._pending_run_cfg_hash = None
             self._last_run_was_resume = False
 
+    def state_vector(
+        self,
+        *,
+        source: Literal["session", "model", "snapshot"] = "session",
+        snapshot: str = "initial",
+        copy: bool = True,
+    ) -> np.ndarray:
+        """
+        Return state values in DSL declaration order as a 1D array.
+
+        source:
+          - "session"  (default): current SessionState values
+          - "model"              : DSL-declared state_ic
+          - "snapshot"           : state values from a named snapshot
+
+        snapshot:
+          - Snapshot name when source="snapshot" (default "initial")
+
+        copy:
+          - If True (default), return a copy. If False, return a view into
+            the underlying storage (mutating it is your responsibility).
+        """
+        if source == "session":
+            arr = self._session_state.y_curr
+        elif source == "model":
+            arr = self.model.spec.state_ic
+        elif source == "snapshot":
+            snap = self._resolve_snapshot(snapshot)
+            arr = snap.state.y_curr
+        else:
+            raise ValueError("source must be 'session', 'model', or 'snapshot'")
+
+        return np.array(arr, dtype=self._dtype, copy=copy)
+
+    def param_vector(
+        self,
+        *,
+        source: Literal["session", "model", "snapshot"] = "session",
+        snapshot: str = "initial",
+        copy: bool = True,
+    ) -> np.ndarray:
+        """
+        Return parameter values in DSL declaration order as a 1D array.
+
+        source:
+          - "session"  (default): current SessionState params
+          - "model"              : DSL-declared param_vals
+          - "snapshot"           : params from a named snapshot
+
+        snapshot:
+          - Snapshot name when source="snapshot" (default "initial")
+        """
+        if source == "session":
+            arr = self._session_state.params_curr
+        elif source == "model":
+            arr = self.model.spec.param_vals
+        elif source == "snapshot":
+            snap = self._resolve_snapshot(snapshot)
+            arr = snap.state.params_curr
+        else:
+            raise ValueError("source must be 'session', 'model', or 'snapshot'")
+
+        return np.array(arr, dtype=self._dtype, copy=copy)
+
+    def state_dict(
+        self,
+        *,
+        source: Literal["session", "model", "snapshot"] = "session",
+        snapshot: str = "initial",
+    ) -> dict[str, float]:
+        """
+        Return state values as a name->value dictionary.
+
+        source:
+          - "session"  (default): current SessionState params
+          - "model"              : DSL-declared param_vals
+          - "snapshot"           : params from a named snapshot
+
+        snapshot:
+          - Snapshot name when source="snapshot" (default "initial")
+        """
+        arr = self.state_vector(source=source, snapshot=snapshot, copy=False)
+        return {name: float(arr[i]) for i, name in enumerate(self.model.spec.states)}
+
+    def param_dict(
+        self,
+        *,
+        source: Literal["session", "model", "snapshot"] = "session",
+        snapshot: str = "initial",
+    ) -> dict[str, float]:
+        """
+        Return parameter values as a name->value dictionary.
+
+        source:
+          - "session"  (default): current SessionState params
+          - "model"              : DSL-declared param_vals
+          - "snapshot"           : params from a named snapshot
+
+        snapshot:
+          - Snapshot name when source="snapshot" (default "initial")
+        """
+        arr = self.param_vector(source=source, snapshot=snapshot, copy=False)
+        return {name: float(arr[i]) for i, name in enumerate(self.model.spec.params)}
+
     def can_resume(self) -> tuple[bool, Optional[str]]:
         """Return (bool, reason) describing whether resume() may be invoked safely."""
         diff = _diff_pins(self._pins, self._session_state.pins)

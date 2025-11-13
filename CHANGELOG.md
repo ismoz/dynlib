@@ -2,6 +2,17 @@
 
 ---
 
+## [2.21.4] – 2025-11-13
+### Added
+- Added `state_vector()`, `param_vector()`, `state_dict()`, and `param_dict()` methods to `Sim` 
+  class. They let getting state and parameter values as arrays or dictionaries from the current 
+  session, model defaults, or saved snapshots.
+
+### Changed
+- Updated `izhikevich.py` to show how to access state/parameter values from snapshots.
+
+---
+
 ## [2.21.3] – 2025-11-13
 ### Added
 - Added `Sim.config()` method to set default simulation settings like dt, max_steps, record options,

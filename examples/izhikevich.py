@@ -60,4 +60,6 @@ series.plot(x=res.t, y=res["v"],
             vlines_color="red")    
 export.show()
 
-print(sim.list_snapshots())
+print("SNAPSHOTS: ", sim.list_snapshots())
+print("Snapshot Parameter Vector: ", sim.param_vector(source="snapshot"))
+print("Snapshot Parameter Dictionary: ", sim.param_dict(source="snapshot"))
