@@ -3,8 +3,8 @@
 ## Overview
 
 The lag system provides access to historical state values in dynlib models using the notation:
+- `lag_<name>()` - Access state `<name>` from one step ago
 - `lag_<name>(k)` - Access state `<name>` from k steps ago
-- `prev_<name>` - Shorthand for `lag_<name>(1)` (one step back)
 
 **Key Features:**
 - ✅ On-demand activation (only lagged states consume memory)
@@ -34,8 +34,8 @@ alpha = 0.3
 # Mix current and lagged states
 x = "r * (alpha * x + (1 - alpha) * lag_x(1)) * (1 - x)"
 
-# Or use prev_ shorthand
-x = "r * (alpha * x + (1 - alpha) * prev_x) * (1 - x)"
+# Use zero-arg shorthand for one step back
+x = "r * (alpha * x + (1 - alpha) * lag_x()) * (1 - x)"
 ```
 
 ### Lag Depths
@@ -301,7 +301,7 @@ ss[0 + ((2 - 2) % 3)] = ss[0] = 0.2 ✓ (step 1 value)
    - Converts `lag_map` to `lag_state_info` for runtime
 
 4. **Expression Lowering** (`compiler/codegen/rewrite.py`)
-   - `_NameLowerer` handles `lag_<name>(k)` and `prev_<name>` calls
+   - `_NameLowerer` handles `lag_<name>(k)` calls (argument optional, defaults to 1)
    - Generates circular buffer access: `ss[offset + ((iw0[idx] - k) % depth)]`
 
 5. **Function Signatures** (`compiler/codegen/emitter.py`)
@@ -351,7 +351,7 @@ alpha = 0.7  # Mix of current and delayed feedback
 
 [equations.rhs]
 # Delay-coupled logistic map
-x = "r * (alpha * x + (1 - alpha) * prev_x) * (1 - x)"
+x = "r * (alpha * x + (1 - alpha) * lag_x()) * (1 - x)"
 
 [sim]
 t0 = 0.0

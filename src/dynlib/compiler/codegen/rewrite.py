@@ -76,26 +76,26 @@ class _NameLowerer(ast.NodeTransformer):
         return node
     
     def visit_Call(self, node: ast.Call):
-        # Check for lag_<name>(k) pattern
+        # Check for lag_<name>(k) pattern (with optional arg defaulting to 1)
         if isinstance(node.func, ast.Name) and node.func.id.startswith("lag_"):
             state_name = node.func.id[4:]  # remove "lag_" prefix
-            if len(node.args) != 1 or not isinstance(node.args[0], ast.Constant):
-                from dynlib.errors import ModelLoadError
+            from dynlib.errors import ModelLoadError
+
+            if len(node.args) == 0:
+                k = 1
+            elif len(node.args) == 1 and isinstance(node.args[0], ast.Constant):
+                k = int(node.args[0].value)
+            else:
                 raise ModelLoadError(
-                    f"lag_{state_name}() requires exactly one integer literal argument"
+                    f"lag_{state_name}() expects no args or a single integer literal"
                 )
-            k = int(node.args[0].value)
+
+            if not isinstance(k, int) or k < 1:
+                raise ModelLoadError(
+                    f"lag_{state_name}({k}) requires a positive integer literal"
+                )
+
             return self._make_lag_access(state_name, k, node)
-        
-        # Check for prev_<name> pattern (no args expected)
-        if isinstance(node.func, ast.Name) and node.func.id.startswith("prev_"):
-            state_name = node.func.id[5:]  # remove "prev_" prefix
-            if len(node.args) != 0:
-                from dynlib.errors import ModelLoadError
-                raise ModelLoadError(
-                    f"prev_{state_name} should be called without arguments (it's equivalent to lag_{state_name}(1))"
-                )
-            return self._make_lag_access(state_name, 1, node)
         
         # Lower function calls: inline user-defined function bodies
         if isinstance(node.func, ast.Name) and node.func.id in self.fn_defs:
@@ -140,7 +140,7 @@ class _NameLowerer(ast.NodeTransformer):
         
         if self.nmap.lag_map is None or state_name not in self.nmap.lag_map:
             raise ModelLoadError(
-                f"lag_{state_name}({k}) or prev_{state_name} used, "
+                f"lag_{state_name}({k}) used, "
                 f"but '{state_name}' is not available for lagging. "
                 f"This is an internal error - lag detection should have caught this."
             )

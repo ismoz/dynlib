@@ -2,6 +2,13 @@
 
 ---
 
+## [2.23.2] – 2025-11-14
+### Changed
+- Removed support for the `prev_<name>` DSL shorthand. Now `lag_<name>()` is used as a shorthand for 
+  one-step lag. `lag_<name>(k)` usage stays the same.
+
+---
+
 ## [2.23.1] – 2025-11-14
 ### Added
 - Added `ss_lag_reserved` field to `StructSpec` for lag buffer allocation in stepper state. If

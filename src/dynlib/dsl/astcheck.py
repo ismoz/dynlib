@@ -29,9 +29,8 @@ _TAG_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 _DFUNC_PAREN = re.compile(r'^d\(\s*([A-Za-z_]\w*)\s*\)$')
 _DFUNC_FLAT = re.compile(r'^d([A-Za-z_]\w*)$')
 
-# Regex patterns for lag notation
-_LAG_CALL = re.compile(r'lag_([A-Za-z_]\w*)\s*\(\s*(\d+)\s*\)')
-_PREV_CALL = re.compile(r'prev_([A-Za-z_]\w*)\b')
+# Regex pattern for lag notation (lag_<name>() or lag_<name>(k))
+_LAG_CALL = re.compile(r'lag_([A-Za-z_]\w*)\s*\(\s*(\d*)\s*\)')
 
 
 def collect_names(normal: Dict[str, Any]) -> Dict[str, Set[str]]:
@@ -55,27 +54,23 @@ def _find_idents(expr: str) -> Set[str]:
 
 def _find_lag_requests(expr: str) -> Dict[str, int]:
     """
-    Scan expression for lag_<name>(k) and prev_<name> patterns.
+    Scan expression for lag_<name>(k) patterns.
     Returns {state_name: max_lag_depth}.
     
-    Example: "lag_x(2) + lag_x(5) + prev_y" -> {"x": 5, "y": 1}
+    Example: "lag_x() + lag_x(5)" -> {"x": 5}
     """
     lag_depths: Dict[str, int] = {}
     
     # Find all lag_<name>(k) calls
     for match in _LAG_CALL.finditer(expr):
         name = match.group(1)
-        depth = int(match.group(2))
+        depth_str = match.group(2)
+        depth = int(depth_str) if depth_str else 1
         if depth < 1:
             raise ModelLoadError(f"Lag depth must be positive, got lag_{name}({depth})")
         if depth > 1000:
             raise ModelLoadError(f"Lag depth {depth} exceeds sanity limit (1000) for lag_{name}")
         lag_depths[name] = max(lag_depths.get(name, 0), depth)
-    
-    # Find all prev_<name> calls (equivalent to lag_<name>(1))
-    for match in _PREV_CALL.finditer(expr):
-        name = match.group(1)
-        lag_depths[name] = max(lag_depths.get(name, 0), 1)
     
     return lag_depths
 
@@ -100,7 +95,7 @@ def collect_lag_requests(normal: Dict[str, Any]) -> Dict[str, int]:
             # Validate that lagged variable is a state
             if name not in states:
                 raise ModelLoadError(
-                    f"lag_{name}() or prev_{name} used in {location}, "
+                    f"lag_{name}() used in {location}, "
                     f"but '{name}' is not a declared state. "
                     f"Lag notation only applies to state variables."
                 )

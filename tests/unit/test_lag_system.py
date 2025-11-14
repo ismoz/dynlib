@@ -22,7 +22,7 @@ r = 3.5
 alpha = 0.6
 
 [equations.rhs]
-x = "r * (alpha * prev_x() + (1 - alpha) * lag_x(2)) * (1 - (alpha * prev_x() + (1 - alpha) * lag_x(2)))"
+x = "r * (alpha * lag_x() + (1 - alpha) * lag_x(2)) * (1 - (alpha * lag_x() + (1 - alpha) * lag_x(2)))"
 
 [sim]
 t0 = 0.0

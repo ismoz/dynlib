@@ -108,8 +108,8 @@ def test_validate_functions_signature_rejects_non_ident_or_duplicate_args():
 
 def test_collect_lag_requests_accumulates_max_depths_across_sections():
     d = base_doc()
-    d["equations"]["rhs"]["x"] = "lag_x(2) + prev_u"
-    d["aux"] = {"z": "lag_u(5) - prev_x"}
+    d["equations"]["rhs"]["x"] = "lag_x(2) + lag_u()"
+    d["aux"] = {"z": "lag_u(5) - lag_x()"}
     d["events"] = {
         "kick": {
             "phase": "post",
