@@ -19,6 +19,74 @@ from dynlib.compiler.jit.cache import JITCache, CacheKey
 from dynlib.compiler.paths import resolve_uri, load_config, PathConfig, resolve_cache_root
 from dynlib.compiler.mods import apply_mods_v2, ModSpec
 from dynlib.compiler.guards import get_guards, configure_guards_disk_cache
+
+
+def _format_toml_parse_error(toml_content: str, error: Exception, source_desc: str = "inline model") -> str:
+    """
+    Format a TOML parsing error with context showing the problematic line.
+    
+    Args:
+        toml_content: The TOML content that failed to parse
+        error: The tomllib exception
+        source_desc: Description of what's being parsed (e.g., "inline model", "mod file")
+    
+    Returns:
+        A formatted error message with context
+    """
+    error_msg = str(error)
+    
+    # Try to extract line and column from the error message
+    # Format: "... (at line X, column Y)"
+    import re
+    match = re.search(r'at line (\d+)(?:, column (\d+))?', error_msg)
+    
+    if not match:
+        # Couldn't parse line/column, return basic error
+        return f"Failed to parse {source_desc}: {error_msg}"
+    
+    line_num = int(match.group(1))
+    col_num = int(match.group(2)) if match.group(2) else None
+    
+    # Split content into lines
+    lines = toml_content.split('\n')
+    
+    # Build context message
+    context_lines = []
+    context_lines.append(f"Failed to parse {source_desc}:")
+    context_lines.append(f"  {error_msg}")
+    context_lines.append("")
+    
+    # Show a few lines of context around the error
+    start_line = max(0, line_num - 3)
+    end_line = min(len(lines), line_num + 2)
+    
+    context_lines.append("Context:")
+    for i in range(start_line, end_line):
+        line_marker = ">>>" if i == line_num - 1 else "   "
+        context_lines.append(f"  {line_marker} {i+1:3d} | {lines[i]}")
+        
+        # Add column pointer if available and this is the error line
+        if i == line_num - 1 and col_num is not None:
+            # Calculate spacing: "  >>> NNN | " takes up 13 chars + col_num - 1
+            pointer = " " * (13 + col_num - 1) + "^"
+            context_lines.append(f"  {pointer}")
+    
+    context_lines.append("")
+    
+    # Add helpful hints based on common errors
+    if "after a statement" in error_msg:
+        context_lines.append("Hint: Check for invalid characters or syntax in TOML values.")
+        context_lines.append("      Common issues:")
+        context_lines.append("      - Division (/) in numeric values: use parentheses or quotes")
+        context_lines.append("        WRONG: beta=8/3    CORRECT: beta=2.667 or beta='8/3' (as string)")
+        context_lines.append("      - Missing quotes around string values")
+        context_lines.append("      - Unclosed quotes or brackets")
+    elif "Expected" in error_msg and "=" in error_msg:
+        context_lines.append("Hint: Check that all key-value pairs use the format: key = value")
+    elif "Invalid" in error_msg:
+        context_lines.append("Hint: Check for typos or invalid TOML syntax")
+    
+    return "\n".join(context_lines)
 from dynlib.errors import ModelLoadError, StepperKindMismatchError
 
 __all__ = ["CompiledPieces", "build_callables", "FullModel", "build", "load_model_from_uri", "export_model_sources"]
@@ -381,11 +449,21 @@ def load_model_from_uri(
         try:
             model_data = tomllib.loads(resolved_model)
         except Exception as e:
-            raise ModelLoadError(f"Failed to parse inline model: {e}")
+            error_msg = _format_toml_parse_error(resolved_model, e, "inline model")
+            raise ModelLoadError(error_msg)
     else:
         try:
             with open(resolved_model, "rb") as f:
-                model_data = tomllib.load(f)
+                content = f.read().decode('utf-8')
+                model_data = tomllib.loads(content)
+        except tomllib.TOMLDecodeError as e:
+            # For TOML parse errors, show context
+            with open(resolved_model, "rb") as f:
+                content = f.read().decode('utf-8')
+            error_msg = _format_toml_parse_error(content, e, f"model file '{resolved_model}'")
+            raise ModelLoadError(error_msg)
+        except FileNotFoundError as e:
+            raise ModelLoadError(f"Model file not found: {resolved_model}")
         except Exception as e:
             raise ModelLoadError(f"Failed to load model from {resolved_model}: {e}")
     
@@ -451,11 +529,21 @@ def _load_mod_from_uri(mod_uri: str, config: PathConfig) -> ModSpec:
         try:
             mod_data = tomllib.loads(resolved)
         except Exception as e:
-            raise ModelLoadError(f"Failed to parse inline mod: {e}")
+            error_msg = _format_toml_parse_error(resolved, e, "inline mod")
+            raise ModelLoadError(error_msg)
     else:
         try:
             with open(resolved, "rb") as f:
-                mod_data = tomllib.load(f)
+                content = f.read().decode('utf-8')
+                mod_data = tomllib.loads(content)
+        except tomllib.TOMLDecodeError as e:
+            # For TOML parse errors, show context
+            with open(resolved, "rb") as f:
+                content = f.read().decode('utf-8')
+            error_msg = _format_toml_parse_error(content, e, f"mod file '{resolved}'")
+            raise ModelLoadError(error_msg)
+        except FileNotFoundError as e:
+            raise ModelLoadError(f"Mod file not found: {resolved}")
         except Exception as e:
             raise ModelLoadError(f"Failed to load mod from {resolved}: {e}")
     

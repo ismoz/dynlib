@@ -344,7 +344,7 @@ def _apply_tick_fontsizes(ax: plt.Axes, *, xtick_fs: float | None, ytick_fs: flo
 
 def _apply_time_decor(
     ax: plt.Axes,
-    vlines: list[tuple[float, str]] | None,
+    vlines: list[float | tuple[float, str]] | None,
     bands: list[tuple[float, float] | tuple[float, float, str]] | None,
     vlines_kwargs: Mapping[str, Any] | None = None,
 ) -> None:
@@ -361,7 +361,7 @@ def _apply_time_decor(
                 raise ValueError(f"Band start time must be less than end time, got start={start}, end={end}")
             ax.axvspan(start, end, color=color, alpha=0.1)
 
-    if vlines:
+    if vlines is not None:
         # Draw vlines as usual (data x, span full y-range)
         default_vl_kw: dict[str, Any] = {
             "color": "black",
@@ -382,7 +382,12 @@ def _apply_time_decor(
         else:
             y_text = ymax - pad
 
-        for x, label in vlines:
+        for item in vlines:
+            if isinstance(item, (tuple, list)) and len(item) == 2:
+                x, label = item
+            else:
+                x = float(item)
+                label = ""
             ax.axvline(x, **merged_vl_kw)
             if label:
                 ax.text(
@@ -572,7 +577,7 @@ class _SeriesPlot:
         xlabel: str | None = None,
         ylabel: str | None = None,
         title: str | None = None,
-        vlines: list[tuple[float, str]] | None = None,
+        vlines: list[float | tuple[float, str]] | None = None,
         vlines_color: str | None = None,
         vlines_kwargs: Mapping[str, Any] | None = None,
         bands: list[tuple[float, float] | tuple[float, float, str]] | None = None,
@@ -634,7 +639,7 @@ class _SeriesPlot:
         xlabel: str | None = None,
         ylabel: str | None = None,
         title: str | None = None,
-        vlines: list[tuple[float, str]] | None = None,
+        vlines: list[float | tuple[float, str]] | None = None,
         vlines_color: str | None = None,
         vlines_kwargs: Mapping[str, Any] | None = None,
         bands: list[tuple[float, float] | tuple[float, float, str]] | None = None,

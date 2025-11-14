@@ -1,4 +1,7 @@
 # tests/unit/test_dsl_spec.py
+import pytest
+
+from dynlib.errors import ModelLoadError
 from dynlib.dsl.parser import parse_model_v2
 from dynlib.dsl.spec import build_spec, compute_spec_hash
 
@@ -41,3 +44,20 @@ def test_build_spec_and_hash_determinism_and_dtype_alias():
     n2["params"]["a"] = 2.0
     spec2 = build_spec(n2)
     assert compute_spec_hash(spec2) != h1
+
+
+def test_numeric_strings_for_states_and_params():
+    n = minimal_doc()
+    n["states"]["x"] = "1/2"
+    n["params"]["a"] = "8/4"
+    parsed = parse_model_v2(n)
+    spec = build_spec(parsed)
+    assert spec.state_ic[0] == 0.5
+    assert spec.param_vals == (2.0,)
+
+
+def test_invalid_numeric_string_raises():
+    n = minimal_doc()
+    n["params"]["a"] = "foo"
+    with pytest.raises(ModelLoadError):
+        parse_model_v2(n)

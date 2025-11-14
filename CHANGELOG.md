@@ -2,6 +2,27 @@
 
 ---
 
+## [2.23.5] – 2025-11-14
+### Added
+- Added support for numeric expressions in states and parameters. You can now use strings like 
+  "8/3" or "1/2" that get evaluated to numbers.
+- Added a new example `detect_transition.py` showing how to use the lag system to detect when 
+  a state variable crosses from negative to positive.
+
+### Changed
+- Improved TOML parsing error messages with better context, line numbers, and helpful hints for 
+  common mistakes like division in values.
+- Updated plotting functions to accept single numbers in `vlines` parameter, not just tuples.
+
+### Tests
+- Added tests for numeric expressions in model states and parameters.
+- Added comprehensive tests for improved TOML error messages.
+
+### Known Issues
+- Event log buffer reallocation causes data loss.
+
+---
+
 ## [2.23.4] – 2025-11-14
 ### Added
 - Added `uses_lag` and `equations_use_lag` flags to model classes to track lag feature usage.

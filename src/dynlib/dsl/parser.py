@@ -1,6 +1,7 @@
 # src/dynlib/dsl/parser.py
 from __future__ import annotations
 from typing import Dict, Any, Tuple, List
+import ast
 
 from dynlib.errors import ModelLoadError
 from .schema import validate_tables, validate_name_collisions
@@ -8,6 +9,84 @@ from .schema import validate_tables, validate_name_collisions
 __all__ = [
     "parse_model_v2",
 ]
+
+_BIN_OPS = {
+    ast.Add: lambda a, b: a + b,
+    ast.Sub: lambda a, b: a - b,
+    ast.Mult: lambda a, b: a * b,
+    ast.Div: lambda a, b: a / b,
+    ast.FloorDiv: lambda a, b: a // b,
+    ast.Mod: lambda a, b: a % b,
+    ast.Pow: lambda a, b: a ** b,
+}
+
+_UNARY_OPS = {
+    ast.UAdd: lambda x: +x,
+    ast.USub: lambda x: -x,
+}
+
+
+def _sanitize_literal_expr(expr: str) -> str:
+    """Normalize caret power `^` to Python's `**` for literal math."""
+    return expr.replace("^", "**")
+
+
+def _evaluate_numeric_expr(expr: str, context: str) -> float | int:
+    txt = expr.strip()
+    if not txt:
+        raise ModelLoadError(f"{context} must be a numeric literal or expression, got empty string")
+    try:
+        node = ast.parse(_sanitize_literal_expr(txt), mode="eval")
+    except SyntaxError as err:
+        raise ModelLoadError(
+            f"{context} must be a numeric literal or arithmetic expression (e.g. '8/3')"
+        ) from err
+    return _eval_node(node.body, context)
+
+
+def _eval_node(node: ast.AST, context: str) -> float | int:
+    if isinstance(node, ast.Constant):
+        val = node.value
+        if isinstance(val, bool) or not isinstance(val, (int, float)):
+            raise ModelLoadError(
+                f"{context} must evaluate to a number, got {type(val).__name__}"
+            )
+        return val
+    if isinstance(node, ast.UnaryOp):
+        op = _UNARY_OPS.get(type(node.op))
+        if op is None:
+            raise ModelLoadError(f"{context} contains an unsupported unary operator")
+        return op(_eval_node(node.operand, context))
+    if isinstance(node, ast.BinOp):
+        op = _BIN_OPS.get(type(node.op))
+        if op is None:
+            raise ModelLoadError(f"{context} contains an unsupported operator")
+        left = _eval_node(node.left, context)
+        right = _eval_node(node.right, context)
+        try:
+            return op(left, right)
+        except ZeroDivisionError as err:
+            raise ModelLoadError(f"{context} has a division by zero") from err
+    raise ModelLoadError(
+        f"{context} must be composed of numbers and arithmetic operators (e.g. '8/3')"
+    )
+
+
+def _coerce_numeric_table(tbl: Dict[str, Any], section: str) -> Dict[str, float | int]:
+    """Return an ordered dict where values are numeric scalars."""
+    out: Dict[str, float | int] = {}
+    for key in tbl.keys():
+        val = tbl[key]
+        context = f"[{section}].{key}"
+        if isinstance(val, (int, float)):
+            out[key] = val
+        elif isinstance(val, str):
+            out[key] = _evaluate_numeric_expr(val, context)
+        else:
+            raise ModelLoadError(
+                f"{context} must be a number or numeric expression string, got {type(val).__name__}"
+            )
+    return out
 
 
 def _ordered_items(d: Dict[str, Any]) -> List[Tuple[str, Any]]:
@@ -164,8 +243,8 @@ def parse_model_v2(doc: Dict[str, Any]) -> Dict[str, Any]:
     # Preserve order of declaration
     states_in = doc["states"]
     params_in = doc.get("params", {})  # params is optional, default to empty
-    states = {k: states_in[k] for k in states_in.keys()}
-    params = {k: params_in[k] for k in params_in.keys()}
+    states = _coerce_numeric_table(states_in, "states")
+    params = _coerce_numeric_table(params_in, "params") if params_in else {}
 
     # Equations
     eq_tbl = doc.get("equations") or {}
