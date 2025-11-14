@@ -2,6 +2,17 @@
 
 ---
 
+## [2.24.1] – 2025-11-14
+### Added
+- Added scalar DSL macros usable in aux, equations, and event actions: `sign(x)`, `heaviside(x)`, 
+  `step(x)`, `relu(x)`, `clip(x, a, b)`, and `approx(x, y, tol)`. They lower to comparisons and 
+  builtins only, keeping generated code Numba-friendly.
+
+### Tests
+- Added regression coverage for the new macros in `tests/unit/test_scalar_macros.py`.
+
+---
+
 ## [2.24.0] – 2025-11-14
 ### Added
 - Added DSL event macros for common transition detection: 

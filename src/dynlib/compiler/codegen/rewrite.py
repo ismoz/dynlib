@@ -31,16 +31,59 @@ class NameMaps:
 
 # Map DSL math names → math.<fn> (Numba-friendly)
 _MATH_FUNCS = {
-    "abs": ("builtins", "abs"),
-    "min": ("builtins", "min"),
-    "max": ("builtins", "max"),
+    # Builtins
+    "abs":   ("builtins", "abs"),
+    "min":   ("builtins", "min"),
+    "max":   ("builtins", "max"),
     "round": ("builtins", "round"),
-    "exp": ("math", "exp"),
-    "log": ("math", "log"),
-    "sqrt": ("math", "sqrt"),
-    "sin": ("math", "sin"),
-    "cos": ("math", "cos"),
-    "tan": ("math", "tan"),
+
+    # Exponentials / logs
+    "exp":   ("math", "exp"),
+    "expm1": ("math", "expm1"),
+    "log":   ("math", "log"),
+    "log10": ("math", "log10"),
+    "log2":  ("math", "log2"),
+    "log1p": ("math", "log1p"),
+    "sqrt":  ("math", "sqrt"),
+
+    # Trig
+    "sin":  ("math", "sin"),
+    "cos":  ("math", "cos"),
+    "tan":  ("math", "tan"),
+    "asin": ("math", "asin"),
+    "acos": ("math", "acos"),
+    "atan": ("math", "atan"),
+    "atan2":("math", "atan2"),
+
+    # Hyperbolic
+    "sinh":  ("math", "sinh"),
+    "cosh":  ("math", "cosh"),
+    "tanh":  ("math", "tanh"),
+    "asinh": ("math", "asinh"),
+    "acosh": ("math", "acosh"),
+    "atanh": ("math", "atanh"),
+
+    # Rounding
+    "floor": ("math", "floor"),
+    "ceil":  ("math", "ceil"),
+    "trunc": ("math", "trunc"),
+
+    # Misc
+    "hypot":    ("math", "hypot"),
+    "copysign": ("math", "copysign"),
+
+    # Special
+    "erf":  ("math", "erf"),
+    "erfc": ("math", "erfc"),
+}
+
+_SCALAR_MACROS = {
+    "sign",
+    "heaviside",
+    "step",
+    "relu",
+    "clip",
+    "approx",
 }
 
 class _NameLowerer(ast.NodeTransformer):
@@ -80,6 +123,8 @@ class _NameLowerer(ast.NodeTransformer):
     def visit_Call(self, node: ast.Call):
         if isinstance(node.func, ast.Name):
             macro_name = node.func.id
+            if macro_name in _SCALAR_MACROS:
+                return self._expand_scalar_macro(macro_name, node)
             if macro_name in {
                 "cross_up",
                 "cross_down",
@@ -205,6 +250,89 @@ class _NameLowerer(ast.NodeTransformer):
         )
         
         return ast.copy_location(lag_access, node)
+
+    def _expand_scalar_macro(self, name: str, node: ast.Call) -> ast.AST:
+        if node.keywords:
+            raise ModelLoadError(f"{name}() does not support keyword arguments")
+        if name == "sign":
+            self._expect_arg_len(node, name, 1)
+            arg = self.visit(node.args[0])
+            gt_zero = ast.Compare(
+                left=self._clone(arg),
+                ops=[ast.Gt()],
+                comparators=[ast.Constant(value=0)],
+            )
+            lt_zero = ast.Compare(
+                left=self._clone(arg),
+                ops=[ast.Lt()],
+                comparators=[ast.Constant(value=0)],
+            )
+            gt_int = ast.Call(func=ast.Name(id="int", ctx=ast.Load()), args=[gt_zero], keywords=[])
+            lt_int = ast.Call(func=ast.Name(id="int", ctx=ast.Load()), args=[lt_zero], keywords=[])
+            return ast.copy_location(
+                ast.BinOp(left=gt_int, op=ast.Sub(), right=lt_int),
+                node,
+            )
+        if name in {"heaviside", "step"}:
+            self._expect_arg_len(node, name, 1)
+            arg = self.visit(node.args[0])
+            return ast.copy_location(
+                ast.Compare(
+                    left=arg,
+                    ops=[ast.GtE()],
+                    comparators=[ast.Constant(value=0)],
+                ),
+                node,
+            )
+        if name == "relu":
+            self._expect_arg_len(node, name, 1)
+            arg = self.visit(node.args[0])
+            return ast.copy_location(
+                ast.Call(
+                    func=ast.Name(id="max", ctx=ast.Load()),
+                    args=[arg, ast.Constant(value=0)],
+                    keywords=[],
+                ),
+                node,
+            )
+        if name == "clip":
+            self._expect_arg_len(node, name, 3)
+            value = self.visit(node.args[0])
+            lower = self.visit(node.args[1])
+            upper = self.visit(node.args[2])
+            max_call = ast.Call(
+                func=ast.Name(id="max", ctx=ast.Load()),
+                args=[value, lower],
+                keywords=[],
+            )
+            return ast.copy_location(
+                ast.Call(
+                    func=ast.Name(id="min", ctx=ast.Load()),
+                    args=[max_call, upper],
+                    keywords=[],
+                ),
+                node,
+            )
+        if name == "approx":
+            self._expect_arg_len(node, name, 3)
+            left = self.visit(node.args[0])
+            right = self.visit(node.args[1])
+            tol = self.visit(node.args[2])
+            diff = ast.BinOp(left=left, op=ast.Sub(), right=right)
+            abs_call = ast.Call(
+                func=ast.Name(id="abs", ctx=ast.Load()),
+                args=[diff],
+                keywords=[],
+            )
+            return ast.copy_location(
+                ast.Compare(
+                    left=abs_call,
+                    ops=[ast.LtE()],
+                    comparators=[tol],
+                ),
+                node,
+            )
+        raise ModelLoadError(f"Unsupported macro {name}()")
 
     def _expand_macro(self, name: str, node: ast.Call) -> ast.AST:
         if node.keywords:
