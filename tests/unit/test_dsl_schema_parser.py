@@ -143,6 +143,16 @@ def test_parse_model_v2_events_keyed_and_block_forms():
     assert n2["events"][0]["action_keyed"] is None
     assert "u = 0" in n2["events"][0]["action_block"]
 
+def test_parse_model_v2_events_default_phase():
+    d = minimal_doc(events={
+        "tick": {
+            "cond": "1",
+            "action.dx": "1",
+        }
+    })
+    n = parse_model_v2(d)
+    assert n["events"][0]["phase"] == "post"
+
 def test_parse_model_v2_events_validation_errors():
     # bad phase
     d = minimal_doc(events={"e": {"phase": "now", "cond": "1", "action": "x=0"}})

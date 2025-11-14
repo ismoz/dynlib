@@ -123,7 +123,7 @@ expr = "u/(1+abs(u)^c)"
 ### Events (named subtables; text order execution)
 ```toml
 [events.reset]
-phase  = "post"              # "pre" | "post" | "both"
+phase  = "post"              # optional; defaults to "post"
 cond   = "x >= 1"
 action.x = "0"               # keyed form
 log    = ["t", "x", "aux:E", "param:a"]
@@ -131,13 +131,14 @@ log    = ["t", "x", "aux:E", "param:a"]
 **Block action alternative**
 ```toml
 [events.bump]
-phase = "pre"
+phase = "pre"                # override default
 cond  = "t >= 10"
 action = '''
 x = x + 0.5
 '''
 ```
-**Legality**: only states/params assignable; aux/buffers/internals forbidden.
+**Legality**: only states/params assignable; aux/buffers/internals forbidden. Events without an
+explicit `phase` run after the step ("post").
 
 ### Simulation Defaults
 ```toml

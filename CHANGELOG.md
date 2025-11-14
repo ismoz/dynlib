@@ -2,6 +2,22 @@
 
 ---
 
+## [2.23.6] – 2025-11-14
+### Fixed
+- Event log buffer reallocation was causing data loss for post events. Reordered event handling in 
+  runners (both `runner.py` and `runner_discrete.py`) to check post-events on proposed state before 
+  committing. This way reallocation during post-events now occur before commit, and this prevents 
+  uncaught event logs.
+
+### Changed
+- DSL event tables now default to `phase = "post"` when the key is omitted, simplifying the common
+  case where only post-step events are needed.
+
+### Tests
+- Added unit coverage ensuring the parser backfills the default event phase.
+
+---
+
 ## [2.23.5] – 2025-11-14
 ### Added
 - Added support for numeric expressions in states and parameters. You can now use strings like 

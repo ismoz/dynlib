@@ -100,13 +100,14 @@ expr = "expr"
 #### Events (named subtables; execution = text order)
 ```toml
 [events.ev_name]
-phase  = "pre" | "post" | "both"
+phase  = "pre" | "post" | "both"   # optional, defaults to "post"
 cond   = "expr"
 action = "expr"
 tags   = ["..."]     # optional
 log    = ["t", "x", "y", "aux:E", "param:a"]   
 ```
 - Allowed assignments: states, params. Forbidden assignments: aux, buffers, stepper internals.
+- Omitting `phase` runs the event in the post-step slot by default.
 
 ### Simulation defaults
 ```toml

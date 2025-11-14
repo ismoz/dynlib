@@ -5,6 +5,7 @@ Discrete runner for maps and difference equations.
 Similar to the ODE runner but adapted for discrete systems:
 - Terminates on max_steps (N) instead of time horizon (T)
 - Time advances exactly as t = t0 + step * dt (no accumulation error)
+- Post-events/logging happen before committing state to avoid dropped logs
 - No adaptive stepping support (maps use fixed iteration counts)
 """
 from __future__ import annotations
@@ -270,32 +271,17 @@ def runner_discrete(
             hint_out[0] = m
             return NAN_DETECTED
         
-        # 4. Commit: y_prev <- y_curr, y_curr <- y_prop, step++
-        for k in range(n_state):
-            y_prev[k] = y_curr[k]
-            y_curr[k] = y_prop[k]
-        step += 1
-        
-        if lag_state_info:
-            for state_idx, depth, ss_offset, iw0_index in lag_state_info:
-                head = int(iw0[iw0_index]) + 1
-                if head >= depth:
-                    head = 0
-                iw0[iw0_index] = head
-                ss[ss_offset + head] = y_curr[state_idx]
-        
-        # Compute time exactly (no accumulation) - KEY DIFFERENCE from continuous
-        t = t0 + step * dt
-        # dt remains constant (from dt_next, but for maps it's always dt_init)
-        dt = dt_next[0]
-        
-        # 5. Post-events on committed state
-        event_code_post, log_width_post = events_post(t, y_curr, params, evt_log_scratch, ss, iw0)
+        # 4. Post-events on proposed state/time (may mutate y_prop in-place)
+        next_step = step + 1
+        t_post = t0 + next_step * dt
+        event_code_post, log_width_post = events_post(
+            t_post, y_prop, params, evt_log_scratch, ss, iw0
+        )
         
         # Record post-event if it fired and has log data
         if event_code_post >= 0 and log_width_post > 0:
             if m >= cap_evt:
-                # Need event buffer growth
+                # Need event buffer growth; keep committed state untouched
                 i_out[0] = i
                 step_out[0] = step
                 t_out[0] = t
@@ -310,6 +296,25 @@ def runner_discrete(
             EVT_CODE[m] = event_code_post
             EVT_INDEX[m] = (i - 1) if i > 0 else -1
             m += 1
+        
+        # 5. Commit: y_prev <- y_curr, y_curr <- y_prop, step++
+        for k in range(n_state):
+            y_prev[k] = y_curr[k]
+            y_curr[k] = y_prop[k]
+        step = next_step
+        
+        if lag_state_info:
+            for state_idx, depth, ss_offset, iw0_index in lag_state_info:
+                head = int(iw0[iw0_index]) + 1
+                if head >= depth:
+                    head = 0
+                iw0[iw0_index] = head
+                ss[ss_offset + head] = y_curr[state_idx]
+        
+        # Compute time exactly (no accumulation) - KEY DIFFERENCE from continuous
+        t = t_post
+        # dt remains constant (from dt_next, but for maps it's always dt_init)
+        dt = dt_next[0]
         
         # 6. Record (if enabled and step matches record_interval)
         if record_interval > 0 and (step % record_interval == 0):

@@ -5,8 +5,8 @@ Generic runner.
 Defines a single runner function with the frozen ABI that:
   1. Pre-events on committed state
   2. Stepper loop (single attempt for fixed-step; adaptive may retry internally)
-  3. Commit: y_prev, y_curr, t
-  4. Post-events on committed state
+  3. Post-events/logging on the proposed state
+  4. Commit: y_prev, y_curr, t
   5. Record (with capacity checks)
   6. Loop until t >= t_end or max_steps
   7. Return status codes per runner_api.py
@@ -293,7 +293,31 @@ def runner(
             hint_out[0] = m
             return NAN_DETECTED
         
-        # 4. Commit: y_prev <- y_curr, y_curr <- y_prop, t <- t_prop
+        # 4. Post-events on proposed state (may mutate y_prop in-place)
+        event_code_post, log_width_post = events_post(
+            t_prop[0], y_prop, params, evt_log_scratch, ss, iw0
+        )
+
+        # Record post-event if it fired and has log data
+        if event_code_post >= 0 and log_width_post > 0:
+            if m >= cap_evt:
+                # Need event buffer growth; keep committed state untouched
+                i_out[0] = i
+                step_out[0] = step
+                t_out[0] = t
+                status_out[0] = GROW_EVT
+                hint_out[0] = m
+                return GROW_EVT
+
+            # Copy log data to buffers
+            for log_idx in range(log_width_post):
+                EVT_LOG_DATA[m, log_idx] = evt_log_scratch[log_idx]
+
+            EVT_CODE[m] = event_code_post
+            EVT_INDEX[m] = (i - 1) if i > 0 else -1
+            m += 1
+
+        # 5. Commit: y_prev <- y_curr, y_curr <- y_prop, t <- t_prop
         for k in range(n_state):
             y_prev[k] = y_curr[k]
             y_curr[k] = y_prop[k]
@@ -308,28 +332,6 @@ def runner(
                     head = 0
                 iw0[iw0_index] = head
                 ss[ss_offset + head] = y_curr[state_idx]
-        
-        # 5. Post-events on committed state
-        event_code_post, log_width_post = events_post(t, y_curr, params, evt_log_scratch, ss, iw0)
-        
-        # Record post-event if it fired and has log data
-        if event_code_post >= 0 and log_width_post > 0:
-            if m >= cap_evt:
-                # Need event buffer growth
-                i_out[0] = i
-                step_out[0] = step
-                t_out[0] = t
-                status_out[0] = GROW_EVT
-                hint_out[0] = m
-                return GROW_EVT
-            
-            # Copy log data to buffers
-            for log_idx in range(log_width_post):
-                EVT_LOG_DATA[m, log_idx] = evt_log_scratch[log_idx]
-            
-            EVT_CODE[m] = event_code_post
-            EVT_INDEX[m] = (i - 1) if i > 0 else -1
-            m += 1
         
         # 6. Record (if enabled and step matches record_interval)
         if record_interval > 0 and (step % record_interval == 0):

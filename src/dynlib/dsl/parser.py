@@ -114,7 +114,7 @@ def _read_events(ev_tbl: Dict[str, Any]) -> List[Dict[str, Any]]:
     for name, body in ev_tbl.items():
         if not isinstance(body, dict):
             raise ModelLoadError(f"[events.{name}] must be a table")
-        phase = body.get("phase")
+        phase = body.get("phase", "post")
         if phase not in {"pre", "post", "both"}:
             raise ModelLoadError(f"[events.{name}].phase must be 'pre'|'post'|'both'")
         cond = body.get("cond")
