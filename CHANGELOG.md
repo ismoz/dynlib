@@ -2,6 +2,17 @@
 
 ---
 
+## [2.23.3] – 2025-11-14
+### Fixed
+- `_LAG_STATE_INFO` value was shared globally between different python (non-jitted) runners. This 
+  was causing corrupted lag info between different runners. Fixed lag state info to be per-runner 
+  instance instead of global, preventing interference between models with different lag configurations.
+
+### Tests
+- Added new tests covering lag info corruption issue to `test_lag_system.py`.
+
+---
+
 ## [2.23.2] – 2025-11-14
 ### Changed
 - Removed support for the `prev_<name>` DSL shorthand. Now `lag_<name>()` is used as a shorthand for 

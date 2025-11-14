@@ -41,6 +41,83 @@ def _build_lagged_map_model(jit: bool = False):
     return build(spec, stepper="map", jit=jit, disk_cache=False)
 
 
+def _build_two_state_ode_model(
+    *,
+    lag_target: str | None = None,
+    lag_depth: int = 0,
+    jit: bool = False,
+):
+    """Helper for continuous runners with optional per-state lag usage."""
+    lag_depth = int(lag_depth)
+    x_expr = "-a * x + 0.25 * y"
+    y_expr = "0.5 * x - b * y"
+    if lag_target == "x":
+        x_expr += f" + 0.05 * lag_x({lag_depth})"
+    elif lag_target == "y":
+        y_expr += f" + 0.05 * lag_y({lag_depth})"
+    doc = {
+        "model": {"type": "ode", "dtype": "float64"},
+        "states": {"x": 0.25, "y": -0.1},
+        "params": {"a": 0.4, "b": 0.1},
+        "equations": {"rhs": {"x": x_expr, "y": y_expr}},
+        "sim": {
+            "t0": 0.0,
+            "t_end": 2.0,
+            "dt": 0.1,
+            "record": True,
+            "record_interval": 1,
+            "stepper": "rk4",
+        },
+    }
+    normal = parse_model_v2(doc)
+    spec = build_spec(normal)
+    return build(spec, stepper="rk4", jit=jit, disk_cache=False)
+
+
+def _build_two_state_map_model(
+    *,
+    lag_target: str | None = None,
+    lag_depth: int = 0,
+    jit: bool = False,
+):
+    """Helper for discrete runners with optional per-state lag usage."""
+    lag_depth = int(lag_depth)
+    x_expr = "0.4 * x + 0.05 * y"
+    y_expr = "0.3 * y - 0.02 * x"
+    if lag_target == "x":
+        x_expr += f" + 0.1 * lag_x({lag_depth})"
+    elif lag_target == "y":
+        y_expr += f" + 0.1 * lag_y({lag_depth})"
+    doc = {
+        "model": {"type": "map", "dtype": "float64"},
+        "states": {"x": 0.2, "y": -0.05},
+        "params": {"alpha": 0.3},
+        "equations": {"rhs": {"x": x_expr, "y": y_expr}},
+        "sim": {
+            "t0": 0.0,
+            "t_end": 10.0,
+            "dt": 1.0,
+            "record": True,
+            "record_interval": 1,
+            "stepper": "map",
+        },
+    }
+    normal = parse_model_v2(doc)
+    spec = build_spec(normal)
+    return build(spec, stepper="map", jit=jit, disk_cache=False)
+
+
+def _run_and_capture(model, *, run_kwargs: dict[str, object]):
+    """Run a model and capture (T, Y) snapshots for comparison."""
+    sim = Sim(model)
+    sim.run(record=True, record_interval=1, **run_kwargs)
+    results = sim.raw_results()
+    return (
+        np.array(results.T_view, copy=True),
+        np.array(results.Y_view, copy=True),
+    )
+
+
 @pytest.mark.parametrize("jit", [True, False])
 def test_lagged_map_buffers_track_history(jit):
     model = _build_lagged_map_model(jit=jit)
@@ -83,3 +160,51 @@ def test_lag_buffers_survive_resume_and_match_fresh_run(jit):
 
     np.testing.assert_allclose(resumed.Y_view[:, :resumed.n], fresh.Y_view[:, :fresh.n], rtol=1e-12, atol=1e-12)
     np.testing.assert_allclose(resumed.T_view[:resumed.n], fresh.T_view[:fresh.n], rtol=1e-12, atol=1e-12)
+
+
+def test_continuous_runner_lag_metadata_is_per_instance():
+    model_a = _build_two_state_ode_model(lag_target="x", lag_depth=3, jit=False)
+    t_ref, y_ref = _run_and_capture(model_a, run_kwargs={"T": 2.0})
+
+    model_b = _build_two_state_ode_model(lag_target="y", lag_depth=5, jit=False)
+    _run_and_capture(model_b, run_kwargs={"T": 2.0})
+
+    t_new, y_new = _run_and_capture(model_a, run_kwargs={"T": 2.0})
+    np.testing.assert_allclose(t_new, t_ref, rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(y_new, y_ref, rtol=1e-12, atol=1e-12)
+
+
+def test_continuous_runner_without_lags_ignores_foreign_metadata():
+    model_no_lag = _build_two_state_ode_model(jit=False)
+    t_ref, y_ref = _run_and_capture(model_no_lag, run_kwargs={"T": 2.0})
+
+    model_with_lag = _build_two_state_ode_model(lag_target="x", lag_depth=4, jit=False)
+    _run_and_capture(model_with_lag, run_kwargs={"T": 2.0})
+
+    t_new, y_new = _run_and_capture(model_no_lag, run_kwargs={"T": 2.0})
+    np.testing.assert_allclose(t_new, t_ref, rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(y_new, y_ref, rtol=1e-12, atol=1e-12)
+
+
+def test_discrete_runner_lag_metadata_is_per_instance():
+    model_a = _build_two_state_map_model(lag_target="x", lag_depth=3, jit=False)
+    t_ref, y_ref = _run_and_capture(model_a, run_kwargs={"N": 10})
+
+    model_b = _build_two_state_map_model(lag_target="y", lag_depth=5, jit=False)
+    _run_and_capture(model_b, run_kwargs={"N": 10})
+
+    t_new, y_new = _run_and_capture(model_a, run_kwargs={"N": 10})
+    np.testing.assert_allclose(t_new, t_ref, rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(y_new, y_ref, rtol=1e-12, atol=1e-12)
+
+
+def test_discrete_runner_without_lags_ignores_foreign_metadata():
+    model_no_lag = _build_two_state_map_model(jit=False)
+    t_ref, y_ref = _run_and_capture(model_no_lag, run_kwargs={"N": 10})
+
+    model_with_lag = _build_two_state_map_model(lag_target="x", lag_depth=4, jit=False)
+    _run_and_capture(model_with_lag, run_kwargs={"N": 10})
+
+    t_new, y_new = _run_and_capture(model_no_lag, run_kwargs={"N": 10})
+    np.testing.assert_allclose(t_new, t_ref, rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(y_new, y_ref, rtol=1e-12, atol=1e-12)

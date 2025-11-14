@@ -1,5 +1,4 @@
 # src/dynlib/compiler/codegen/runner_discrete.py
-# src/dynlib/compiler/codegen/runner_discrete.py
 """
 Discrete runner for maps and difference equations.
 
@@ -18,6 +17,7 @@ import textwrap
 import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Dict, Optional, Sequence, Tuple
+import types
 import tomllib
 
 try:
@@ -143,7 +143,7 @@ def runner_discrete(
     i_out, step_out, t_out,
     # function symbols (jittable callables)
     stepper, rhs, events_pre, events_post
-):
+) -> int:
     """
     Discrete-time runner: iteration-based execution with events and recording.
     
@@ -157,6 +157,7 @@ def runner_discrete(
     
     Returns status code (int32).
     """
+    lag_state_info = _LAG_STATE_INFO
     # Initialize loop state
     t = float(t0)
     dt = float(dt_init)
@@ -275,8 +276,8 @@ def runner_discrete(
             y_curr[k] = y_prop[k]
         step += 1
         
-        if _LAG_STATE_INFO:
-            for state_idx, depth, ss_offset, iw0_index in _LAG_STATE_INFO:
+        if lag_state_info:
+            for state_idx, depth, ss_offset, iw0_index in lag_state_info:
                 head = int(iw0[iw0_index]) + 1
                 if head >= depth:
                     head = 0
@@ -344,6 +345,29 @@ def runner_discrete(
     status_out[0] = DONE
     hint_out[0] = m
     return DONE
+
+
+def _bind_runner_discrete_lag_state_info(
+    lag_state_info: Tuple[Tuple[int, int, int, int], ...]
+) -> Callable:
+    """Clone runner_discrete with lag metadata baked into its globals."""
+    bound_globals = dict(runner_discrete.__globals__)
+    bound_globals["_LAG_STATE_INFO"] = lag_state_info
+    bound = types.FunctionType(
+        runner_discrete.__code__,
+        bound_globals,
+        name=runner_discrete.__name__,
+        argdefs=runner_discrete.__defaults__,
+        closure=runner_discrete.__closure__,
+    )
+    bound.__dict__.update(runner_discrete.__dict__)
+    annotations = getattr(runner_discrete, "__annotations__", None)
+    if annotations:
+        bound.__annotations__ = dict(annotations)
+    bound.__doc__ = runner_discrete.__doc__
+    bound.__module__ = runner_discrete.__module__
+    return bound
+
 
 _pending_cache_request: Optional[RunnerCacheRequest] = None
 _inproc_runner_cache: Dict[str, Callable] = {}
@@ -435,11 +459,13 @@ def get_runner_discrete(
         Callable runner_discrete function (jitted or pure Python).
     """
     global _last_runner_cache_hit
-    _set_runtime_lag_state_info(lag_state_info)
+    normalized = _normalize_lag_state_info(lag_state_info)
     _last_runner_cache_hit = False
     
     if not jit:
-        return runner_discrete
+        return _bind_runner_discrete_lag_state_info(normalized)
+    
+    _set_runtime_lag_state_info(normalized)
     
     if not disk_cache:
         return jit_compile(runner_discrete, jit=True).fn

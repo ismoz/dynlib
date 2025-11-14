@@ -36,6 +36,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Dict, Optional, Sequence, Tuple
+import types
+import tomllib
 
 try:
     from importlib import metadata as importlib_metadata
@@ -169,7 +171,7 @@ def runner(
     i_out, step_out, t_out,
     # function symbols (jittable callables)
     stepper, rhs, events_pre, events_post
-):
+) -> int:
     """
     Generic runner: fixed-step execution with events and recording.
     
@@ -177,6 +179,7 @@ def runner(
     
     Returns status code (int32).
     """
+    lag_state_info = _LAG_STATE_INFO
     # Initialize loop state
     t = float(t0)
     dt = float(dt_init)
@@ -298,8 +301,8 @@ def runner(
         dt = dt_next[0]
         step += 1
 
-        if _LAG_STATE_INFO:
-            for state_idx, depth, ss_offset, iw0_index in _LAG_STATE_INFO:
+        if lag_state_info:
+            for state_idx, depth, ss_offset, iw0_index in lag_state_info:
                 head = int(iw0[iw0_index]) + 1
                 if head >= depth:
                     head = 0
@@ -366,6 +369,28 @@ def runner(
     status_out[0] = DONE
     hint_out[0] = m
     return DONE
+
+
+def _bind_runner_lag_state_info(
+    lag_state_info: Tuple[Tuple[int, int, int, int], ...]
+) -> Callable:
+    """Clone runner with lag metadata baked into its globals for pure-Python use."""
+    bound_globals = dict(runner.__globals__)
+    bound_globals["_LAG_STATE_INFO"] = lag_state_info
+    bound = types.FunctionType(
+        runner.__code__,
+        bound_globals,
+        name=runner.__name__,
+        argdefs=runner.__defaults__,
+        closure=runner.__closure__,
+    )
+    bound.__dict__.update(runner.__dict__)
+    annotations = getattr(runner, "__annotations__", None)
+    if annotations:
+        bound.__annotations__ = dict(annotations)
+    bound.__doc__ = runner.__doc__
+    bound.__module__ = runner.__module__
+    return bound
 
 
 @dataclass(frozen=True)
@@ -534,11 +559,13 @@ def get_runner(
         - If jit=True and numba installed but compilation fails: raises RuntimeError
     """
     global _last_runner_cache_hit
-    _set_runtime_lag_state_info(lag_state_info)
+    normalized = _normalize_lag_state_info(lag_state_info)
     _last_runner_cache_hit = False
 
     if not jit:
-        return runner
+        return _bind_runner_lag_state_info(normalized)
+
+    _set_runtime_lag_state_info(normalized)
 
     if not disk_cache:
         return jit_compile(runner, jit=True).fn
