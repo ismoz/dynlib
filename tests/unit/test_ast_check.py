@@ -128,3 +128,30 @@ def test_collect_lag_requests_rejects_non_state_targets():
     n = parse_model_v2(d)
     with pytest.raises(ModelLoadError, match="not a declared state"):
         collect_lag_requests(n)
+
+
+def test_collect_lag_requests_detects_macro_usage():
+    d = base_doc()
+    d["events"] = {
+        "edge": {
+            "phase": "post",
+            "cond": "cross_up(x, 0.0)",
+            "action.x": "x",
+        }
+    }
+    n = parse_model_v2(d)
+    assert collect_lag_requests(n) == {"x": 1}
+
+
+def test_collect_lag_requests_macro_requires_state():
+    d = base_doc()
+    d["events"] = {
+        "edge": {
+            "phase": "post",
+            "cond": "cross_up(a, 0.0)",
+            "action.x": "x",
+        }
+    }
+    n = parse_model_v2(d)
+    with pytest.raises(ModelLoadError, match="declared state"):
+        collect_lag_requests(n)

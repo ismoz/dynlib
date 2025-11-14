@@ -2,6 +2,28 @@
 
 ---
 
+## [2.24.0] – 2025-11-14
+### Added
+- Added DSL event macros for common transition detection: 
+    - `cross_up(state, threshold)`, 
+    - `cross_down(state, threshold)`, 
+    - `cross_either(state, threshold)`, 
+    - `changed(state)`, 
+    - `in_interval(value, lower, upper)`, 
+    - `enters_interval(state, lower, upper)`, 
+    - `leaves_interval(state, lower, upper)`, 
+    - `increasing(state)`, `decreasing(state)`.
+
+### Changed
+- Updated `detect_transition.py` example to use the new `cross_up` macro instead of manual lag 
+  condition.
+
+### Tests
+- Added comprehensive tests for event macros in `test_event_macros.py`.
+- Updated lag detection to recognize macro usage in expressions.
+
+---
+
 ## [2.23.6] – 2025-11-14
 ### Fixed
 - Event log buffer reallocation was causing data loss for post events. Reordered event handling in 

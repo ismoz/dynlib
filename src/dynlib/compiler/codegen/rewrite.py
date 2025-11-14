@@ -5,6 +5,8 @@ from typing import Callable, Dict, Tuple, List
 import ast
 import re
 
+from dynlib.errors import ModelLoadError
+
 __all__ = ["sanitize_expr", "compile_scalar_expr", "lower_expr_node", "NameMaps"]
 
 _POW = re.compile(r"\^")
@@ -76,11 +78,23 @@ class _NameLowerer(ast.NodeTransformer):
         return node
     
     def visit_Call(self, node: ast.Call):
+        if isinstance(node.func, ast.Name):
+            macro_name = node.func.id
+            if macro_name in {
+                "cross_up",
+                "cross_down",
+                "cross_either",
+                "changed",
+                "in_interval",
+                "enters_interval",
+                "leaves_interval",
+                "increasing",
+                "decreasing",
+            }:
+                return self._expand_macro(macro_name, node)
         # Check for lag_<name>(k) pattern (with optional arg defaulting to 1)
         if isinstance(node.func, ast.Name) and node.func.id.startswith("lag_"):
             state_name = node.func.id[4:]  # remove "lag_" prefix
-            from dynlib.errors import ModelLoadError
-
             if len(node.args) == 0:
                 k = 1
             elif len(node.args) == 1 and isinstance(node.args[0], ast.Constant):
@@ -136,8 +150,6 @@ class _NameLowerer(ast.NodeTransformer):
           - depth: max lag depth for this state
           - k: lag amount (1, 2, 3, ...)
         """
-        from dynlib.errors import ModelLoadError
-        
         if self.nmap.lag_map is None or state_name not in self.nmap.lag_map:
             raise ModelLoadError(
                 f"lag_{state_name}({k}) used, "
@@ -193,6 +205,177 @@ class _NameLowerer(ast.NodeTransformer):
         )
         
         return ast.copy_location(lag_access, node)
+
+    def _expand_macro(self, name: str, node: ast.Call) -> ast.AST:
+        if node.keywords:
+            raise ModelLoadError(f"{name}() does not support keyword arguments")
+        if name == "cross_up":
+            self._expect_arg_len(node, name, 2)
+            state = self._state_arg(node, name)
+            thresh = self.visit(node.args[1])
+            return self._cross_up_expr(state, thresh, node)
+        if name == "cross_down":
+            self._expect_arg_len(node, name, 2)
+            state = self._state_arg(node, name)
+            thresh = self.visit(node.args[1])
+            return self._cross_down_expr(state, thresh, node)
+        if name == "cross_either":
+            self._expect_arg_len(node, name, 2)
+            state = self._state_arg(node, name)
+            thresh = self.visit(node.args[1])
+            return ast.BoolOp(
+                op=ast.Or(),
+                values=[
+                    self._cross_up_expr(state, self._clone(thresh), node),
+                    self._cross_down_expr(state, self._clone(thresh), node),
+                ],
+            )
+        if name == "changed":
+            self._expect_arg_len(node, name, 1)
+            state = self._state_arg(node, name)
+            return ast.Compare(
+                left=self._state_value_node(state),
+                ops=[ast.NotEq()],
+                comparators=[self._make_lag_access(state, 1, node)],
+            )
+        if name == "in_interval":
+            self._expect_arg_len(node, name, 3)
+            value = self.visit(node.args[0])
+            lower = self.visit(node.args[1])
+            upper = self.visit(node.args[2])
+            return self._between_expr(value, lower, upper)
+        if name == "enters_interval":
+            self._expect_arg_len(node, name, 3)
+            state = self._state_arg(node, name)
+            lower = self.visit(node.args[1])
+            upper = self.visit(node.args[2])
+            lag = self._make_lag_access(state, 1, node)
+            lag_lt_lower = ast.Compare(
+                left=lag,
+                ops=[ast.Lt()],
+                comparators=[self._clone(lower)],
+            )
+            lag_gt_upper = ast.Compare(
+                left=self._make_lag_access(state, 1, node),
+                ops=[ast.Gt()],
+                comparators=[self._clone(upper)],
+            )
+            prev_outside = ast.BoolOp(
+                op=ast.Or(),
+                values=[lag_lt_lower, lag_gt_upper],
+            )
+            now_inside = self._between_expr(self._state_value_node(state), lower, upper)
+            return ast.BoolOp(op=ast.And(), values=[prev_outside, now_inside])
+        if name == "leaves_interval":
+            self._expect_arg_len(node, name, 3)
+            state = self._state_arg(node, name)
+            lower = self.visit(node.args[1])
+            upper = self.visit(node.args[2])
+            lag_inside = self._between_expr(self._make_lag_access(state, 1, node), lower, upper)
+            x_lt_lower = ast.Compare(
+                left=self._state_value_node(state),
+                ops=[ast.Lt()],
+                comparators=[self._clone(lower)],
+            )
+            x_gt_upper = ast.Compare(
+                left=self._state_value_node(state),
+                ops=[ast.Gt()],
+                comparators=[self._clone(upper)],
+            )
+            now_outside = ast.BoolOp(op=ast.Or(), values=[x_lt_lower, x_gt_upper])
+            return ast.BoolOp(op=ast.And(), values=[lag_inside, now_outside])
+        if name == "increasing":
+            self._expect_arg_len(node, name, 1)
+            state = self._state_arg(node, name)
+            return ast.Compare(
+                left=self._state_value_node(state),
+                ops=[ast.Gt()],
+                comparators=[self._make_lag_access(state, 1, node)],
+            )
+        if name == "decreasing":
+            self._expect_arg_len(node, name, 1)
+            state = self._state_arg(node, name)
+            return ast.Compare(
+                left=self._state_value_node(state),
+                ops=[ast.Lt()],
+                comparators=[self._make_lag_access(state, 1, node)],
+            )
+        raise ModelLoadError(f"Unsupported macro {name}()")
+
+    def _expect_arg_len(self, node: ast.Call, name: str, expected: int) -> None:
+        if len(node.args) != expected:
+            raise ModelLoadError(f"{name}() expects {expected} positional arguments")
+
+    def _state_arg(self, node: ast.Call, name: str) -> str:
+        if not node.args:
+            raise ModelLoadError(f"{name}() requires at least one argument")
+        target = node.args[0]
+        if not isinstance(target, ast.Name):
+            raise ModelLoadError(f"{name}() first argument must be a state identifier (e.g. x)")
+        state_name = target.id
+        if state_name not in self.nmap.state_to_ix:
+            raise ModelLoadError(
+                f"{name}() first argument must be a declared state, got '{state_name}'"
+            )
+        return state_name
+
+    def _state_value_node(self, state_name: str) -> ast.AST:
+        return ast.Subscript(
+            value=ast.Name(id="y_vec", ctx=ast.Load()),
+            slice=ast.Constant(value=self.nmap.state_to_ix[state_name]),
+            ctx=ast.Load(),
+        )
+
+    def _cross_up_expr(self, state: str, thresh: ast.AST, node: ast.AST) -> ast.AST:
+        return ast.BoolOp(
+            op=ast.And(),
+            values=[
+                ast.Compare(
+                    left=self._make_lag_access(state, 1, node),
+                    ops=[ast.LtE()],
+                    comparators=[self._clone(thresh)],
+                ),
+                ast.Compare(
+                    left=self._state_value_node(state),
+                    ops=[ast.Gt()],
+                    comparators=[self._clone(thresh)],
+                ),
+            ],
+        )
+
+    def _cross_down_expr(self, state: str, thresh: ast.AST, node: ast.AST) -> ast.AST:
+        return ast.BoolOp(
+            op=ast.And(),
+            values=[
+                ast.Compare(
+                    left=self._make_lag_access(state, 1, node),
+                    ops=[ast.GtE()],
+                    comparators=[self._clone(thresh)],
+                ),
+                ast.Compare(
+                    left=self._state_value_node(state),
+                    ops=[ast.Lt()],
+                    comparators=[self._clone(thresh)],
+                ),
+            ],
+        )
+
+    def _between_expr(self, value: ast.AST, lower: ast.AST, upper: ast.AST) -> ast.AST:
+        return ast.BoolOp(
+            op=ast.And(),
+            values=[
+                ast.Compare(
+                    left=self._clone(lower),
+                    ops=[ast.LtE()],
+                    comparators=[self._clone(value)],
+                ),
+                ast.Compare(
+                    left=self._clone(value),
+                    ops=[ast.LtE()],
+                    comparators=[self._clone(upper)],
+                ),
+            ],
+        )
 
     @staticmethod
     def _clone(node: ast.AST) -> ast.AST:

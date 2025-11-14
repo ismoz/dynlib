@@ -29,7 +29,7 @@ y = "x * (rho - z) - y"
 z = "x * y - beta * z"
 
 [events.detect]
-cond = "lag_x() < 0 and x >= 0"
+cond = "cross_up(x, 0)"
 phase = "post"
 log = ["t"]
 

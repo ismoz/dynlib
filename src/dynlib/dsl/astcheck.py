@@ -32,6 +32,9 @@ _DFUNC_FLAT = re.compile(r'^d([A-Za-z_]\w*)$')
 
 # Regex pattern for lag notation (lag_<name>() or lag_<name>(k))
 _LAG_CALL = re.compile(r'lag_([A-Za-z_]\w*)\s*\(\s*(\d*)\s*\)')
+_MACRO_LAG_CALL = re.compile(
+    r'\b(cross_up|cross_down|cross_either|changed|enters_interval|leaves_interval|increasing|decreasing)\s*\(\s*([A-Za-z_]\w*)'
+)
 
 
 def collect_names(normal: Dict[str, Any]) -> Dict[str, Set[str]]:
@@ -72,7 +75,9 @@ def _find_lag_requests(expr: str) -> Dict[str, int]:
         if depth > 1000:
             raise ModelLoadError(f"Lag depth {depth} exceeds sanity limit (1000) for lag_{name}")
         lag_depths[name] = max(lag_depths.get(name, 0), depth)
-    
+    for match in _MACRO_LAG_CALL.finditer(expr):
+        name = match.group(2)
+        lag_depths[name] = max(lag_depths.get(name, 0), 1)
     return lag_depths
 
 
