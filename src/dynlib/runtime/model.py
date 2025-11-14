@@ -46,6 +46,8 @@ class Model:
     events_post_source: Optional[str] = None
     stepper_source: Optional[str] = None
     lag_state_info: Optional[list[Tuple[int, int, int, int]]] = None
+    uses_lag: bool = False
+    equations_use_lag: bool = False
     
     def export_sources(self, output_dir: str | Path) -> Dict[str, Path]:
         """

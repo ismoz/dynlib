@@ -8,6 +8,7 @@ from dynlib.errors import ModelLoadError
 __all__ = [
     "collect_names",
     "collect_lag_requests",
+    "detect_equation_lag_usage",
     "validate_expr_acyclic",
     "validate_event_legality",
     "validate_event_tags",
@@ -130,6 +131,64 @@ def collect_lag_requests(normal: Dict[str, Any]) -> Dict[str, int]:
             merge_requests(ev["action_block"], f"[events.{ev_name}].action (block)")
     
     return lag_requests
+
+
+def detect_equation_lag_usage(normal: Dict[str, Any]) -> bool:
+    """
+    Determine whether any equation (rhs entry or block expression)
+    depends on lag() either directly or through aux/functions that use lag.
+    """
+    aux_map = normal.get("aux") or {}
+    fn_map = normal.get("functions") or {}
+
+    edges = _edges_for_aux_and_functions(normal)
+    direct_lag: Dict[str, bool] = {}
+
+    for name, expr in aux_map.items():
+        direct_lag[name] = bool(_find_lag_requests(expr))
+    for name, fdef in fn_map.items():
+        direct_lag[name] = bool(_find_lag_requests(fdef.get("expr", "")))
+
+    memo: Dict[str, bool] = {}
+
+    def _uses_lag(node: str) -> bool:
+        if node in memo:
+            return memo[node]
+        val = direct_lag.get(node, False)
+        if not val:
+            for dep in edges.get(node, ()):
+                if _uses_lag(dep):
+                    val = True
+                    break
+        memo[node] = val
+        return val
+
+    aux_with_lag = {name for name in aux_map.keys() if _uses_lag(name)}
+    fn_with_lag = {name for name in fn_map.keys() if _uses_lag(name)}
+
+    def _expr_uses_lag(expr: str | None) -> bool:
+        if not expr:
+            return False
+        if _find_lag_requests(expr):
+            return True
+        used = _find_idents(expr)
+        if used & aux_with_lag:
+            return True
+        if used & fn_with_lag:
+            return True
+        return False
+
+    eq = normal.get("equations") or {}
+    rhs_map = eq.get("rhs") or {}
+    for expr in rhs_map.values():
+        if _expr_uses_lag(expr):
+            return True
+
+    block_expr = eq.get("expr")
+    if isinstance(block_expr, str) and _expr_uses_lag(block_expr):
+        return True
+
+    return False
 
 
 def _edges_for_aux_and_functions(normal: Dict[str, Any]) -> Dict[str, Set[str]]:

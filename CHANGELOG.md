@@ -2,6 +2,20 @@
 
 ---
 
+## [2.23.4] – 2025-11-14
+### Added
+- Added `uses_lag` and `equations_use_lag` flags to model classes to track lag feature usage.
+- Added `detect_equation_lag_usage` function to check if model equations depend on lag functions. 
+  It tries to uncover all dependencies because aux and functions used in equations may also rely 
+  on lagged values. 
+
+### Changed
+- Updated cobweb plotting to prevent usage with models that have lag in equations, as it cannot 
+  evaluate them properly. Future analysis / plot tools that use model equations should not forget 
+  that lag mechanism will not work without a proper Sim object. They should perform a similar check.
+
+---
+
 ## [2.23.3] – 2025-11-14
 ### Fixed
 - `_LAG_STATE_INFO` value was shared globally between different python (non-jitted) runners. This 

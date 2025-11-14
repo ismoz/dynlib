@@ -56,6 +56,8 @@ class FullModel:
     events_post_source: Optional[str] = None
     stepper_source: Optional[str] = None
     lag_state_info: Optional[list[Tuple[int, int, int, int]]] = None  # [(state_idx, depth, ss_offset, iw0_index), ...]
+    uses_lag: bool = False
+    equations_use_lag: bool = False
 
 @dataclass
 class _StepperCacheEntry:
@@ -720,6 +722,8 @@ def build(
         events_post_source=pieces.events_post_source,
         stepper_source=stepper_source if 'stepper_source' in locals() and stepper_source else None,
         lag_state_info=lag_state_info_list,
+        uses_lag=spec.uses_lag,
+        equations_use_lag=spec.equations_use_lag,
     )
 
 

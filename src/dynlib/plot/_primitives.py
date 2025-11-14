@@ -115,6 +115,8 @@ def _resolve_unary_map_k(
     # 2) Model with map(k, t, y, p)
     map_fn = getattr(obj, "map", None)
     if callable(map_fn):
+        if bool(getattr(obj, "equations_use_lag", False)):
+            raise RuntimeError("cobweb: model equations use lag(), so the helper cannot evaluate them safely.")
         if not hasattr(obj, "_state_names") or not hasattr(obj, "_state_index"):
             raise TypeError("Model lacks state metadata.")
         # determine target state index
@@ -178,6 +180,9 @@ def _resolve_unary_map_k(
     if spec is not None and callable(rhs_fn):
         if getattr(spec, "kind", None) != "map":
             raise TypeError("cobweb requires a discrete map model (spec.kind == 'map').")
+
+        if bool(getattr(obj, "equations_use_lag", getattr(spec, "equations_use_lag", False))):
+            raise RuntimeError("cobweb: model equations use lag(), so the helper cannot evaluate them safely.")
 
         state_names = tuple(getattr(spec, "states", ()))
         if not state_names:

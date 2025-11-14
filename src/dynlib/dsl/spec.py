@@ -64,6 +64,8 @@ class ModelSpec:
     tag_index: Dict[str, Tuple[str, ...]]  # tag -> event names, compile-time only
     presets: Tuple[PresetSpec, ...]  # inline presets from DSL
     lag_map: Dict[str, Tuple[int, int, int]]  # state_name -> (max_depth, ss_offset, iw0_index)
+    uses_lag: bool
+    equations_use_lag: bool
 
 
 # ---- builders ----------------------------------------------------------------
@@ -104,6 +106,7 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
         validate_no_duplicate_equation_targets,
         validate_presets,
         collect_lag_requests,
+        detect_equation_lag_usage,
     )
     
     validate_expr_acyclic(normal)
@@ -184,6 +187,9 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
             ss_offset += buffer_len  # each lagged state gets buffer_len lanes
             iw0_index += 1           # each lagged state gets one iw0 slot
 
+    equations_use_lag = detect_equation_lag_usage(normal)
+    uses_lag = bool(lag_map)
+
     return ModelSpec(
         kind=kind,
         label=label,
@@ -201,6 +207,8 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
         tag_index=_build_tag_index(events),
         presets=presets,
         lag_map=lag_map,
+        uses_lag=uses_lag,
+        equations_use_lag=equations_use_lag,
     )
 
 
@@ -227,6 +235,8 @@ def _json_canon(obj: Any) -> str:
                 "tag_index": {k: list(v) for k, v in o.tag_index.items()},
                 "presets": [encode(p) for p in o.presets],
                 "lag_map": {k: list(v) for k, v in o.lag_map.items()},
+                "uses_lag": o.uses_lag,
+                "equations_use_lag": o.equations_use_lag,
             }
         if isinstance(o, PresetSpec):
             return {
