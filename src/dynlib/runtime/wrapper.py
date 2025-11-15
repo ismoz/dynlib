@@ -7,10 +7,15 @@ from dynlib.runtime.runner_api import (
     OK, STEPFAIL, NAN_DETECTED, DONE, GROW_REC, GROW_EVT, USER_BREAK, Status,
 )
 from dynlib.runtime.buffers import (
-    allocate_pools, grow_rec_arrays, grow_evt_arrays, WorkBanks,
+    allocate_pools, grow_rec_arrays, grow_evt_arrays,
 )
 from dynlib.runtime.results import Results
-from dynlib.steppers.base import StructSpec
+from dynlib.runtime.workspace import (
+    make_runtime_workspace,
+    initialize_lag_runtime_workspace,
+    snapshot_workspace,
+    restore_workspace,
+)
 
 __all__ = ["run_with_wrapper"]
 
@@ -23,7 +28,6 @@ def run_with_wrapper(
     rhs: Callable[..., None],
     events_pre: Callable[..., None],
     events_post: Callable[..., None],
-    struct: StructSpec,
     dtype: np.dtype,
     n_state: int,
     # sim config
@@ -42,25 +46,26 @@ def run_with_wrapper(
     max_log_width: int = 0,  # maximum log width across all events
     # NEW: stepper configuration
     stepper_config: np.ndarray = None,
-    workspace_seed: Mapping[str, np.ndarray] | None = None,
+    workspace_seed: Mapping[str, object] | None = None,
     discrete: bool = False,
     target_steps: Optional[int] = None,
-    lag_state_info: list[Tuple[int, int, int, int]] | None = None,  # NEW: lag metadata as indices
+    lag_state_info: Tuple[Tuple[int, int, int, int], ...] | None = None,
+    make_stepper_workspace: Callable[[], object] | None = None,
 ) -> Results:
     """
-    JIT-free orchestrator. Allocates banks/buffers, calls the compiled runner
-    exactly once per attempt, handles growth and re-entry, and returns Results.
+    Orchestrates runner calls while managing workspaces and growth/re-entry.
 
     Runner ABI (frozen) — summarized here (see runner_api.py for full doc):
         status = runner(
             t0, horizon, dt_init,
             max_steps, n_state, record_interval,
             y_curr, y_prev, params,
-            sp, ss, sw0, sw1, sw2, sw3, iw0, bw0,
+            runtime_ws, stepper_ws,
             stepper_config,
             y_prop, t_prop, dt_next, err_est,
             T, Y, STEP, FLAGS,
             EVT_CODE, EVT_INDEX, EVT_LOG_DATA,
+            evt_log_scratch,
             i_start, step_start, cap_rec, cap_evt,
             user_break_flag, status_out, hint_out,
             i_out, step_out, t_out,
@@ -68,9 +73,7 @@ def run_with_wrapper(
         ) -> int32
 
     Notes:
-      - This wrapper never allocates inside the runner attempt; growth is handled
-        outside by doubling the relevant buffers, copying only filled regions,
-        and re-entering with updated caps/cursors.
+      - Workspaces are allocated once per wrapper call and passed through to the runner.
       - hint_out[0] is used here as the current **event log cursor m** (by convention).
       - stepper_config is a read-only float64 array containing runtime configuration.
       - When ``discrete=True`` the runner horizon is interpreted as an iteration
@@ -96,18 +99,27 @@ def run_with_wrapper(
         # Ensure it's the right dtype
         stepper_config = np.asarray(stepper_config, dtype=np.float64)
 
-    # Allocate banks and pools
-    banks, rec, ev = allocate_pools(
-        n_state=n_state, struct=struct, dtype=dtype,
-        cap_rec=cap_rec, cap_evt=cap_evt, max_log_width=max_log_width,
+    runtime_ws = make_runtime_workspace(
+        lag_state_info=lag_state_info,
+        dtype=dtype,
+    )
+    stepper_ws = make_stepper_workspace() if make_stepper_workspace else None
+
+    # Allocate recording/event pools
+    rec, ev = allocate_pools(
+        n_state=n_state,
+        dtype=dtype,
+        cap_rec=cap_rec,
+        cap_evt=cap_evt,
+        max_log_width=max_log_width,
     )
 
     # Apply workspace seed (for resume scenarios) before entering runner
     if workspace_seed:
-        _apply_workspace_seed(banks, workspace_seed)
+        restore_workspace(stepper_ws, workspace_seed.get("stepper"))  # type: ignore[arg-type]
+        restore_workspace(runtime_ws, workspace_seed.get("runtime"))  # type: ignore[arg-type]
     elif lag_state_info:
-        # Initialize lag buffers with IC (if any lags present and not resuming)
-        _initialize_lag_buffers_by_index(banks, y_curr, lag_state_info)
+        initialize_lag_runtime_workspace(runtime_ws, lag_state_info=lag_state_info, y_curr=y_curr)
 
     # Proposals / outs (len-1 where applicable)
     y_prop  = np.zeros((n_state,), dtype=dtype)
@@ -145,8 +157,8 @@ def run_with_wrapper(
             t_curr, horizon_arg, dt_curr,
             int(max_steps), int(n_state), int(rec_every),
             y_curr, y_prev, params,
-            banks.sp, banks.ss, banks.sw0, banks.sw1, banks.sw2, banks.sw3,
-            banks.iw0, banks.bw0,
+            runtime_ws,
+            stepper_ws,
             stepper_config,
             y_prop, t_prop, dt_next, err_est,
             rec.T, rec.Y, rec.STEP, rec.FLAGS,
@@ -168,7 +180,10 @@ def run_with_wrapper(
         if status_value == DONE:
             final_state = np.array(y_curr, copy=True)
             final_params = np.array(params, copy=True)
-            final_ws = _capture_workspace(banks)
+            final_ws = {
+                "stepper": snapshot_workspace(stepper_ws),
+                "runtime": snapshot_workspace(runtime_ws),
+            }
             final_dt = float(dt_next[0]) if step_curr > 0 else float(dt_curr)
             t_final = float(t_out[0])
             return Results(
@@ -182,7 +197,7 @@ def run_with_wrapper(
                 t_final=t_final,
                 final_dt=final_dt,
                 step_count_final=step_curr,
-                final_stepper_ws=final_ws,
+                final_workspace=final_ws,
             )
 
         if status_value == GROW_REC:
@@ -221,7 +236,10 @@ def run_with_wrapper(
             # Early termination or error; return what we have (viewed via n/m)
             final_state = np.array(y_curr, copy=True)
             final_params = np.array(params, copy=True)
-            final_ws = _capture_workspace(banks)
+            final_ws = {
+                "stepper": snapshot_workspace(stepper_ws),
+                "runtime": snapshot_workspace(runtime_ws),
+            }
             final_dt = float(dt_next[0]) if step_curr > 0 else float(dt_curr)
             t_final = float(t_out[0])
             return Results(
@@ -234,57 +252,8 @@ def run_with_wrapper(
                 t_final=t_final,
                 final_dt=final_dt,
                 step_count_final=step_curr,
-                final_stepper_ws=final_ws,
+                final_workspace=final_ws,
             )
 
         # Any other code is unexpected in wrapper-level exit contract.
         raise RuntimeError(f"Runner returned unexpected status {status_value}")
-
-
-def _apply_workspace_seed(banks: WorkBanks, seed: Mapping[str, np.ndarray]) -> None:
-    """Restore stepper workspace arrays from a snapshot."""
-    for name in ("sp", "ss", "sw0", "sw1", "sw2", "sw3", "iw0", "bw0"):
-        if name not in seed:
-            continue
-        data = np.asarray(seed[name])
-        target = getattr(banks, name)
-        if target.shape != data.shape or target.dtype != data.dtype:
-            raise ValueError(f"Workspace seed mismatch for '{name}': expected shape={target.shape}, dtype={target.dtype}, got {data.shape}/{data.dtype}")
-        if target.size == 0:
-            continue
-        target[...] = data
-
-
-def _capture_workspace(banks: WorkBanks) -> Dict[str, np.ndarray]:
-    """Capture copies of stepper workspace arrays for session state snapshots."""
-    snapshot: Dict[str, np.ndarray] = {}
-    for name in ("sp", "ss", "sw0", "sw1", "sw2", "sw3", "iw0", "bw0"):
-        data = getattr(banks, name)
-        if data.size == 0:
-            continue
-        snapshot[name] = np.array(data, copy=True)
-    return snapshot
-
-
-def _initialize_lag_buffers_by_index(
-    banks: WorkBanks,
-    y_curr: np.ndarray,
-    lag_state_info: list[Tuple[int, int, int, int]],  # [(state_idx, depth, ss_offset, iw0_index), ...]
-) -> None:
-    """
-    Initialize lag buffers with initial condition values using state indices.
-    
-    Args:
-        banks: WorkBanks containing ss and iw0 arrays
-        y_curr: Current state vector (IC at t0)
-        lag_state_info: List of (state_idx, depth, ss_offset, iw0_index) for each lagged state
-    """
-    for state_idx, depth, ss_offset, iw0_index in lag_state_info:
-        ic_value = y_curr[state_idx]
-        
-        # Fill circular buffer with IC
-        for i in range(depth):
-            banks.ss[ss_offset + i] = ic_value
-        
-        # Set head to last position (depth - 1)
-        banks.iw0[iw0_index] = depth - 1

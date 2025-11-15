@@ -1,35 +1,24 @@
 # tests/unit/test_wrapper_reentry.py
 import numpy as np
 import pytest
-from dynlib.runtime.wrapper import run_with_wrapper
-from dynlib.runtime.runner_api import GROW_REC, GROW_EVT, DONE, STEPFAIL
-from dynlib.steppers.base import StepperMeta, StepperSpec, StructSpec
 
-# ---- Fake stepper/spec (no real stepping) ------------------------------------
-class _DummyStepper:
-    """Minimal stepper spec for testing."""
-    def __init__(self):
-        self.meta = StepperMeta(name="dummy", kind="ode")
-    
-    def struct_spec(self) -> StructSpec:
-        # No work memory needed for the fake runner
-        return StructSpec(
-            sp_size=1, ss_size=1,
-            sw0_size=1, sw1_size=1, sw2_size=1, sw3_size=1,
-            iw0_size=1, bw0_size=1
-        )
-    
-    def emit(self, *args, **kwargs):
-        raise NotImplementedError
+from dynlib.runtime.runner_api import DONE, GROW_EVT, GROW_REC, STEPFAIL
+from dynlib.runtime.wrapper import run_with_wrapper
 
 # ---- Fake callables -----------------------------------------------------------
-def _rhs(t, y_vec, dy_out, params):  # pragma: no cover
+def _rhs(t, y_vec, dy_out, params, runtime_ws):  # pragma: no cover
     pass
-def _events_pre(t, y, params):  # pragma: no cover
-    pass
-def _events_post(t, y, params):  # pragma: no cover
-    pass
-def _stepper(*args, **kwargs):  # pragma: no cover
+
+
+def _events_pre(t, y_vec, params, evt_log_scratch, runtime_ws):  # pragma: no cover
+    return -1, 0
+
+
+def _events_post(t, y_vec, params, evt_log_scratch, runtime_ws):  # pragma: no cover
+    return -1, 0
+
+
+def _stepper(t, dt, y_curr, rhs, params, runtime_ws, ws, cfg, y_prop, t_prop, dt_next, err_est):  # pragma: no cover
     return 0
 
 class _RunnerScript:
@@ -47,7 +36,7 @@ class _RunnerScript:
         # Unpack outs (last group before function symbols)
         # ... args[?] layout mirrors wrapper call order; we read by position:
         # [ ... rec.T, rec.Y, rec.STEP, rec.FLAGS,
-        #   ev.EVT_CODE, ev.EVT_INDEX, ev.EVT_LOG_DATA,
+        #   ev.EVT_CODE, ev.EVT_INDEX, ev.EVT_LOG_DATA, evt_log_scratch,
         #   i_start, step_start, cap_rec, cap_evt,
         #   user_break_flag, status_out, hint_out, i_out, step_out, t_out, ...]
         # Last 4 args are (stepper, rhs, events_pre, events_post)
@@ -82,13 +71,6 @@ class _RunnerScript:
             return DONE
 
 def test_wrapper_reentry_calls_and_cursors():
-    # Create a StructSpec directly
-    struct = StructSpec(
-        sp_size=1, ss_size=1,
-        sw0_size=1, sw1_size=1, sw2_size=1, sw3_size=1,
-        iw0_size=1, bw0_size=1
-    )
-    
     ic = np.array([1.0], dtype=np.float64)
     params = np.array([2.0], dtype=np.float64)
     fake_runner = _RunnerScript()
@@ -96,7 +78,7 @@ def test_wrapper_reentry_calls_and_cursors():
     res = run_with_wrapper(
         runner=fake_runner,
         stepper=_stepper, rhs=_rhs, events_pre=_events_pre, events_post=_events_post,
-        struct=struct, dtype=np.float64, n_state=1,
+        dtype=np.float64, n_state=1,
         t0=0.0, t_end=1.0, dt_init=0.1, max_steps=100,
         record=True, record_interval=1,
         ic=ic, params=params,
@@ -130,12 +112,6 @@ class _FailingRunner:
 
 
 def test_wrapper_warns_and_sets_status_on_failure():
-    struct = StructSpec(
-        sp_size=1, ss_size=1,
-        sw0_size=1, sw1_size=1, sw2_size=1, sw3_size=1,
-        iw0_size=1, bw0_size=1
-    )
-
     ic = np.array([1.0], dtype=np.float64)
     params = np.array([2.0], dtype=np.float64)
 
@@ -143,7 +119,7 @@ def test_wrapper_warns_and_sets_status_on_failure():
         res = run_with_wrapper(
             runner=_FailingRunner(),
             stepper=_stepper, rhs=_rhs, events_pre=_events_pre, events_post=_events_post,
-            struct=struct, dtype=np.float64, n_state=1,
+            dtype=np.float64, n_state=1,
             t0=0.0, t_end=1.0, dt_init=0.1, max_steps=10,
             record=True, record_interval=1,
             ic=ic, params=params,

@@ -9,7 +9,6 @@ import tomllib
 from dynlib.dsl.spec import ModelSpec, compute_spec_hash, build_spec
 from dynlib.dsl.parser import parse_model_v2
 from dynlib.steppers.registry import get_stepper
-from dynlib.steppers.base import StructSpec
 from dynlib.compiler.codegen.emitter import emit_rhs_and_events, CompiledCallables
 from dynlib.compiler.codegen import runner as runner_codegen
 from dynlib.compiler.codegen import runner_discrete as runner_discrete_codegen
@@ -19,6 +18,10 @@ from dynlib.compiler.jit.cache import JITCache, CacheKey
 from dynlib.compiler.paths import resolve_uri, load_config, PathConfig, resolve_cache_root
 from dynlib.compiler.mods import apply_mods_v2, ModSpec
 from dynlib.compiler.guards import get_guards, configure_guards_disk_cache
+from dynlib.runtime.workspace import (
+    make_runtime_workspace,
+    workspace_structsig,
+)
 
 
 def _format_toml_parse_error(toml_content: str, error: Exception, source_desc: str = "inline model") -> str:
@@ -110,7 +113,7 @@ class FullModel:
     """Complete compiled model: includes runner + stepper + callables."""
     spec: ModelSpec
     stepper_name: str
-    struct: StructSpec
+    workspace_sig: Tuple[int, ...]
     rhs: Callable
     events_pre: Callable
     events_post: Callable
@@ -123,9 +126,10 @@ class FullModel:
     events_pre_source: Optional[str] = None
     events_post_source: Optional[str] = None
     stepper_source: Optional[str] = None
-    lag_state_info: Optional[list[Tuple[int, int, int, int]]] = None  # [(state_idx, depth, ss_offset, iw0_index), ...]
+    lag_state_info: Optional[Tuple[Tuple[int, int, int, int], ...]] = None
     uses_lag: bool = False
     equations_use_lag: bool = False
+    make_stepper_workspace: Optional[Callable[[], object]] = None
 
 @dataclass
 class _StepperCacheEntry:
@@ -144,22 +148,21 @@ def _dispatcher_compiled(fn: Callable) -> bool:
     return bool(signatures)
 
 
-def _structsig_from_struct(struct: StructSpec) -> Tuple[int, ...]:
-    return (
-        struct.sp_size, struct.ss_size,
-        struct.sw0_size, struct.sw1_size, struct.sw2_size, struct.sw3_size,
-        struct.iw0_size, struct.bw0_size,
-        int(bool(struct.use_history)), int(bool(struct.use_f_history)),
-        int(bool(struct.dense_output)), int(bool(struct.needs_jacobian)),
-        -1 if struct.embedded_order is None else int(struct.embedded_order),
-        int(bool(struct.stiff_ok)),
+def _combined_workspace_sig(*workspaces: object | None) -> Tuple[int, ...]:
+    sig: list[int] = []
+    for ws in workspaces:
+        sig.extend(workspace_structsig(ws))
+    return tuple(sig)
+
+
+def _compute_lag_state_info(spec: ModelSpec) -> Tuple[Tuple[int, int, int, int], ...]:
+    if not spec.lag_map:
+        return ()
+    state_to_idx = {name: idx for idx, name in enumerate(spec.states)}
+    return tuple(
+        (state_to_idx[state_name], int(depth), int(offset), int(head_index))
+        for state_name, (depth, offset, head_index) in spec.lag_map.items()
     )
-
-
-def _structsig_from_stepper(stepper_name: str) -> Tuple[int, ...]:
-    # StructSpec signature is a tuple of sizes; we only need it for the cache key.
-    spec = get_stepper(stepper_name).struct_spec()
-    return _structsig_from_struct(spec)
 
 
 class _TripletCacheContext:
@@ -229,7 +232,11 @@ def build_callables(
     # Guards are configured in build() and passed to runner via FullModel
 
     s_hash = compute_spec_hash(spec)
-    structsig = _structsig_from_stepper(stepper_name)
+    lag_state_info = _compute_lag_state_info(spec)
+    runtime_sig = workspace_structsig(
+        make_runtime_workspace(lag_state_info=lag_state_info, dtype=np.dtype(dtype))
+    )
+    structsig = tuple(runtime_sig)
     key = CacheKey(
         spec_hash=s_hash,
         stepper=stepper_name,
@@ -325,7 +332,6 @@ def _warmup_jit_runner(
     rhs: Callable,
     events_pre: Callable,
     events_post: Callable,
-    struct: StructSpec,
     spec: ModelSpec,
     dtype: str,
     stepper_spec=None,  # NEW: optional stepper spec for config
@@ -342,10 +348,18 @@ def _warmup_jit_runner(
     dtype_np = np.dtype(dtype)
     n_state = len(spec.states)
     
-    # Allocate minimal banks and buffers for warmup
-    banks, rec, ev = allocate_pools(
+    # Allocate minimal workspaces and buffers for warmup
+    runtime_ws = make_runtime_workspace(
+        lag_state_info=_compute_lag_state_info(spec),
+        dtype=dtype_np,
+    )
+    stepper_ws = (
+        stepper_spec.make_workspace(n_state, dtype_np, model_spec=spec)
+        if stepper_spec is not None
+        else None
+    )
+    rec, ev = allocate_pools(
         n_state=n_state,
-        struct=struct,
         dtype=dtype_np,
         cap_rec=2,      # Minimal capacity
         cap_evt=1,
@@ -385,8 +399,8 @@ def _warmup_jit_runner(
             0.0, 0.1, 0.1,  # t0, t_end, dt_init - use Python floats (float64), not model dtype
             100, n_state, 0,  # max_steps, n_state, record_interval (0 = no recording)
             y_curr, y_prev, params,
-            banks.sp, banks.ss, banks.sw0, banks.sw1, banks.sw2, banks.sw3,
-            banks.iw0, banks.bw0,
+            runtime_ws,
+            stepper_ws,
             stepper_config,
             y_prop, t_prop, dt_next, err_est,
             rec.T, rec.Y, rec.STEP, rec.FLAGS,
@@ -637,6 +651,8 @@ def build(
     
     # Use spec's dtype if not specified
     dtype_str = dtype if dtype is not None else spec.dtype
+    dtype_np = np.dtype(dtype_str)
+    n_state = len(spec.states)
     
     # Get stepper spec
     stepper_spec = get_stepper(stepper_name)
@@ -649,43 +665,18 @@ def build(
             model_kind=spec.kind
         )
     
-    # Get base struct from stepper
-    base_struct = stepper_spec.struct_spec()
-    
-    # Augment struct with lag requirements from model
-    num_lagged_states = len(spec.lag_map)
-    lag_ss_lanes = sum(depth for depth, _, _ in spec.lag_map.values())
-    
-    # Create augmented struct with lag allocations
-    struct = StructSpec(
-        sp_size=base_struct.sp_size,
-        ss_size=base_struct.ss_size + lag_ss_lanes,  # Add lag buffer lanes
-        sw0_size=base_struct.sw0_size,
-        sw1_size=base_struct.sw1_size,
-        sw2_size=base_struct.sw2_size,
-        sw3_size=base_struct.sw3_size,
-        iw0_size=base_struct.iw0_size + num_lagged_states,  # Add lag head indices
-        bw0_size=base_struct.bw0_size,
-        use_history=base_struct.use_history or (num_lagged_states > 0),  # Enable if lags present
-        use_f_history=base_struct.use_f_history,
-        dense_output=base_struct.dense_output,
-        needs_jacobian=base_struct.needs_jacobian,
-        embedded_order=base_struct.embedded_order,
-        stiff_ok=base_struct.stiff_ok,
-        ss_lag_reserved=lag_ss_lanes,
-        iw0_lag_reserved=num_lagged_states,  # First N slots reserved for lags
+    lag_state_info_list = _compute_lag_state_info(spec)
+    runtime_ws_template = make_runtime_workspace(
+        lag_state_info=lag_state_info_list,
+        dtype=dtype_np,
     )
-    
-    structsig = _structsig_from_struct(struct)
 
-    # Convert lag_map to lag_state_info format early for runner wiring
-    lag_state_info_list: Optional[list[Tuple[int, int, int, int]]] = None
-    if spec.lag_map:
-        state_to_idx = {name: idx for idx, name in enumerate(spec.states)}
-        lag_state_info_list = [
-            (state_to_idx[state_name], depth, ss_offset, iw0_index)
-            for state_name, (depth, ss_offset, iw0_index) in spec.lag_map.items()
-        ]
+    def _make_stepper_workspace() -> object | None:
+        return stepper_spec.make_workspace(n_state, dtype_np, model_spec=spec)
+
+    stepper_ws_sample = _make_stepper_workspace()
+    workspace_sig = _combined_workspace_sig(stepper_ws_sample, runtime_ws_template)
+    stepper_sig = workspace_structsig(stepper_ws_sample)
 
     cache_root_path: Optional[Path] = None
     if jit and disk_cache:
@@ -706,10 +697,10 @@ def build(
     stepper_from_disk = False
     
     if stepper_entry is None:
-        stepper_py = stepper_spec.emit(pieces.rhs, struct, model_spec=spec)
+        stepper_py = stepper_spec.emit(pieces.rhs, model_spec=spec)
         
         if validate_stepper:
-            issues = validate_stepper_function(stepper_py, stepper_name, struct_spec=struct)
+            issues = validate_stepper_function(stepper_py, stepper_name)
             report_validation_issues(issues, stepper_name, strict=False)
         
         stepper_source = _render_stepper_source(stepper_py)
@@ -718,7 +709,7 @@ def build(
             runner_codegen.configure_stepper_disk_cache(
                 spec_hash=pieces.spec_hash,
                 stepper_name=stepper_name,
-                structsig=structsig,
+                structsig=stepper_sig,
                 dtype=dtype_str,
                 cache_root=cache_root_path,
                 source=stepper_source,
@@ -748,15 +739,13 @@ def build(
             runner_discrete_codegen.configure_runner_disk_cache_discrete(
                 spec_hash=pieces.spec_hash,
                 stepper_name=stepper_name,
-                structsig=structsig,
+                structsig=workspace_sig,
                 dtype=dtype_str,
                 cache_root=cache_root_path,
-                lag_state_info=lag_state_info_list,
             )
         runner_fn = runner_discrete_codegen.get_runner_discrete(
             jit=jit,
             disk_cache=disk_cache,
-            lag_state_info=lag_state_info_list,
         )
     else:
         # Use continuous runner (default)
@@ -764,15 +753,13 @@ def build(
             runner_codegen.configure_runner_disk_cache(
                 spec_hash=pieces.spec_hash,
                 stepper_name=stepper_name,
-                structsig=structsig,
+                structsig=workspace_sig,
                 dtype=dtype_str,
                 cache_root=cache_root_path,
-                lag_state_info=lag_state_info_list,
             )
         runner_fn = runner_codegen.get_runner(
             jit=jit,
             disk_cache=disk_cache,
-            lag_state_info=lag_state_info_list,
         )
 
     # Get guards (NaN/Inf detection utilities)
@@ -787,8 +774,14 @@ def build(
 
     if jit and not _all_compiled():
         _warmup_jit_runner(
-            runner_fn, stepper_fn, pieces.rhs, pieces.events_pre, pieces.events_post,
-            struct, spec, dtype_str, stepper_spec  # NEW: pass stepper_spec
+            runner_fn,
+            stepper_fn,
+            pieces.rhs,
+            pieces.events_pre,
+            pieces.events_post,
+            spec,
+            dtype_str,
+            stepper_spec,  # NEW: pass stepper_spec
         )
     
     dtype_np = np.dtype(dtype_str)
@@ -796,7 +789,7 @@ def build(
     return FullModel(
         spec=spec,
         stepper_name=stepper_name,
-        struct=struct,
+        workspace_sig=workspace_sig,
         rhs=pieces.rhs,
         events_pre=pieces.events_pre,
         events_post=pieces.events_post,
@@ -812,6 +805,7 @@ def build(
         lag_state_info=lag_state_info_list,
         uses_lag=spec.uses_lag,
         equations_use_lag=spec.equations_use_lag,
+        make_stepper_workspace=_make_stepper_workspace,
     )
 
 

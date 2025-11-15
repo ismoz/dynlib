@@ -23,11 +23,11 @@ History layout in `ss` (after lag prefix):
 Persists f-history in `ss` and a step counter in `iw0`.
 """
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 import math
 import numpy as np
 
-from ..base import StepperMeta, StructSpec
+from ..base import StepperMeta
 from dynlib.runtime.runner_api import OK, NAN_DETECTED, STEPFAIL
 
 # Import guards for NaN/Inf detection
@@ -73,35 +73,26 @@ class AB3Spec:
             )
         self.meta = meta
 
-    def struct_spec(self) -> StructSpec:
-        """
-        AB3 workspace:
+    class Workspace(NamedTuple):
+        f_nm2: np.ndarray
+        f_nm1: np.ndarray
+        f_n: np.ndarray
+        f_next: np.ndarray
+        y_stage: np.ndarray
+        step_index: np.ndarray
 
-          - ss: 3 lanes for persistent f-history (after lag prefix):
-                lane 0: f_{n-2}
-                lane 1: f_{n-1}
-                lane 2: f_n
-          - sp: 1 lane for y_stage (Heun predictor)
-          - sw0: 1 lane for temporary f_{n+1} during rotation
-          - iw0: 1 slot for step_count (offset by iw0_lag_reserved slots)
+    def workspace_type(self) -> type | None:
+        return AB3Spec.Workspace
 
-        Lane-based sizes: sp/ss/sw* sizes are lane counts (multiples of n_state).
-        """
-        return StructSpec(
-            sp_size=1,    # y_stage (Heun predictor)
-            ss_size=3,    # f_{n-2}, f_{n-1}, f_n history (3 lanes)
-            sw0_size=1,   # tmp lane for f_{n+1} when rotating history
-            sw1_size=0,
-            sw2_size=0,
-            sw3_size=0,
-            iw0_size=1,   # step_count
-            bw0_size=0,
-            use_history=False,    # stepper manages its own history
-            use_f_history=True,   # this stepper uses derivative history
-            dense_output=False,
-            needs_jacobian=False,
-            embedded_order=None,
-            stiff_ok=False,
+    def make_workspace(self, n_state: int, dtype: np.dtype, model_spec=None) -> Workspace:
+        zeros = lambda: np.zeros((n_state,), dtype=dtype)
+        return AB3Spec.Workspace(
+            f_nm2=zeros(),
+            f_nm1=zeros(),
+            f_n=zeros(),
+            f_next=zeros(),
+            y_stage=zeros(),
+            step_index=np.zeros((1,), dtype=np.int64),
         )
 
     def config_spec(self) -> type | None:
@@ -116,36 +107,16 @@ class AB3Spec:
         """AB3 has no config - return empty array."""
         return np.array([], dtype=np.float64)
 
-    def emit(self, rhs_fn: Callable, struct: StructSpec, model_spec=None) -> Callable:
+    def emit(self, rhs_fn: Callable, model_spec=None) -> Callable:
         """
-        Generate a jittable AB3 stepper function.
-
-        Signature (per ABI):
-            status = stepper(
-                t: float, dt: float,
-                y_curr: float[:], rhs,
-                params: float[:] | int[:],
-                sp: float[:], ss: float[:],
-                sw0: float[:], sw1: float[:], sw2: float[:], sw3: float[:],
-                iw0: int32[:], bw0: uint8[:],
-                stepper_config: float64[:],
-                y_prop: float[:], t_prop: float[:], dt_next: float[:], err_est: float[:]
-            ) -> int32
-
-        Returns:
-            A callable Python function implementing AB3 with startup.
+        Generate a jittable AB3 stepper backed by the NamedTuple workspace.
         """
-        # Lag-reserved metadata from StructSpec (in lanes / slots)
-        ss_lag_reserved_lanes = struct.ss_lag_reserved
-        iw0_lag_reserved = struct.iw0_lag_reserved
-
         def ab3_stepper(
             t, dt,
             y_curr, rhs,
             params,
-            sp, ss,
-            sw0, sw1, sw2, sw3,
-            iw0, bw0,
+            runtime_ws,
+            ws,
             stepper_config,
             y_prop, t_prop, dt_next, err_est
         ):
@@ -157,30 +128,18 @@ class AB3Spec:
             # Number of states
             n = y_curr.size
 
-            # Offsets for lag-reserved prefix in ss (lanes -> elements)
-            ss_offset = ss_lag_reserved_lanes * n
-
-            # f-history lanes in ss:
-            #   f_nm2 = f_{n-2}
-            #   f_nm1 = f_{n-1}
-            #   f_n   = f_n     (derivative at current y_curr)
-            f_nm2 = ss[ss_offset : ss_offset + n]
-            f_nm1 = ss[ss_offset + n : ss_offset + 2 * n]
-            f_n   = ss[ss_offset + 2 * n : ss_offset + 3 * n]
-
-            # Temporary lane for f_{n+1} during history rotation
-            f_next = sw0[:n]
-
-            # Step counter (accepted steps so far)
-            step_idx = iw0[iw0_lag_reserved + 0]
-
-            # Scratch for predictor (Heun startup)
-            y_stage = sp[:n]
+            f_nm2 = ws.f_nm2
+            f_nm1 = ws.f_nm1
+            f_n = ws.f_n
+            f_next = ws.f_next
+            y_stage = ws.y_stage
+            step_idx_arr = ws.step_index
+            step_idx = int(step_idx_arr[0])
 
             # --- Startup step 0 (Heun, order 2) ---
             if step_idx == 0:
                 # Compute f0 = f(t0, y0) into f_nm1
-                rhs(t, y_curr, f_nm1, params, ss, iw0)
+                rhs(t, y_curr, f_nm1, params, runtime_ws)
                 if not allfinite1d(f_nm1):
                     err_est[0] = float("inf")
                     return NAN_DETECTED
@@ -190,7 +149,7 @@ class AB3Spec:
                     y_stage[i] = y_curr[i] + dt * f_nm1[i]
 
                 # Predictor derivative (at y_stage) into f_n (temporary)
-                rhs(t + dt, y_stage, f_n, params, ss, iw0)
+                rhs(t + dt, y_stage, f_n, params, runtime_ws)
                 if not allfinite1d(f_n):
                     err_est[0] = float("inf")
                     return NAN_DETECTED
@@ -204,7 +163,7 @@ class AB3Spec:
                     return NAN_DETECTED
 
                 # Refresh f_n with derivative at accepted state y1
-                rhs(t + dt, y_prop, f_n, params, ss, iw0)
+                rhs(t + dt, y_prop, f_n, params, runtime_ws)
                 if not allfinite1d(f_n):
                     err_est[0] = float("inf")
                     return NAN_DETECTED
@@ -217,7 +176,7 @@ class AB3Spec:
                 dt_next[0] = dt
                 err_est[0] = 0.0
 
-                iw0[iw0_lag_reserved + 0] = step_idx + 1
+                step_idx_arr[0] = step_idx + 1
                 return OK
 
             # --- Startup step 1 (AB2 using f0, f1) ---
@@ -235,7 +194,7 @@ class AB3Spec:
                     return NAN_DETECTED
 
                 # Compute f2 = f(t2, y2) into f_next
-                rhs(t + dt, y_prop, f_next, params, ss, iw0)
+                rhs(t + dt, y_prop, f_next, params, runtime_ws)
                 if not allfinite1d(f_next):
                     err_est[0] = float("inf")
                     return NAN_DETECTED
@@ -253,7 +212,7 @@ class AB3Spec:
                 dt_next[0] = dt
                 err_est[0] = 0.0
 
-                iw0[iw0_lag_reserved + 0] = step_idx + 1
+                step_idx_arr[0] = step_idx + 1
                 return OK
 
             # --- Main AB3 step (step_idx >= 2) ---
@@ -280,7 +239,7 @@ class AB3Spec:
                 return NAN_DETECTED
 
             # Compute f_{n+1} at proposed state; store temporarily in f_next
-            rhs(t + dt, y_prop, f_next, params, ss, iw0)
+            rhs(t + dt, y_prop, f_next, params, runtime_ws)
             if not allfinite1d(f_next):
                 err_est[0] = float("inf")
                 return NAN_DETECTED
@@ -298,7 +257,7 @@ class AB3Spec:
             dt_next[0] = dt
             err_est[0] = 0.0
 
-            iw0[iw0_lag_reserved + 0] = step_idx + 1
+            step_idx_arr[0] = step_idx + 1
             return OK
 
         return ab3_stepper

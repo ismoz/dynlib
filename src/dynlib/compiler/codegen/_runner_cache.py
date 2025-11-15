@@ -40,7 +40,6 @@ class RunnerCacheRequest:
     structsig: Tuple[int, ...]
     dtype: str
     cache_root: Path
-    lag_state_info: Tuple[Tuple[int, int, int, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -236,10 +235,6 @@ class RunnerDiskCache:
             "stepper": self.request.stepper_name,
             "structsig": [int(x) for x in self.request.structsig],
             "dtype": canonical_dtype_name(self.request.dtype),
-            "lag_state_info": [
-                [int(a), int(b), int(c), int(d)]
-                for (a, b, c, d) in self.request.lag_state_info
-            ],
             "env": self.env_pins,
         }
 

@@ -5,56 +5,10 @@ import tomllib
 import numpy as np
 import pytest
 
-from dynlib.dsl.parser import parse_model_v2
 from dynlib.compiler.build import build_callables
+from dynlib.dsl.parser import parse_model_v2
 from dynlib.dsl.spec import build_spec
-
-# --- ensure a stepper is registered (we only need its StructSpec sizes for cache key) ---
-# We do this here so Slice 3 can run without Slice 4's real euler stepper.
-try:
-    from dynlib.steppers.registry import register, get_stepper
-    from dynlib.steppers.base import StructSpec
-    _REG_OK = True
-except Exception:
-    _REG_OK = False
-
-if _REG_OK:
-    class _DummyEuler:
-        class _Meta:
-            name = "euler"
-            kind = "ode"
-            time_control = "fixed"
-            scheme = "explicit"
-            geometry = frozenset()
-            family = "probe"
-            order = 1
-            embedded_order = None
-            dense_output = False
-            stiff_ok = False
-            aliases = ()
-
-        def __init__(self):
-            self.meta = self._Meta()
-
-        def struct_spec(self) -> StructSpec:
-            # All zeros are fine for cache signature in Slice 3
-            return StructSpec(
-                sp_size=0, ss_size=0,
-                sw0_size=0, sw1_size=0, sw2_size=0, sw3_size=0,
-                iw0_size=0, bw0_size=0,
-                use_history=False, use_f_history=False,
-                dense_output=False, needs_jacobian=False,
-                embedded_order=None, stiff_ok=False
-            )
-
-        def emit(self, rhs_fn, struct: StructSpec):
-            # Not used in Slice 3 tests
-            raise RuntimeError("emit() not used in Slice 3 tests")
-
-    try:
-        get_stepper("euler")
-    except Exception:
-        register(_DummyEuler())
+from dynlib.runtime.workspace import make_runtime_workspace
 
 MODEL_SRC = "inline:" + """
 [model]
@@ -98,12 +52,11 @@ def test_rhs_eval_jit_parity():
     p = np.array([2.0], dtype=np.float64)
     dy0 = np.zeros_like(y)
     dy1 = np.zeros_like(y)
-    ss = np.zeros(0, dtype=np.float64)
-    iw0 = np.zeros(0, dtype=np.int32)
+    runtime_ws = make_runtime_workspace(lag_state_info=None, dtype=np.float64)
 
     t = 0.0
-    cp0.rhs(t, y, dy0, p, ss, iw0)
-    cp1.rhs(t, y, dy1, p, ss, iw0)
+    cp0.rhs(t, y, dy0, p, runtime_ws)
+    cp1.rhs(t, y, dy1, p, runtime_ws)
 
     # dx/dt = -a*x = -2*1 = -2
     assert dy0.shape == (1,)
@@ -119,14 +72,13 @@ def test_events_only_mutate_states_params_and_effect_is_visible():
     y = np.array([1.0], dtype=np.float64)
     p = np.array([2.0], dtype=np.float64)
     scratch = np.zeros(1, dtype=np.float64)  # event log scratch buffer
-    ss = np.zeros(0, dtype=np.float64)
-    iw0 = np.zeros(0, dtype=np.int32)
+    runtime_ws = make_runtime_workspace(lag_state_info=None, dtype=np.float64)
 
     # pre does nothing; post adds +1.0 to x
-    pre_code, pre_log = cp.events_pre(0.0, y, p, scratch, ss, iw0)
+    pre_code, pre_log = cp.events_pre(0.0, y, p, scratch, runtime_ws)
     assert pre_code == -1  # no event fired
     assert y[0] == pytest.approx(1.0)
-    post_code, post_log = cp.events_post(0.0, y, p, scratch, ss, iw0)
+    post_code, post_log = cp.events_post(0.0, y, p, scratch, runtime_ws)
     assert post_code == 0  # event fired (always fires since cond is implicit True)
     assert post_log == 0  # no log items
     assert y[0] == pytest.approx(2.0)
@@ -139,12 +91,11 @@ def test_aux_is_recomputed_inside_rhs_every_call():
     p = np.array([2.0], dtype=np.float64)
 
     dy = np.zeros_like(y)
-    ss = np.zeros(0, dtype=np.float64)
-    iw0 = np.zeros(0, dtype=np.int32)
-    cp.rhs(0.0, y, dy, p, ss, iw0)
+    runtime_ws = make_runtime_workspace(lag_state_info=None, dtype=np.float64)
+    cp.rhs(0.0, y, dy, p, runtime_ws)
     assert dy[0] == pytest.approx(-6.0)
 
     # Change y; aux depends on x and must be recomputed
     y[0] = 4.0
-    cp.rhs(0.0, y, dy, p, ss, iw0)
+    cp.rhs(0.0, y, dy, p, runtime_ws)
     assert dy[0] == pytest.approx(-8.0)

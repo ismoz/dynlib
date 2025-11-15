@@ -45,7 +45,7 @@ class Results:
     t_final: float         # final committed time
     final_dt: float        # integrator's next dt suggestion
     step_count_final: int  # last accepted global step (relative to run)
-    final_stepper_ws: Mapping[str, np.ndarray]  # snapshot of stepper workspace
+    final_workspace: Mapping[str, Mapping[str, object]]  # snapshots of stepper/runtime workspaces
 
     # ---------------- views ----------------
 
@@ -89,9 +89,14 @@ class Results:
         return self.final_params
 
     @property
-    def final_workspace_view(self) -> Mapping[str, np.ndarray]:
-        """Read-only snapshot of the stepper workspace."""
-        return self.final_stepper_ws
+    def final_workspace_view(self) -> Mapping[str, Mapping[str, object]]:
+        """Read-only snapshot of captured workspaces."""
+        return self.final_workspace
+
+    @property
+    def final_stepper_ws(self) -> Mapping[str, object]:
+        """Backward-compatible view of the stepper workspace snapshot."""
+        return self.final_workspace.get("stepper", {})
 
     # --------------- helpers (out of hot path) ---------------
 

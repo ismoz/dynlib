@@ -2,14 +2,13 @@
 """
 Euler (explicit, fixed-step) stepper implementation.
 
-First real stepper. Minimal StructSpec (mostly size-1 banks).
+First real stepper with minimal workspace (single RHS buffer).
 """
 from __future__ import annotations
-import ast
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 import numpy as np
 
-from ..base import StepperMeta, StructSpec
+from ..base import StepperMeta
 from dynlib.runtime.runner_api import OK
 
 if TYPE_CHECKING:
@@ -45,29 +44,20 @@ class EulerSpec:
             )
         self.meta = meta
 
-    def struct_spec(self) -> StructSpec:
-        """
-        Euler requires minimal workspace:
-          - sw0: 1 lane for RHS evaluation (n_state floats)
-          - All other banks are unused (0 lanes/elements)
-        
-        Lane-based sizes: sp/ss/sw* sizes are lane counts (multiples of n_state).
-        """
-        return StructSpec(
-            sp_size=0,    # unused
-            ss_size=0,    # unused
-            sw0_size=1,   # 1 lane for dy (RHS scratch)
-            sw1_size=0,   # unused
-            sw2_size=0,   # unused
-            sw3_size=0,   # unused
-            iw0_size=0,   # unused
-            bw0_size=0,   # unused
-            use_history=False,
-            use_f_history=False,
-            dense_output=False,
-            needs_jacobian=False,
-            embedded_order=None,
-            stiff_ok=False,
+    class Workspace(NamedTuple):
+        dy: np.ndarray
+
+    def workspace_type(self) -> type | None:
+        return EulerSpec.Workspace
+
+    def make_workspace(
+        self,
+        n_state: int,
+        dtype: np.dtype,
+        model_spec=None,
+    ) -> Workspace:
+        return EulerSpec.Workspace(
+            dy=np.zeros((n_state,), dtype=dtype),
         )
 
     def config_spec(self) -> type | None:
@@ -82,7 +72,7 @@ class EulerSpec:
         """Euler has no config - return empty array."""
         return np.array([], dtype=np.float64)
 
-    def emit(self, rhs_fn: Callable, struct: StructSpec, model_spec=None) -> Callable:
+    def emit(self, rhs_fn: Callable, model_spec=None) -> Callable:
         """
         Generate a jittable Euler stepper function.
         
@@ -91,9 +81,8 @@ class EulerSpec:
                 t: float, dt: float,
                 y_curr: float[:], rhs,
                 params: float[:] | int[:],
-                sp: float[:], ss: float[:],
-                sw0: float[:], sw1: float[:], sw2: float[:], sw3: float[:],
-                iw0: int32[:], bw0: uint8[:],
+                runtime_ws,
+                stepper_ws,
                 stepper_config: float64[:],
                 y_prop: float[:], t_prop: float[:], dt_next: float[:], err_est: float[:]
             ) -> int32
@@ -107,22 +96,18 @@ class EulerSpec:
             t, dt,
             y_curr, rhs,
             params,
-            sp, ss,
-            sw0, sw1, sw2, sw3,
-            iw0, bw0,
+            runtime_ws,
+            ws,
             stepper_config,
             y_prop, t_prop, dt_next, err_est
         ):
             # Euler: y_prop = y_curr + dt * f(t, y_curr)
             # stepper_config is ignored (Euler has no runtime config)
             n = y_curr.size
-            
-            # Use sw0 as scratch for dy (RHS evaluation)
-            # Wrapper ensures sw0.size >= n
-            dy = sw0[:n]
+            dy = ws.dy
             
             # Evaluate RHS
-            rhs(t, y_curr, dy, params, ss, iw0)
+            rhs(t, y_curr, dy, params, runtime_ws)
             
             # Propose next state
             for i in range(n):

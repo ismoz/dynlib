@@ -5,10 +5,10 @@ RK4 (Runge-Kutta 4th order, explicit, fixed-step) stepper implementation.
 Classic fixed-step RK4 without touching wrapper/results/ABI.
 """
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 import numpy as np
 
-from ..base import StepperMeta, StructSpec
+from ..base import StepperMeta
 from dynlib.runtime.runner_api import OK
 
 if TYPE_CHECKING:
@@ -47,31 +47,29 @@ class RK4Spec:
             )
         self.meta = meta
 
-    def struct_spec(self) -> StructSpec:
-        """
-        RK4 workspace (lane-based allocation):
-          - sw0: 2 lanes for k1, k2
-          - sw1: 2 lanes for k3, k4
-          - sp:  1 lane for y_stage (intermediate state evaluations)
-          - All other banks unused (0 lanes/elements)
-        
-        Lane-based sizes: sp/ss/sw* sizes are lane counts (multiples of n_state).
-        """
-        return StructSpec(
-            sp_size=1,    # y_stage scratch (1 lane = n_state floats)
-            ss_size=0,    # unused
-            sw0_size=2,   # k1, k2 (2 lanes = 2*n_state floats)
-            sw1_size=2,   # k3, k4 (2 lanes = 2*n_state floats)
-            sw2_size=0,   # unused
-            sw3_size=0,   # unused
-            iw0_size=0,   # unused
-            bw0_size=0,   # unused
-            use_history=False,
-            use_f_history=False,
-            dense_output=False,
-            needs_jacobian=False,
-            embedded_order=None,
-            stiff_ok=False,
+    class Workspace(NamedTuple):
+        y_stage: np.ndarray
+        k1: np.ndarray
+        k2: np.ndarray
+        k3: np.ndarray
+        k4: np.ndarray
+
+    def workspace_type(self) -> type | None:
+        return RK4Spec.Workspace
+
+    def make_workspace(
+        self,
+        n_state: int,
+        dtype: np.dtype,
+        model_spec=None,
+    ) -> Workspace:
+        zeros = lambda: np.zeros((n_state,), dtype=dtype)
+        return RK4Spec.Workspace(
+            y_stage=zeros(),
+            k1=zeros(),
+            k2=zeros(),
+            k3=zeros(),
+            k4=zeros(),
         )
 
     def config_spec(self) -> type | None:
@@ -86,21 +84,9 @@ class RK4Spec:
         """RK4 has no config - return empty array."""
         return np.array([], dtype=np.float64)
 
-    def emit(self, rhs_fn: Callable, struct: StructSpec, model_spec=None) -> Callable:
+    def emit(self, rhs_fn: Callable, model_spec=None) -> Callable:
         """
         Generate a jittable RK4 stepper function.
-        
-        Signature (per ABI):
-            status = stepper(
-                t: float, dt: float,
-                y_curr: float[:], rhs,
-                params: float[:] | int[:],
-                sp: float[:], ss: float[:],
-                sw0: float[:], sw1: float[:], sw2: float[:], sw3: float[:],
-                iw0: int32[:], bw0: uint8[:],
-                stepper_config: float64[:],
-                y_prop: float[:], t_prop: float[:], dt_next: float[:], err_est: float[:]
-            ) -> int32
         
         Returns:
             A callable Python function implementing the RK4 stepper.
@@ -109,9 +95,8 @@ class RK4Spec:
             t, dt,
             y_curr, rhs,
             params,
-            sp, ss,
-            sw0, sw1, sw2, sw3,
-            iw0, bw0,
+            runtime_ws,
+            ws,
             stepper_config,
             y_prop, t_prop, dt_next, err_est
         ):
@@ -119,30 +104,29 @@ class RK4Spec:
             # stepper_config is ignored (RK4 has no runtime config)
             n = y_curr.size
             
-            # Lane-packed k vectors (2 lanes per bank)
-            k1 = sw0[:n]
-            k2 = sw0[n:2*n]
-            k3 = sw1[:n]
-            k4 = sw1[n:2*n]
-            y_stage = sp[:n]
+            k1 = ws.k1
+            k2 = ws.k2
+            k3 = ws.k3
+            k4 = ws.k4
+            y_stage = ws.y_stage
             
             # Stage 1: k1 = f(t, y)
-            rhs(t, y_curr, k1, params, ss, iw0)
+            rhs(t, y_curr, k1, params, runtime_ws)
             
             # Stage 2: k2 = f(t + dt/2, y + dt/2 * k1)
             for i in range(n):
                 y_stage[i] = y_curr[i] + 0.5 * dt * k1[i]
-            rhs(t + 0.5 * dt, y_stage, k2, params, ss, iw0)
+            rhs(t + 0.5 * dt, y_stage, k2, params, runtime_ws)
             
             # Stage 3: k3 = f(t + dt/2, y + dt/2 * k2)
             for i in range(n):
                 y_stage[i] = y_curr[i] + 0.5 * dt * k2[i]
-            rhs(t + 0.5 * dt, y_stage, k3, params, ss, iw0)
+            rhs(t + 0.5 * dt, y_stage, k3, params, runtime_ws)
             
             # Stage 4: k4 = f(t + dt, y + dt * k3)
             for i in range(n):
                 y_stage[i] = y_curr[i] + dt * k3[i]
-            rhs(t + dt, y_stage, k4, params, ss, iw0)
+            rhs(t + dt, y_stage, k4, params, runtime_ws)
             
             # Combine: y_prop = y + dt/6 * (k1 + 2*k2 + 2*k3 + k4)
             for i in range(n):

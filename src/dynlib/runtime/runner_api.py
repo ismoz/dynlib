@@ -50,15 +50,9 @@ class RunnerABI:
     y_prev: str = "dtype[:]"   # length = n_state
     params: str = "dtype[:] | int64[:]"  # concrete single dtype per build
 
-    # Struct banks (views; model dtype)
-    sp: str = "dtype[:]"
-    ss: str = "dtype[:]"
-    sw0: str = "dtype[:]"
-    sw1: str = "dtype[:]"
-    sw2: str = "dtype[:]"
-    sw3: str = "dtype[:]"
-    iw0: str = "int32[:]"
-    bw0: str = "uint8[:]"
+    # Runtime/stepper workspaces
+    runtime_ws: str = "RuntimeWorkspace"
+    stepper_ws: str = "StepperWorkspace"
 
     # Stepper configuration (read-only; float64)
     stepper_config: str = "float64[:]"
@@ -113,10 +107,9 @@ runner(
   max_steps: int64, n_state: int64, record_interval: int64,
   # state/params
   y_curr: dtype[:], y_prev: dtype[:], params: dtype[:] | int64[:],
-  # struct banks (views)
-  sp: dtype[:], ss: dtype[:],
-  sw0: dtype[:], sw1: dtype[:], sw2: dtype[:], sw3: dtype[:],
-  iw0: int32[:], bw0: uint8[:],
+  # workspaces
+  runtime_ws: tuple,
+  stepper_ws: tuple,
   # stepper configuration (read-only)
   stepper_config: float64[:],
   # proposals/outs (len-1 arrays where applicable)
@@ -150,7 +143,8 @@ Rules:
 - EVT_INDEX stores the record index (0-based) that owns the event (or -1 when no record exists).
 - Time can be logged using log=["t", ...] - it appears as first column in EVT_LOG_DATA
 - T is float64; Y/EVT_LOG_DATA is model dtype; STEP:int64, FLAGS:int32, EVT_CODE/EVT_INDEX:int32.
-- Work banks sp, ss, sw* are model dtype; iw0:int32, bw0:uint8.
+- runtime_ws: NamedTuple owned by the runner/DSL (e.g., lag buffers).
+- stepper_ws: NamedTuple owned by the stepper implementation.
 - t_prop is model dtype; committed t written to T as float64.
 - Growth/resume: on GROW_REC/GROW_EVT wrapper reallocates & re-enters; runner resumes seamlessly.
 

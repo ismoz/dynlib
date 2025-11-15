@@ -1,17 +1,10 @@
 # src/dynlib/runtime/buffers.py
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Any
 import numpy as np
 
-from dynlib.steppers.base import StructSpec
-from dynlib.runtime.runner_api import (
-    DONE, GROW_REC, GROW_EVT, STEPFAIL, NAN_DETECTED, USER_BREAK,
-)
-# NOTE: We only import status codes and keep this module JIT-free.
-
 __all__ = [
-    "RecordingPools", "EventPools", "WorkBanks",
+    "RecordingPools", "EventPools",
     "allocate_pools", "grow_rec_arrays", "grow_evt_arrays",
 ]
 
@@ -52,25 +45,6 @@ class EventPools:
     max_log_width: int        # maximum number of signals logged across all events
 
 
-@dataclass(frozen=True)
-class WorkBanks:
-    """
-    Banks for stepper/runner work memory.
-    Sizes come from the Stepper StructSpec (model dtype, except iw0/bw0).
-    """
-    # model dtype
-    sp: np.ndarray
-    ss: np.ndarray
-    sw0: np.ndarray
-    sw1: np.ndarray
-    sw2: np.ndarray
-    sw3: np.ndarray
-    # int / byte banks
-    iw0: np.ndarray        # int32
-    bw0: np.ndarray        # uint8
-    dtype: np.dtype
-
-
 # ---- Allocation --------------------------------------------------------------
 
 def _zeros(shape: tuple[int, ...], dtype: np.dtype) -> np.ndarray:
@@ -84,44 +58,18 @@ def _zeros(shape: tuple[int, ...], dtype: np.dtype) -> np.ndarray:
 def allocate_pools(
     *,
     n_state: int,
-    struct: StructSpec,          # StructSpec with sizes
     dtype: np.dtype,
     cap_rec: int,
     cap_evt: int,
     max_log_width: int = 0,      # maximum log width across all events
-) -> tuple[WorkBanks, RecordingPools, EventPools]:
+) -> tuple[RecordingPools, EventPools]:
     """
-    Allocate banks and record/log pools with the frozen dtypes.
+    Allocate recording and event pools with frozen dtypes.
 
     - Model dtype: user-selected (default float64).
     - Recording T is always float64.
     - STEP:int64, FLAGS:int32, EVT_CODE:int32, EVT_INDEX:int32.
-    
-    Lane-based allocation for model-dtype banks (sp, ss, sw0-sw3):
-      - Size = number of lanes (multiples of n_state)
-      - 0 lanes → unused (length 0)
-      - 1 lane  → length = n_state
-      - 2 lanes → length = 2*n_state, etc.
-    
-    Raw element counts for int/byte banks (iw0, bw0):
-      - Size = raw element count; 0 is unused
     """
-    sspec = struct
-
-    # Model-dtype work banks: lane counts (size * n_state)
-    sp  = _zeros((sspec.sp_size * n_state,),  dtype)
-    ss  = _zeros((sspec.ss_size * n_state,),  dtype)
-    sw0 = _zeros((sspec.sw0_size * n_state,), dtype)
-    sw1 = _zeros((sspec.sw1_size * n_state,), dtype)
-    sw2 = _zeros((sspec.sw2_size * n_state,), dtype)
-    sw3 = _zeros((sspec.sw3_size * n_state,), dtype)
-    
-    # Int/byte banks: raw element counts
-    iw0 = _zeros((sspec.iw0_size,), np.int32)
-    bw0 = _zeros((sspec.bw0_size,), np.uint8)
-
-    banks = WorkBanks(sp, ss, sw0, sw1, sw2, sw3, iw0, bw0, dtype)
-
     # Recording pools
     T     = _zeros((cap_rec,), np.float64)
     Y     = _zeros((n_state, cap_rec), dtype)
@@ -135,7 +83,7 @@ def allocate_pools(
     EVT_LOG_DATA = _zeros((cap_evt, max(1, max_log_width)), dtype)  # at least (cap_evt, 1) for numba
     ev           = EventPools(EVT_CODE, EVT_INDEX, EVT_LOG_DATA, cap_evt, max_log_width)
 
-    return banks, rec, ev
+    return rec, ev
 
 
 # ---- Geometric growth (copy only filled regions) -----------------------------

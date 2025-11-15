@@ -33,14 +33,14 @@ __all__ = ["Sim"]
 
 # ------------------------------- data records ---------------------------------
 
-WorkspaceSnapshot = Dict[str, np.ndarray]
+WorkspaceSnapshot = Dict[str, Dict[str, object]]
 
 
 @dataclass(frozen=True)
 class SessionPins:
     spec_hash: str
     stepper_name: str
-    structsig: Tuple[int, ...]
+    workspace_sig: Tuple[int, ...]
     dtype_token: str
     dynlib_version: str
 
@@ -52,7 +52,7 @@ class SessionState:
     params_curr: np.ndarray
     dt_curr: float
     step_count: int
-    stepper_ws: WorkspaceSnapshot
+    workspace: WorkspaceSnapshot
     stepper_cfg: np.ndarray
     status: int
     pins: SessionPins
@@ -64,7 +64,7 @@ class SessionState:
             params_curr=np.array(self.params_curr, copy=True),
             dt_curr=self.dt_curr,
             step_count=self.step_count,
-            stepper_ws=_copy_workspace_dict(self.stepper_ws),
+            workspace=_copy_workspace_dict(self.workspace),
             stepper_cfg=np.array(self.stepper_cfg, dtype=np.float64, copy=True),
             status=self.status,
             pins=self.pins,
@@ -77,7 +77,7 @@ class SessionState:
             params=np.array(self.params_curr, copy=True),
             dt=self.dt_curr,
             step_count=self.step_count,
-            workspace=_copy_workspace_dict(self.stepper_ws),
+            workspace=_copy_workspace_dict(self.workspace),
         )
 
 
@@ -218,7 +218,7 @@ class _ResultAccumulator:
             t_final=float(t_final),
             final_dt=float(final_dt),
             step_count_final=int(step_count_final),
-            final_stepper_ws=workspace,
+            final_workspace=workspace,
         )
 
     def assert_monotone_time(self) -> None:
@@ -282,11 +282,11 @@ class Sim:
         self._dtype = model.dtype
         self._n_state = len(model.spec.states)
         self._max_log_width = _max_event_log_width(model.spec.events)
-        self._structsig = _struct_signature(model.struct)
+        self._workspace_sig = tuple(model.workspace_sig)
         self._pins = SessionPins(
             spec_hash=model.spec_hash,
             stepper_name=model.stepper_name,
-            structsig=self._structsig,
+            workspace_sig=self._workspace_sig,
             dtype_token=str(np.dtype(model.dtype)),
             dynlib_version=_dynlib_version(),
         )
@@ -1697,7 +1697,7 @@ class Sim:
             "pins": {
                 "spec_hash": self._pins.spec_hash,
                 "stepper_name": self._pins.stepper_name,
-                "structsig": list(self._pins.structsig),
+                "workspace_sig": list(self._pins.workspace_sig),
                 "dtype_token": self._pins.dtype_token,
                 "dynlib_version": self._pins.dynlib_version,
             },
@@ -1731,9 +1731,10 @@ class Sim:
         }
         
         # Add workspace arrays if non-empty
-        for ws_name, ws_array in state.stepper_ws.items():
-            if ws_array.size > 0:
-                arrays_to_save[f"workspace/{ws_name}"] = ws_array
+        for bucket, ws_vals in state.workspace.items():
+            for ws_name, ws_array in ws_vals.items():
+                if isinstance(ws_array, np.ndarray) and ws_array.size > 0:
+                    arrays_to_save[f"workspace/{bucket}/{ws_name}"] = ws_array
 
         if state.stepper_cfg.size > 0:
             arrays_to_save["stepper_config"] = state.stepper_cfg
@@ -1783,14 +1784,20 @@ class Sim:
                 y = npz_file["y"]
                 params = npz_file["params"]
                 
-                # Read workspace arrays
-                workspace: dict[str, np.ndarray] = {}
+                # Read workspace arrays grouped by bucket (stepper/runtime)
+                workspace: WorkspaceSnapshot = {}
                 workspace_prefix = "workspace/"
                 for key in npz_file.files:
                     if key.startswith(workspace_prefix):
-                        ws_name = key[len(workspace_prefix):]
-                        if ws_name:  # Ensure non-empty name
-                            workspace[ws_name] = npz_file[key]
+                        remainder = key[len(workspace_prefix):]
+                        if not remainder:
+                            continue
+                        if "/" in remainder:
+                            bucket, ws_name = remainder.split("/", 1)
+                        else:
+                            bucket, ws_name = "stepper", remainder
+                        if ws_name:
+                            workspace.setdefault(bucket, {})[ws_name] = npz_file[key]
                 stepper_config = (
                     np.array(npz_file["stepper_config"], dtype=np.float64)
                     if "stepper_config" in npz_file.files
@@ -1811,7 +1818,7 @@ class Sim:
         meta: dict[str, Any],
         y: np.ndarray,
         params: np.ndarray,
-        workspace: dict[str, np.ndarray],
+        workspace: WorkspaceSnapshot,
         stepper_config: np.ndarray,
     ) -> SessionState:
         """
@@ -1840,7 +1847,7 @@ class Sim:
         file_pins = SessionPins(
             spec_hash=file_pins_data.get("spec_hash", ""),
             stepper_name=file_pins_data.get("stepper_name", ""),
-            structsig=tuple(file_pins_data.get("structsig", [])),
+            workspace_sig=tuple(file_pins_data.get("workspace_sig", [])),
             dtype_token=file_pins_data.get("dtype_token", ""),
             dynlib_version=file_pins_data.get("dynlib_version", ""),
         )
@@ -1861,7 +1868,7 @@ class Sim:
             params_curr=np.array(params, dtype=self._dtype, copy=True),
             dt_curr=float(meta["dt_curr"]),
             step_count=int(meta["step_count"]),
-            stepper_ws=_copy_workspace_dict(workspace),
+            workspace=_copy_workspace_dict(workspace),
             stepper_cfg=cfg_array,
             status=int(meta["status"]),
             pins=self._pins,
@@ -1878,7 +1885,7 @@ class Sim:
             params_curr=params0,
             dt_curr=float(sim_defaults.dt),
             step_count=0,
-            stepper_ws={},
+            workspace={},
             stepper_cfg=np.array(self._default_stepper_cfg, dtype=np.float64, copy=True),
             status=int(Status.DONE),
             pins=self._pins,
@@ -1894,7 +1901,7 @@ class Sim:
             params_curr=np.array(base.params, copy=True),
             dt_curr=base.dt,
             step_count=base.step_count,
-            stepper_ws=_copy_workspace_dict(base.workspace),
+            workspace=_copy_workspace_dict(base.workspace),
             stepper_cfg=np.array(self._session_state.stepper_cfg, dtype=np.float64, copy=True),
             status=int(Status.DONE),
             pins=self._pins,
@@ -1965,7 +1972,6 @@ class Sim:
             rhs=self.model.rhs,
             events_pre=self.model.events_pre,
             events_post=self.model.events_post,
-            struct=self.model.struct,
             dtype=self.model.dtype,
             n_state=self._n_state,
             t0=float(seed.t),
@@ -1983,7 +1989,8 @@ class Sim:
             workspace_seed=seed.workspace,
             discrete=(target_steps is not None),
             target_steps=target_steps,
-            lag_state_info=getattr(self.model, "lag_state_info", None),  # Pass lag metadata when available
+            lag_state_info=getattr(self.model, "lag_state_info", None),
+            make_stepper_workspace=getattr(self.model, "make_stepper_workspace", None),
         )
 
     def _state_from_results(
@@ -1996,8 +2003,8 @@ class Sim:
             params_curr=np.array(result.final_params_view, dtype=self._dtype, copy=True),
             dt_curr=float(result.final_dt),
             step_count=total_steps,
-            stepper_ws=_copy_workspace_dict(result.final_stepper_ws),
-             stepper_cfg=np.array(stepper_config, dtype=np.float64, copy=True),
+            workspace=_copy_workspace_dict(result.final_workspace_view),
+            stepper_cfg=np.array(stepper_config, dtype=np.float64, copy=True),
             status=int(result.status),
             pins=self._pins,
         )
@@ -2108,7 +2115,7 @@ class Sim:
             t_final=state.t_curr,
             final_dt=state.dt_curr,
             step_count_final=state.step_count,
-            workspace=_copy_workspace_dict(state.stepper_ws),
+            workspace=_copy_workspace_dict(state.workspace),
         )
         self._results_view = None
 
@@ -2520,10 +2527,17 @@ def _resize_1d(arr: np.ndarray, new_cap: int) -> np.ndarray:
     return new_arr
 
 
-def _copy_workspace_dict(ws: Mapping[str, np.ndarray]) -> WorkspaceSnapshot:
+def _copy_workspace_dict(ws: WorkspaceSnapshot) -> WorkspaceSnapshot:
     if not ws:
         return {}
-    return {name: np.array(buff, copy=True) for name, buff in ws.items()}
+    copied: WorkspaceSnapshot = {}
+    for bucket, values in ws.items():
+        copied[bucket] = {
+            name: np.array(buff, copy=True)
+            for name, buff in values.items()
+            if isinstance(buff, np.ndarray)
+        }
+    return copied
 
 def _event_time_column_map(spec) -> Dict[int, Tuple[int, ...]]:
     mapping: Dict[int, Tuple[int, ...]] = {}
@@ -2547,23 +2561,6 @@ def _config_digest(cfg: np.ndarray) -> str:
     return hashlib.sha1(cfg.tobytes()).hexdigest()[:10]
 
 
-def _struct_signature(struct) -> Tuple[int, ...]:
-    return (
-        struct.sp_size,
-        struct.ss_size,
-        struct.sw0_size,
-        struct.sw1_size,
-        struct.sw2_size,
-        struct.sw3_size,
-        struct.iw0_size,
-        struct.bw0_size,
-        int(bool(struct.use_history)),
-        int(bool(struct.use_f_history)),
-        int(bool(struct.dense_output)),
-        int(bool(struct.needs_jacobian)),
-        -1 if struct.embedded_order is None else int(struct.embedded_order),
-        int(bool(struct.stiff_ok)),
-    )
 
 
 def _stepper_config_names(stepper_spec, model_spec) -> Tuple[str, ...]:
@@ -2612,8 +2609,8 @@ def _diff_pins(pins_a: SessionPins, pins_b: SessionPins) -> Dict[str, Tuple[Any,
         diffs["spec_hash"] = (pins_a.spec_hash, pins_b.spec_hash)
     if pins_a.stepper_name != pins_b.stepper_name:
         diffs["stepper_name"] = (pins_a.stepper_name, pins_b.stepper_name)
-    if pins_a.structsig != pins_b.structsig:
-        diffs["structsig"] = (pins_a.structsig, pins_b.structsig)
+    if pins_a.workspace_sig != pins_b.workspace_sig:
+        diffs["workspace_sig"] = (pins_a.workspace_sig, pins_b.workspace_sig)
     if pins_a.dtype_token != pins_b.dtype_token:
         diffs["dtype_token"] = (pins_a.dtype_token, pins_b.dtype_token)
     if pins_a.dynlib_version != pins_b.dynlib_version:

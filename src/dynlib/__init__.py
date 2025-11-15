@@ -8,7 +8,7 @@ from dynlib.runtime.runner_api import (
 from .runtime.types import Kind, TimeCtrl, Scheme
 
 from .steppers.base import (
-    StepperMeta, StepperInfo, StructSpec, StepperSpec,
+    StepperMeta, StepperInfo, StepperSpec,
 )
 from .steppers.registry import register, get_stepper, registry
 

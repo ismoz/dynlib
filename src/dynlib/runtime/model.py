@@ -6,7 +6,6 @@ from pathlib import Path
 import numpy as np
 
 from dynlib.dsl.spec import ModelSpec
-from dynlib.steppers.base import StructSpec
 
 __all__ = ["Model"]
 
@@ -18,7 +17,7 @@ class Model:
     Attributes:
         spec: Original ModelSpec
         stepper_name: Name of the stepper used
-        struct: StructSpec from the stepper
+        workspace_sig: Tuple describing combined runtime/stepper workspace layout
         rhs: Compiled RHS callable
         events_pre: Compiled pre-events callable
         events_post: Compiled post-events callable
@@ -33,7 +32,7 @@ class Model:
     """
     spec: ModelSpec
     stepper_name: str
-    struct: StructSpec
+    workspace_sig: Tuple[int, ...]
     rhs: Callable
     events_pre: Callable
     events_post: Callable
@@ -45,9 +44,10 @@ class Model:
     events_pre_source: Optional[str] = None
     events_post_source: Optional[str] = None
     stepper_source: Optional[str] = None
-    lag_state_info: Optional[list[Tuple[int, int, int, int]]] = None
+    lag_state_info: Optional[Tuple[Tuple[int, int, int, int], ...]] = None
     uses_lag: bool = False
     equations_use_lag: bool = False
+    make_stepper_workspace: Optional[Callable[[], object]] = None
     
     def export_sources(self, output_dir: str | Path) -> Dict[str, Path]:
         """

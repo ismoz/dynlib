@@ -89,11 +89,18 @@ _SCALAR_MACROS = {
 class _NameLowerer(ast.NodeTransformer):
     """Lower states/params to array indexing; inline aux and functions."""
 
-    def __init__(self, nmap: NameMaps, aux_defs: Dict[str, ast.AST], fn_defs: Dict[str, Tuple[Tuple[str, ...], ast.AST]]):
+    def __init__(
+        self,
+        nmap: NameMaps,
+        aux_defs: Dict[str, ast.AST],
+        fn_defs: Dict[str, Tuple[Tuple[str, ...], ast.AST]],
+        runtime_arg: str = "runtime_ws",
+    ):
         super().__init__()
         self.nmap = nmap
         self.aux_defs = aux_defs
         self.fn_defs = fn_defs
+        self.runtime_arg = runtime_arg
 
     def visit_Name(self, node: ast.Name):
         if node.id in self.nmap.state_to_ix:
@@ -202,7 +209,7 @@ class _NameLowerer(ast.NodeTransformer):
                 f"This is an internal error - lag detection should have caught this."
             )
         
-        buffer_len, ss_offset, iw0_index = self.nmap.lag_map[state_name]
+        buffer_len, ring_offset, head_index = self.nmap.lag_map[state_name]
         max_supported = buffer_len - 1
         
         if k > max_supported:
@@ -210,45 +217,57 @@ class _NameLowerer(ast.NodeTransformer):
                 f"lag_{state_name}({k}) exceeds detected max depth {max_supported}. "
                 f"This is an internal error - lag detection should have caught this."
             )
-        
-        # Generate: ss[ss_offset + ((iw0[iw0_index] - k) % depth)]
-        # Note: ss is indexed by lanes, not elements, so ss_offset is already in lane units
-        
-        # iw0[iw0_index]
-        head_access = ast.Subscript(
-            value=ast.Name(id="iw0", ctx=ast.Load()),
-            slice=ast.Constant(value=iw0_index),
+
+        lag_head_attr = ast.Attribute(
+            value=ast.copy_location(ast.Name(id=self.runtime_arg, ctx=ast.Load()), node),
+            attr="lag_head",
             ctx=ast.Load(),
         )
-        
-        # (iw0[iw0_index] - k)
+        lag_ring_attr = ast.Attribute(
+            value=ast.copy_location(ast.Name(id=self.runtime_arg, ctx=ast.Load()), node),
+            attr="lag_ring",
+            ctx=ast.Load(),
+        )
+
+        head_access = ast.Subscript(
+            value=lag_head_attr,
+            slice=ast.Constant(value=head_index),
+            ctx=ast.Load(),
+        )
+
         head_minus_k = ast.BinOp(
             left=head_access,
             op=ast.Sub(),
             right=ast.Constant(value=k),
         )
-        
-        # (iw0[iw0_index] - k) % depth
-        modulo = ast.BinOp(
-            left=head_minus_k,
-            op=ast.Mod(),
-            right=ast.Constant(value=buffer_len),
+
+        wrap_test = ast.Compare(
+            left=self._clone(head_minus_k),
+            ops=[ast.Lt()],
+            comparators=[ast.Constant(value=0)],
         )
-        
-        # ss_offset + ((iw0[iw0_index] - k) % depth)
+        wrapped_pos = ast.IfExp(
+            test=wrap_test,
+            body=ast.BinOp(
+                left=self._clone(head_minus_k),
+                op=ast.Add(),
+                right=ast.Constant(value=buffer_len),
+            ),
+            orelse=head_minus_k,
+        )
+
         index_expr = ast.BinOp(
-            left=ast.Constant(value=ss_offset),
+            left=ast.Constant(value=ring_offset),
             op=ast.Add(),
-            right=modulo,
+            right=wrapped_pos,
         )
-        
-        # ss[...]
+
         lag_access = ast.Subscript(
-            value=ast.Name(id="ss", ctx=ast.Load()),
+            value=lag_ring_attr,
             slice=index_expr,
             ctx=ast.Load(),
         )
-        
+
         return ast.copy_location(lag_access, node)
 
     def _expand_scalar_macro(self, name: str, node: ast.Call) -> ast.AST:
@@ -522,21 +541,32 @@ class _ArgReplacer(ast.NodeTransformer):
 def _parse_expr(expr: str) -> ast.AST:
     return ast.parse(sanitize_expr(expr), mode="eval").body
 
-def lower_expr_node(expr: str, nmap: NameMaps, *, aux_defs: Dict[str, str] | None = None, fn_defs: Dict[str, Tuple[Tuple[str, ...], str]] | None = None) -> ast.AST:
+def lower_expr_node(
+    expr: str,
+    nmap: NameMaps,
+    *,
+    aux_defs: Dict[str, str] | None = None,
+    fn_defs: Dict[str, Tuple[Tuple[str, ...], str]] | None = None,
+    runtime_arg: str = "runtime_ws",
+) -> ast.AST:
     """Return a lowered AST node for the expression (supports 't', y_vec, p_vec, aux, functions)."""
     aux_defs = aux_defs or {}
     fn_defs = fn_defs or {}
     aux_ast = {k: _parse_expr(v) for k, v in aux_defs.items()}
     fn_ast  = {k: (args, _parse_expr(v)) for k, (args, v) in fn_defs.items()}
-    lowered = _NameLowerer(nmap, aux_ast, fn_ast).visit(_parse_expr(expr))
+    lowered = _NameLowerer(nmap, aux_ast, fn_ast, runtime_arg=runtime_arg).visit(_parse_expr(expr))
     ast.fix_missing_locations(lowered)
     return lowered
 
-def compile_scalar_expr(expr: str, nmap: NameMaps, *, aux_defs: Dict[str, str] | None = None, fn_defs: Dict[str, Tuple[Tuple[str, ...], str]] | None = None) -> Callable:
+def compile_scalar_expr(
+    expr: str,
+    nmap: NameMaps,
+    *,
+    aux_defs: Dict[str, str] | None = None,
+    fn_defs: Dict[str, Tuple[Tuple[str, ...], str]] | None = None,
+) -> Callable:
     """
-    Return a pure-numeric callable: f(t, y_vec, params, ss, iw0) -> float
-    
-    ss and iw0 are only used if lag notation is present in the expression.
+    Return a pure-numeric callable: f(t, y_vec, params, runtime_ws) -> float.
     """
     lowered = lower_expr_node(expr, nmap, aux_defs=aux_defs, fn_defs=fn_defs)
     mod = ast.Module(
@@ -548,8 +578,7 @@ def compile_scalar_expr(expr: str, nmap: NameMaps, *, aux_defs: Dict[str, str] |
                     ast.arg(arg="t"), 
                     ast.arg(arg="y_vec"), 
                     ast.arg(arg="params"),
-                    ast.arg(arg="ss"),
-                    ast.arg(arg="iw0"),
+                    ast.arg(arg="runtime_ws"),
                 ], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]),
                 body=[ast.Return(value=lowered)],
                 decorator_list=[],

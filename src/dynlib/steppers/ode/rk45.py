@@ -8,10 +8,11 @@ Uses internal accept/reject loop until step is accepted or fails.
 from __future__ import annotations
 from dataclasses import dataclass
 import math
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
+
 import numpy as np
 
-from ..base import StepperMeta, StructSpec
+from ..base import StepperMeta
 from dynlib.runtime.runner_api import OK, STEPFAIL
 
 # Import guards for NaN/Inf detection
@@ -63,34 +64,30 @@ class RK45Spec:
             )
         self.meta = meta
 
-    def struct_spec(self) -> StructSpec:
-        """
-        RK45 workspace (lane-based allocation):
-          - sp:  1 lane for y_stage (intermediate state scratch)
-          - sw0: 2 lanes for k1, k2
-          - sw1: 2 lanes for k3, k4
-          - sw2: 2 lanes for k5, k6
-          - sw3: 1 lane for k7 (embedded error term)
-          - ss:  0 lanes (no persistence; FSAL optional later)
-        
-        DOPRI5(4): 7 RHS evaluations per step.
-        Lane-based sizes: sp/ss/sw* sizes are lane counts (multiples of n_state).
-        """
-        return StructSpec(
-            sp_size=1,    # y_stage (scratch)
-            ss_size=0,    # no persistence (FSAL optional later)
-            sw0_size=2,   # k1, k2
-            sw1_size=2,   # k3, k4
-            sw2_size=2,   # k5, k6
-            sw3_size=1,   # k7 (embedded term)
-            iw0_size=0,   # unused
-            bw0_size=0,   # unused
-            use_history=False,
-            use_f_history=False,
-            dense_output=False,
-            needs_jacobian=False,
-            embedded_order=4,
-            stiff_ok=False,
+    class Workspace(NamedTuple):
+        y_stage: np.ndarray
+        k1: np.ndarray
+        k2: np.ndarray
+        k3: np.ndarray
+        k4: np.ndarray
+        k5: np.ndarray
+        k6: np.ndarray
+        k7: np.ndarray
+
+    def workspace_type(self) -> type | None:
+        return RK45Spec.Workspace
+
+    def make_workspace(self, n_state: int, dtype: np.dtype, model_spec=None) -> Workspace:
+        zeros = lambda: np.zeros((n_state,), dtype=dtype)
+        return RK45Spec.Workspace(
+            y_stage=zeros(),
+            k1=zeros(),
+            k2=zeros(),
+            k3=zeros(),
+            k4=zeros(),
+            k5=zeros(),
+            k6=zeros(),
+            k7=zeros(),
         )
 
     def config_spec(self) -> type:
@@ -155,36 +152,14 @@ class RK45Spec:
             config.min_step,
         ], dtype=np.float64)
 
-    def emit(self, rhs_fn: Callable, struct: StructSpec, model_spec=None) -> Callable:
+    def emit(self, rhs_fn: Callable, model_spec=None) -> Callable:
         """
-        Generate a jittable RK45 stepper function with adaptive stepping.
-        
-        Runtime configuration is passed via stepper_config array (7 floats):
-            [0] atol
-            [1] rtol
-            [2] safety
-            [3] min_factor
-            [4] max_factor
-            [5] max_tries (as float)
-            [6] min_step
-        
-        If stepper_config is empty or all zeros, defaults are used from closure.
-        
-        Signature (per ABI):
-            status = stepper(
-                t: float, dt: float,
-                y_curr: float[:], rhs,
-                params: float[:] | int[:],
-                sp: float[:], ss: float[:],
-                sw0: float[:], sw1: float[:], sw2: float[:], sw3: float[:],
-                iw0: int32[:], bw0: uint8[:],
-                stepper_config: float64[:],
-                y_prop: float[:], t_prop: float[:], dt_next: float[:], err_est: float[:]
-            ) -> int32
-        
-        Returns:
-            A callable Python function implementing the RK45 stepper with
-            internal accept/reject loop.
+        Generate a jittable RK45 stepper that consumes the workspace tuple.
+
+        Runtime configuration is passed via the float64 stepper_config array (7 floats):
+            [0] atol, [1] rtol, [2] safety, [3] min_factor, [4] max_factor,
+            [5] max_tries (as float), [6] min_step.
+        Defaults from the ModelSpec are used when the config array is empty.
         """
         # Get defaults from model_spec (closure values for when config array is empty)
         default_cfg = self.default_config(model_spec)
@@ -244,25 +219,31 @@ class RK45Spec:
         bs7 = 1.0/40.0
         
         def rk45_stepper(
-            t, dt,
-            y_curr, rhs,
+            t,
+            dt,
+            y_curr,
+            rhs,
             params,
-            sp, ss,
-            sw0, sw1, sw2, sw3,
-            iw0, bw0,
+            runtime_ws,
+            ws,
             stepper_config,
-            y_prop, t_prop, dt_next, err_est
+            y_prop,
+            t_prop,
+            dt_next,
+            err_est,
         ):
             # RK45: Dormand-Prince adaptive method (DOPRI5(4))
             # 7 RHS evaluations per step (k1-k7)
             n = y_curr.size
-            
-            # Lane-packed k vectors
-            k1 = sw0[:n];      k2 = sw0[n:2*n]
-            k3 = sw1[:n];      k4 = sw1[n:2*n]
-            k5 = sw2[:n];      k6 = sw2[n:2*n]
-            k7 = sw3[:n]                      # embedded error term
-            y_stage = sp[:n]                  # intermediate state buffer
+
+            k1 = ws.k1
+            k2 = ws.k2
+            k3 = ws.k3
+            k4 = ws.k4
+            k5 = ws.k5
+            k6 = ws.k6
+            k7 = ws.k7
+            y_stage = ws.y_stage
             
             # Read runtime config with fallback to defaults
             # Config array format: [atol, rtol, safety, min_factor, max_factor, max_tries, min_step]
@@ -293,7 +274,7 @@ class RK45Spec:
             
             for attempt in range(max_tries):
                 # Stage 1: k1 = f(t, y)
-                rhs(t, y_curr, k1, params, ss, iw0)
+                rhs(t, y_curr, k1, params, runtime_ws)
                 if not allfinite1d(k1):
                     error = float("inf")
                     if h <= min_step:
@@ -307,7 +288,7 @@ class RK45Spec:
                 # Stage 2: k2 = f(t + c2*h, y + h*(a21*k1))
                 for i in range(n):
                     y_stage[i] = y_curr[i] + h * a21 * k1[i]
-                rhs(t + c2 * h, y_stage, k2, params, ss, iw0)
+                rhs(t + c2 * h, y_stage, k2, params, runtime_ws)
                 if not allfinite1d(k2):
                     error = float("inf")
                     if h <= min_step:
@@ -321,7 +302,7 @@ class RK45Spec:
                 # Stage 3: k3 = f(t + c3*h, y + h*(a31*k1 + a32*k2))
                 for i in range(n):
                     y_stage[i] = y_curr[i] + h * (a31 * k1[i] + a32 * k2[i])
-                rhs(t + c3 * h, y_stage, k3, params, ss, iw0)
+                rhs(t + c3 * h, y_stage, k3, params, runtime_ws)
                 if not allfinite1d(k3):
                     error = float("inf")
                     if h <= min_step:
@@ -335,7 +316,7 @@ class RK45Spec:
                 # Stage 4: k4 = f(t + c4*h, y + h*(a41*k1 + a42*k2 + a43*k3))
                 for i in range(n):
                     y_stage[i] = y_curr[i] + h * (a41 * k1[i] + a42 * k2[i] + a43 * k3[i])
-                rhs(t + c4 * h, y_stage, k4, params, ss, iw0)
+                rhs(t + c4 * h, y_stage, k4, params, runtime_ws)
                 if not allfinite1d(k4):
                     error = float("inf")
                     if h <= min_step:
@@ -351,7 +332,7 @@ class RK45Spec:
                     y_stage[i] = y_curr[i] + h * (
                         a51 * k1[i] + a52 * k2[i] + a53 * k3[i] + a54 * k4[i]
                     )
-                rhs(t + c5 * h, y_stage, k5, params, ss, iw0)
+                rhs(t + c5 * h, y_stage, k5, params, runtime_ws)
                 if not allfinite1d(k5):
                     error = float("inf")
                     if h <= min_step:
@@ -368,7 +349,7 @@ class RK45Spec:
                         a61 * k1[i] + a62 * k2[i] + a63 * k3[i] +
                         a64 * k4[i] + a65 * k5[i]
                     )
-                rhs(t + c6 * h, y_stage, k6, params, ss, iw0)
+                rhs(t + c6 * h, y_stage, k6, params, runtime_ws)
                 if not allfinite1d(k6):
                     error = float("inf")
                     if h <= min_step:
@@ -396,7 +377,7 @@ class RK45Spec:
                     continue
 
                 # Stage 7: k7 = f(t + h, y5) for embedded error estimate
-                rhs(t + h, y_prop, k7, params, ss, iw0)
+                rhs(t + h, y_prop, k7, params, runtime_ws)
                 if not allfinite1d(k7):
                     error = float("inf")
                     if h <= min_step:
