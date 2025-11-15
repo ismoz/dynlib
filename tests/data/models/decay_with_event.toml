@@ -21,9 +21,3 @@ cond = "x < threshold"
 action.x = "1.0"
 log = ["t", "x"]
 
-[sim]
-t0 = 0.0
-t_end = 3.0
-dt = 0.05
-stepper = "euler"
-record = true

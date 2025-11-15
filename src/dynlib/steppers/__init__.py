@@ -6,6 +6,7 @@ from .registry import register, get_stepper, registry
 from .ode import euler
 from .ode import rk4
 from .ode import rk45
+from .ode import ab2
 from .discrete import map
 
 __all__ = [

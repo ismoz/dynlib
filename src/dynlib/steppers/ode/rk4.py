@@ -1,4 +1,4 @@
-# src/dynlib/steppers/rk4.py
+# src/dynlib/steppers/ode/rk4.py
 """
 RK4 (Runge-Kutta 4th order, explicit, fixed-step) stepper implementation.
 

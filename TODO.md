@@ -25,10 +25,6 @@ This file lists the tasks and improvements planned for the project. Each task in
        - **Status**: Planned.
        - **Notes**: Investigate Jacobian computation strategies.
 
-2. **Map Model Support**
-   - **Description**: Add support for discrete iterative systems in the modeling framework.
-   - **Status**: DONE!
-   - **Notes**: Ensure compatibility with existing solvers and validation mechanisms.
 
 3. **Multistep Methods**
    - **Description**: Implement multistep methods such as Adams and BDF.
@@ -50,17 +46,7 @@ This file lists the tasks and improvements planned for the project. Each task in
    - **Status**: Planned.
    - **Notes**: Ensure user-friendly interface and robust error handling.
 
-7. **Integer Dtype Support for Discrete Maps**
-   - **Description**: Add integer data type support for discrete maps in the modeling framework.
-   - **Status**: Planned.
-   - **Notes**: Ensure compatibility with existing data structures.
-
 8. **User Interrupt Handling**
    - **Description**: Implement support for handling user interrupts (e.g., Ctrl+C) gracefully.
    - **Status**: Planned.
    - **Notes**: Ensure proper cleanup and state preservation.
-
-9. **Advanced Validation**
-   - **Description**: Add static code checks and validation mechanisms per guardrails.
-   - **Status**: Planned.
-   - **Notes**: Ensure comprehensive coverage of validation rules.

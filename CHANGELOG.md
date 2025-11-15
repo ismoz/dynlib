@@ -2,6 +2,33 @@
 
 ---
 
+## [2.25.0] – 2025-11-15
+### Added
+- Added AB2 (Adams-Bashforth 2nd order) stepper for ODE simulations.
+- Added basic tests for AB2 stepper accuracy.
+- Added contract tests for ODE steppers to ensure JIT on/off parity and proper registration.
+- Added separate test files for RK4 and RK45 steppers using the new API.
+
+### Changed
+- Updated RK45 stepper default tolerances (atol=1e-6, rtol=1e-3, max_factor=5.0) for better balance.
+
+### Tests
+- Reorganized ODE stepper tests. Now each stepper will have two test files:
+    1) `test_<stepper_name>_basic.py`
+      - Accuracy vs analytic decay
+      - Order test (dt vs dt/2)
+    2) `test_ode_stepper_contract.py` (single file for all steppers)
+      - JIT on/off parity
+      - Buffer growth invariance (your cap_rec tests)
+      - Transient warm-up behavior
+      - Registry / alias correctness
+      - Maybe a transient or growth test
+- Refactored test files to use the `setup()` helper instead of manual model building.
+- Deleted duplicate test model files (`decay_rk4.toml`, `decay_rk45.toml`).
+- Removed old combined RK4/RK45 integration test file.
+
+---
+
 ## [2.24.1] – 2025-11-14
 ### Added
 - Added scalar DSL macros usable in aux, equations, and event actions: `sign(x)`, `heaviside(x)`, 

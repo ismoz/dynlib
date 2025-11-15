@@ -6,40 +6,20 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import tempfile
-import tomllib
+
 import numpy as np
 import pytest
 
-from dynlib.dsl.parser import parse_model_v2
-from dynlib.dsl.spec import build_spec
-from dynlib.compiler.build import build
-from dynlib.runtime.sim import Sim
-from dynlib.runtime.model import Model
+from dynlib import setup
 
 
-def _load_model(toml_name: str) -> Model:
-    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
-    with open(data_dir / toml_name, "rb") as fh:
-        data = tomllib.load(fh)
-    spec = build_spec(parse_model_v2(data))
-    full_model = build(spec, stepper=spec.sim.stepper, jit=True)
-    return Model(
-        spec=full_model.spec,
-        stepper_name=full_model.stepper_name,
-        struct=full_model.struct,
-        rhs=full_model.rhs,
-        events_pre=full_model.events_pre,
-        events_post=full_model.events_post,
-        stepper=full_model.stepper,
-        runner=full_model.runner,
-        spec_hash=full_model.spec_hash,
-        dtype=full_model.dtype,
-    )
+DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "models"
+DECAY_MODEL = str(DATA_DIR / "decay.toml")
 
 
 def test_export_import_current_state(tmp_path):
     """Test round-trip export/import of current session state."""
-    sim = Sim(_load_model("decay.toml"))
+    sim = setup(DECAY_MODEL)
     
     # Run simulation to some intermediate state
     sim.run(T=0.5)
@@ -73,7 +53,7 @@ def test_export_import_current_state(tmp_path):
 
 def test_export_import_named_snapshot(tmp_path):
     """Test round-trip export/import of named in-memory snapshot."""
-    sim = Sim(_load_model("decay.toml"))
+    sim = setup(DECAY_MODEL)
     
     # Run to intermediate state and create named snapshot
     sim.run(T=0.3)
@@ -100,7 +80,7 @@ def test_export_import_named_snapshot(tmp_path):
 
 def test_inspect_snapshot(tmp_path):
     """Test snapshot inspection without modifying sim state."""
-    sim = Sim(_load_model("decay.toml"))
+    sim = setup(DECAY_MODEL)
     sim.run(T=0.4)
     
     snap_path = tmp_path / "inspect_test.npz"
@@ -125,7 +105,7 @@ def test_inspect_snapshot(tmp_path):
 
 def test_pin_mismatch_rejection():
     """Test that snapshots with mismatched pins are rejected."""
-    sim1 = Sim(_load_model("decay.toml"))
+    sim1 = setup(DECAY_MODEL, stepper="euler")
     sim1.run(T=0.2)
     
     with tempfile.NamedTemporaryFile(suffix=".npz", delete=False) as tmp:
@@ -135,8 +115,8 @@ def test_pin_mismatch_rejection():
         # Export from first sim
         sim1.export_snapshot(snap_path, source="current")
         
-        # Try to import into sim with different model
-        sim2 = Sim(_load_model("decay_rk4.toml"))  # Different stepper = different pins
+        # Try to import into sim with different stepper pins
+        sim2 = setup(DECAY_MODEL, stepper="rk4")
         
         with pytest.raises(RuntimeError, match="Snapshot incompatible"):
             sim2.import_snapshot(snap_path)
@@ -147,7 +127,7 @@ def test_pin_mismatch_rejection():
 
 def test_invalid_export_arguments():
     """Test validation of export_snapshot arguments."""
-    sim = Sim(_load_model("decay.toml"))
+    sim = setup(DECAY_MODEL)
     
     with tempfile.NamedTemporaryFile(suffix=".npz", delete=False) as tmp:
         snap_path = Path(tmp.name)
@@ -167,7 +147,7 @@ def test_invalid_export_arguments():
 
 def test_malformed_file_handling(tmp_path):
     """Test handling of corrupted or malformed snapshot files."""
-    sim = Sim(_load_model("decay.toml"))
+    sim = setup(DECAY_MODEL)
     
     # Test missing file
     nonexistent = tmp_path / "nonexistent.npz"
@@ -192,7 +172,7 @@ def test_malformed_file_handling(tmp_path):
 
 def test_wrong_schema_rejection(tmp_path):
     """Test rejection of files with wrong schema version."""
-    sim = Sim(_load_model("decay.toml"))
+    sim = setup(DECAY_MODEL)
     
     # Create file with wrong schema
     wrong_schema = tmp_path / "wrong_schema.npz"
@@ -212,7 +192,7 @@ def test_wrong_schema_rejection(tmp_path):
 
 def test_shape_mismatch_rejection(tmp_path):
     """Test rejection of files with wrong array shapes."""
-    sim = Sim(_load_model("decay.toml"))
+    sim = setup(DECAY_MODEL)
     sim.run(T=0.1)
     
     # Export valid snapshot first
@@ -250,7 +230,7 @@ def test_shape_mismatch_rejection(tmp_path):
 
 def test_atomic_write_behavior(tmp_path):
     """Test that export overwrites existing files atomically."""
-    sim = Sim(_load_model("decay.toml"))
+    sim = setup(DECAY_MODEL)
     sim.run(T=0.2)
     
     snap_path = tmp_path / "atomic_test.npz"
@@ -271,7 +251,7 @@ def test_workspace_persistence(tmp_path):
     """Test that stepper workspace is correctly persisted and restored."""
     # Note: This test depends on having a stepper that uses non-empty workspace
     # For now, we'll test the basic structure even if workspace is empty
-    sim = Sim(_load_model("decay_rk4.toml"))
+    sim = setup(DECAY_MODEL)
     sim.run(T=0.3)
     
     snap_path = tmp_path / "workspace_test.npz"
@@ -292,7 +272,7 @@ def test_workspace_persistence(tmp_path):
 
 def test_export_snapshot_preserves_metadata(tmp_path):
     """Exporting stored snapshots must keep their original time shift / nominal dt."""
-    sim = Sim(_load_model("decay.toml"))
+    sim = setup(DECAY_MODEL)
 
     # Create a snapshot after running with a transient warm-up to get a time shift.
     sim.run(T=1.0, transient=0.4)

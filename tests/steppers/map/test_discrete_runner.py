@@ -154,4 +154,4 @@ if __name__ == "__main__":
     test_discrete_map_with_T()
     print()
     test_continuous_backward_compat()
-    print("\n🎉 All tests PASSED!")
+    print("\n All tests PASSED!")

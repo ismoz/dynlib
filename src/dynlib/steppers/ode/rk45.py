@@ -1,4 +1,4 @@
-# src/dynlib/steppers/rk45.py
+# src/dynlib/steppers/ode/rk45.py
 """
 RK45 (Dormand-Prince, adaptive) stepper implementation.
 
@@ -38,11 +38,11 @@ __all__ = ["RK45Spec", "RK45Config"]
 @dataclass
 class RK45Config:
     """Runtime configuration for RK45 stepper."""
-    atol: float = 1e-8
-    rtol: float = 1e-5
+    atol: float = 1e-6
+    rtol: float = 1e-3
     safety: float = 0.9
     min_factor: float = 0.2
-    max_factor: float = 10.0
+    max_factor: float = 5.0
     max_tries: int = 10
     min_step: float = 1e-12
 

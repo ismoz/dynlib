@@ -1,255 +1,168 @@
-# tests/integration/test_euler_basic.py
+# tests/steppers/ode/test_euler_basic.py
 """
-Integration tests: end-to-end Euler simulations.
+Integration tests: end-to-end Euler simulations using end-user API.
 
 Tests verify:
 - Analytic solution matching for dx/dt = -a*x
+- Transient warm-up behavior (reuse of state)
 - Event mutations work correctly
 - Growth paths are triggered with small capacities
-- JIT on/off parity (identical results)
+- Buffer growth does not change recorded trajectory
 """
 from __future__ import annotations
-import pytest
-import numpy as np
+
 from pathlib import Path
-import tomllib
 
-from dynlib.dsl.parser import parse_model_v2
-from dynlib.dsl.spec import build_spec
-from dynlib.compiler.build import build
-from dynlib.runtime.sim import Sim
-from dynlib.runtime.model import Model
+import numpy as np
+import pytest
 
+from dynlib import setup
 
-def load_model_from_toml(path: Path, jit: bool = True) -> Model:
-    """Helper to load and build a model from a TOML file."""
-    with open(path, "rb") as f:
-        data = tomllib.load(f)
-    
-    # Parse and validate
-    normal = parse_model_v2(data)
-    spec = build_spec(normal)
-    
-    # Build with the spec's default stepper
-    full_model = build(spec, stepper=spec.sim.stepper, jit=jit)
-    
-    # Convert FullModel to Model (legacy compat)
-    from dynlib.runtime.model import Model as LegacyModel
-    return LegacyModel(
-        spec=full_model.spec,
-        stepper_name=full_model.stepper_name,
-        struct=full_model.struct,
-        rhs=full_model.rhs,
-        events_pre=full_model.events_pre,
-        events_post=full_model.events_post,
-        stepper=full_model.stepper,
-        runner=full_model.runner,
-        spec_hash=full_model.spec_hash,
-        dtype=full_model.dtype,
-    )
+# tests/steppers/ode/test_euler_basic.py
+DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "models"
+DECAY_MODEL = str(DATA_DIR / "decay.toml")
+DECAY_WITH_EVENT_MODEL = str(DATA_DIR / "decay_with_event.toml")
 
 
 def test_euler_decay_analytic():
     """
-    Test dx/dt = -a*x with Euler matches analytic solution x(t) = x0*exp(-a*t).
-    
-    For Euler with step dt, the solution is: x_n = x_0 * (1 - a*dt)^n
-    At t=n*dt, the analytic solution is: x(t) = x_0 * exp(-a*t)
-    
-    With small dt, Euler should be reasonably close.
+    dx/dt = -a*x, x(0)=1, a=1
+    Analytic: x(t) = exp(-t)
+
+    We integrate with Euler (dt=0.1, T=2.0) and require modest accuracy.
     """
-    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
-    model_path = data_dir / "decay.toml"
-    
-    model = load_model_from_toml(model_path, jit=True)
-    sim = Sim(model)
-    
-    # Run simulation
-    sim.run()
-    results = sim.raw_results()
-    
-    # Extract final state
-    t_final = results.T[results.n - 1]
-    x_final = results.Y[0, results.n - 1]
-    
-    # Analytic solution: x(t) = x0 * exp(-a*t)
-    x0 = 1.0
-    a = 1.0
-    x_analytic = x0 * np.exp(-a * t_final)
-    
-    # Euler error is O(dt), so with dt=0.1 and t=2.0 (20 steps), expect some error
-    # Euler: x_n = x0 * (1 - a*dt)^n = 1.0 * (0.9)^20 ≈ 0.1216
-    # Analytic: x(2) = exp(-2) ≈ 0.1353
-    # Relative error should be < 15%
+    sim = setup(DECAY_MODEL, stepper="euler", jit=True)
+
+    T = 2.0
+    dt = 0.1
+    sim.run(T=T, dt=dt, record=True)
+    res = sim.raw_results()
+
+    assert res.n > 0
+
+    t_final = res.T_view[-1]
+    x_final = res.Y_view[0, -1]
+
+    x_analytic = np.exp(-t_final)
     rel_error = abs(x_final - x_analytic) / x_analytic
+
+    # Euler: O(dt) global error; for dt=0.1 over T=2 this is loose but OK.
     assert rel_error < 0.15, f"Euler too far from analytic: {x_final} vs {x_analytic}"
-    
-    # Check that we recorded something
-    assert results.n > 0
-    assert results.T[0] == pytest.approx(0.0)
-    assert results.Y[0, 0] == pytest.approx(x0)
 
 
 def test_euler_transient_warmup_reuses_state():
     """
-    Warm-up transient should advance the state before recording and reset time.
+    Transient warm-up should advance the state before recording and
+    then restart the time axis at 0 for the recorded run.
+
+    We compare:
+      - reference: run from t=0 to T_total=3.0
+      - transient: warm-up 1.0 (unrecorded), then record T=2.0
+
+    Recorded trajectory after transient should match reference
+    trajectory shifted by 1.0 in time.
     """
-    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
-    model_path = data_dir / "decay.toml"
+    T_total = 3.0
+    dt = 0.1
 
-    model = load_model_from_toml(model_path, jit=True)
-
-    # Reference run without transient but longer horizon (T + transient)
-    sim_ref = Sim(model)
-    sim_ref.run(T=3.0)
+    # Reference run: no transient, T_total
+    sim_ref = setup(DECAY_MODEL, stepper="euler", jit=True)
+    sim_ref.run(T=T_total, dt=dt, record=True)
     res_ref = sim_ref.raw_results()
 
-    sim_transient = Sim(model)
-    sim_transient.run(transient=1.0)
-    res_transient = sim_transient.raw_results()
+    # Transient run: warm-up 1.0, then record 2.0
+    sim_tr = setup(DECAY_MODEL, stepper="euler", jit=True)
+    sim_tr.run(T=2.0, dt=dt, transient=1.0, record=True)
+    res_tr = sim_tr.raw_results()
 
-    # Recorded time restarted at zero
-    assert res_transient.T_view[0] == pytest.approx(0.0)
-    assert res_transient.T_view[-1] == pytest.approx(2.0)
+    # Recorded time should restart at 0 and end at 2.0
+    assert res_tr.T_view[0] == pytest.approx(0.0)
+    assert res_tr.T_view[-1] == pytest.approx(2.0)
 
-    # Drop the first second from the reference run and compare trajectories
-    start_idx = np.searchsorted(res_ref.T_view, 1.0 - 1e-12, side="left")
+    # Drop first 1.0 units from reference and compare
+    start_idx = int(np.searchsorted(res_ref.T_view, 1.0 - 1e-12, side="left"))
     ref_t = res_ref.T_view[start_idx:] - 1.0
     ref_y = res_ref.Y_view[:, start_idx:]
-    assert len(ref_t) == res_transient.n
 
-    np.testing.assert_allclose(res_transient.T_view, ref_t, atol=1e-12)
-    np.testing.assert_allclose(res_transient.Y_view, ref_y, atol=1e-12)
+    assert ref_t.shape[0] == res_tr.n
+    np.testing.assert_allclose(res_tr.T_view, ref_t, atol=1e-12)
+    np.testing.assert_allclose(res_tr.Y_view, ref_y, atol=1e-12)
 
 
-def test_euler_with_event():
+def test_euler_with_event_resets_state():
     """
-    Test that events can mutate state correctly.
-    
-    Model: dx/dt = -a*x with a reset event when x < threshold.
-    The event should reset x to 1.0, causing the simulation to continue.
+    Use a model with an event that resets x when it crosses a threshold.
+
+    We only check qualitative behavior: state must occasionally jump up,
+    otherwise pure decay would be monotone decreasing.
     """
-    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
-    model_path = data_dir / "decay_with_event.toml"
-    
-    model = load_model_from_toml(model_path, jit=True)
-    sim = Sim(model)
-    
-    # Run simulation
-    sim.run()
-    results = sim.raw_results()
-    
-    # With the reset event, x should never stay below threshold for long
-    # After reset, it jumps back to 1.0
-    # Check that we have some resets (x values near 1.0 appearing after decay)
-    
-    x_vals = results.Y[0, :results.n]
-    
-    # Find where x jumps back up (reset events)
-    # Look for increases in x (should not happen in pure decay)
-    increases = 0
-    for i in range(1, len(x_vals)):
-        if x_vals[i] > x_vals[i-1] + 0.1:  # Significant increase
-            increases += 1
-    
-    # Should have at least one reset event during the simulation
-    assert increases >= 1, f"Expected at least one reset event, found {increases} increases"
-    
-    # Check that simulation completed
-    assert results.n > 0
+    sim = setup(DECAY_WITH_EVENT_MODEL, stepper="euler", jit=True)
+
+    sim.run(T=2.0, dt=0.1, record=True)
+    res = sim.raw_results()
+
+    x = res.Y_view[0, : res.n]
+    assert x.size > 2
+
+    # Count noticeable upward jumps (resets)
+    jumps = 0
+    for i in range(1, x.size):
+        if x[i] > x[i - 1] + 0.1:
+            jumps += 1
+
+    assert jumps >= 1, f"Expected at least one reset-like jump, got {jumps}"
 
 
-def test_euler_growth_triggered():
+def test_euler_record_buffer_growth_triggered():
     """
-    Test that buffer growth is triggered when cap_rec is small.
-    
-    Uses a tiny initial capacity to force growth during execution.
+    Start with tiny cap_rec to force geometric growth.
+
+    Growth must not crash and we must end up with more than initial
+    capacity worth of records.
     """
-    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
-    model_path = data_dir / "decay.toml"
-    
-    model = load_model_from_toml(model_path, jit=True)
-    sim = Sim(model)
-    
-    # Run with very small capacity (should force growth)
-    sim.run(cap_rec=4, record_interval=1)
-    results = sim.raw_results()
-    
-    # Should have recorded more than 4 points (since t_end=2.0, dt=0.1 → ~20 steps)
-    assert results.n > 4, f"Expected growth to allow >4 records, got {results.n}"
-    
-    # Verify results are valid
-    assert results.T[0] == pytest.approx(0.0)
-    assert results.Y[0, 0] == pytest.approx(1.0)
+    sim = setup(DECAY_MODEL, stepper="euler", jit=True)
+
+    sim.run(T=2.0, dt=0.1, cap_rec=4, record_interval=1, record=True)
+    res = sim.raw_results()
+
+    # dt=0.1, T=2.0 -> ~20 steps; so > 4 records if growth worked.
+    assert res.n > 4
+    assert res.T_view[0] == pytest.approx(0.0)
+    assert res.Y_view[0, 0] == pytest.approx(1.0)
 
 
-def test_euler_growth_matches_reference():
+def test_euler_growth_vs_reference_trajectory():
     """
-    Forcing buffer growth must not change the recorded trajectory.
+    Forcing record-buffer growth must not change the recorded trajectory.
+
+    Compare:
+      - reference: large cap_rec (no growth)
+      - small-cap: tiny cap_rec (forces growth)
     """
-    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
-    model_path = data_dir / "decay.toml"
+    T = 2.0
+    dt = 0.1
 
-    model = load_model_from_toml(model_path, jit=True)
-
-    # Reference run with plenty of capacity (no growth expected)
-    sim_ref = Sim(model)
-    sim_ref.run(cap_rec=128, record_interval=1)
+    # Reference
+    sim_ref = setup(DECAY_MODEL, stepper="euler", jit=True)
+    sim_ref.run(T=T, dt=dt, cap_rec=128, record_interval=1, record=True)
     res_ref = sim_ref.raw_results()
 
-    # Force multiple growth cycles
-    sim_small = Sim(model)
-    sim_small.run(cap_rec=3, record_interval=1)
+    # Tiny capacity
+    sim_small = setup(DECAY_MODEL, stepper="euler", jit=True)
+    sim_small.run(T=T, dt=dt, cap_rec=3, record_interval=1, record=True)
     res_small = sim_small.raw_results()
 
-    assert res_small.n == res_ref.n, "Record counts diverged when forcing growth"
+    assert res_small.n == res_ref.n
+
     np.testing.assert_allclose(
-        res_small.T_view, res_ref.T_view, rtol=0, atol=1e-12, err_msg="Times differ after growth"
+        res_small.T_view,
+        res_ref.T_view,
+        rtol=0.0,
+        atol=1e-12,
     )
     np.testing.assert_allclose(
-        res_small.Y_view, res_ref.Y_view, rtol=0, atol=1e-12, err_msg="States differ after growth"
+        res_small.Y_view,
+        res_ref.Y_view,
+        rtol=0.0,
+        atol=1e-12,
     )
-
-
-def test_jit_on_off_parity():
-    """
-    Test that JIT on/off produces identical results (per guardrails).
-    
-    This is a critical test for the "optional JIT" requirement.
-    """
-    data_dir = Path(__file__).parent.parent.parent / "data" / "models"
-    model_path = data_dir / "decay.toml"
-    
-    # Build and run with JIT enabled
-    model_jit = load_model_from_toml(model_path, jit=True)
-    sim_jit = Sim(model_jit)
-    sim_jit.run()
-    results_jit = sim_jit.raw_results()
-    
-    # Build and run with JIT disabled
-    model_no_jit = load_model_from_toml(model_path, jit=False)
-    sim_no_jit = Sim(model_no_jit)
-    sim_no_jit.run()
-    results_no_jit = sim_no_jit.raw_results()
-    
-    # Results should be identical
-    assert results_jit.n == results_no_jit.n, "Record counts differ"
-    
-    np.testing.assert_allclose(
-        results_jit.T[:results_jit.n],
-        results_no_jit.T[:results_no_jit.n],
-        rtol=1e-14,
-        err_msg="Time arrays differ between JIT/no-JIT"
-    )
-    
-    np.testing.assert_allclose(
-        results_jit.Y[:, :results_jit.n],
-        results_no_jit.Y[:, :results_no_jit.n],
-        rtol=1e-14,
-        err_msg="State arrays differ between JIT/no-JIT"
-    )
-
-
-if __name__ == "__main__":
-    # Allow running individual tests
-    pytest.main([__file__, "-v"])

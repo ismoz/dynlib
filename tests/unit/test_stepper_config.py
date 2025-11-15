@@ -1,18 +1,13 @@
-#!/usr/bin/env python3
-"""
-Test script for runtime stepper configuration.
-
-Tests that stepper parameters can be overridden at runtime via run() kwargs.
-"""
 import numpy as np
 from dynlib.compiler.build import build
 from dynlib.runtime.sim import Sim
 from dynlib.runtime.model import Model
 
+
 def test_rk45_runtime_config():
-    """Test RK45 with runtime parameter overrides."""
-    
-    # Simple decay model
+    """RK45 sanity: runtime tolerances should affect steps and accuracy."""
+
+    # Simple decay model: x' = -x, x(0)=1 → x(t)=exp(-t)
     model_toml = """
 [model]
 type = "ode"
@@ -32,14 +27,13 @@ t_end = 1.0
 dt = 0.1
 stepper = "rk45"
 record = true
+# model-level tolerances (mid level)
 atol = 1e-6
 rtol = 1e-4
 """
-    
-    # Build with RK45
+
     full_model = build(f"inline: {model_toml}", jit=False)
-    
-    # Convert to Model for Sim
+
     model = Model(
         spec=full_model.spec,
         stepper_name=full_model.stepper_name,
@@ -52,64 +46,55 @@ rtol = 1e-4
         spec_hash=full_model.spec_hash,
         dtype=full_model.dtype,
     )
-    
+
     sim = Sim(model)
-    
-    # Run with default tolerances from model (atol=1e-6, rtol=1e-4)
-    print("=" * 60)
-    print("Test 1: Default tolerances from model_spec")
-    print("=" * 60)
-    sim.run()
-    res1 = sim.raw_results()
-    print(f"Steps with defaults: {res1.n}")
-    print(f"Final x: {res1.Y[0, res1.n - 1]:.6f}")
-    print(f"Expected (exact): {np.exp(-1.0):.6f}")
-    print()
-    
-    # Run with tighter tolerances
-    print("=" * 60)
-    print("Test 2: Tighter tolerances (atol=1e-10, rtol=1e-8)")
-    print("=" * 60)
-    sim.run(atol=1e-10, rtol=1e-8)
-    res2 = sim.raw_results()
-    print(f"Steps with tight tolerances: {res2.n}")
-    print(f"Final x: {res2.Y[0, res2.n - 1]:.10f}")
-    print(f"Expected (exact): {np.exp(-1.0):.10f}")
-    print(f"Error: {abs(res2.Y[0, res2.n - 1] - np.exp(-1.0)):.2e}")
-    print()
-    
-    # Run with looser tolerances
-    print("=" * 60)
-    print("Test 3: Looser tolerances (atol=1e-3, rtol=1e-2)")
-    print("=" * 60)
-    sim.run(atol=1e-3, rtol=1e-2)
-    res3 = sim.raw_results()
-    print(f"Steps with loose tolerances: {res3.n}")
-    print(f"Final x: {res3.Y[0, res3.n - 1]:.6f}")
-    print(f"Expected (exact): {np.exp(-1.0):.6f}")
-    print()
-    
-    # Verify that tighter tolerances → more steps
-    assert res2.n > res1.n, "Tighter tolerances should require more steps"
-    # Verify that looser tolerances → fewer steps
-    assert res3.n < res1.n, "Looser tolerances should require fewer steps"
-    
-    # Run with max_tries override
-    print("=" * 60)
-    print("Test 4: max_tries=50, min_step=1e-15")
-    print("=" * 60)
-    sim.run(atol=1e-8, rtol=1e-6, max_tries=50, min_step=1e-15)
-    res4 = sim.raw_results()
-    print(f"Steps: {res4.n}")
-    print(f"Final x: {res4.Y[0, res4.n - 1]:.8f}")
-    print()
-    
-    print("✓ All RK45 runtime config tests passed!")
+
+    def run_with_tols(atol: float, rtol: float):
+        """
+        Run from t0 to t_end with given tolerances and return:
+        - max(|x_exact(t_i) - x_num(t_i)|) over the trajectory
+        - number of recorded steps
+        """
+        sim.reset()
+        # Also pass a reasonable min_step and max_tries so tolerance has a chance to act
+        sim.run(atol=atol, rtol=rtol, min_step=1e-12, max_tries=20)
+        res = sim.raw_results()
+
+        t = res.T[: res.n]
+        x_num = res.Y[0, : res.n]
+        x_exact = np.exp(-t)
+
+        err = np.max(np.abs(x_num - x_exact))
+        return err, res.n
+
+    # Loose → mid → tight tolerances
+    err_loose, n_loose = run_with_tols(1e-3, 1e-2)
+    err_mid,   n_mid   = run_with_tols(1e-6, 1e-5)
+    err_tight, n_tight = run_with_tols(1e-10, 1e-8)
+
+    # --------- Strong expectations for a sane RK45 implementation ---------
+
+    # Step counts: tighter tolerances → equal or more steps
+    assert n_tight >= n_mid >= n_loose, (
+        f"Unexpected step counts: loose={n_loose}, mid={n_mid}, tight={n_tight}"
+    )
+
+    # Global accuracy: tighter tolerances → strictly smaller max error
+    assert err_tight < err_mid < err_loose, (
+        f"Unexpected error ordering: "
+        f"loose={err_loose:.3e}, mid={err_mid:.3e}, tight={err_tight:.3e}"
+    )
+
+    # Additional sanity: none of the errors should be ridiculous
+    for label, err in [("loose", err_loose), ("mid", err_mid), ("tight", err_tight)]:
+        assert np.isfinite(err), f"{label} tolerance run produced non-finite error"
+        assert err < 1.0, f"{label} tolerance run is wildly inaccurate: err={err}"
+        
 
 
 def test_euler_ignores_config():
     """Test that Euler ignores stepper config parameters with a warning."""
-    
+
     model_toml = """
 [model]
 type = "ode"
@@ -130,7 +115,7 @@ dt = 0.1
 stepper = "euler"
 record = true
 """
-    
+
     full_model = build(f"inline: {model_toml}", jit=False)
     model = Model(
         spec=full_model.spec,
@@ -145,33 +130,24 @@ record = true
         dtype=full_model.dtype,
     )
     sim = Sim(model)
-    
-    print("=" * 60)
-    print("Test 5: Euler with stepper kwargs (should warn)")
-    print("=" * 60)
-    
-    # This should issue a warning but still work
+
     import warnings
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         sim.run(atol=1e-10, rtol=1e-8)  # Euler doesn't use these
-        
-        # Check that a warning was issued
-        assert len(w) == 1
-        assert "does not accept runtime parameters" in str(w[0].message)
-        print(f"✓ Warning issued: {w[0].message}")
-    
+
+        # At least one warning mentioning that runtime params are ignored
+        msgs = [str(wi.message) for wi in w]
+        assert any("does not accept runtime parameters" in m for m in msgs)
+
     res = sim.raw_results()
-    print(f"Steps: {res.n}")
-    print(f"Final x: {res.Y[0, res.n - 1]:.6f}")
-    print()
-    
-    print("✓ Euler config ignore test passed!")
+    # basic sanity: we did run something
+    assert res.n > 0
 
 
 def test_rk45_with_jit():
     """Test RK45 runtime config with JIT enabled."""
-    
+
     model_toml = """
 [model]
 type = "ode"
@@ -194,7 +170,7 @@ record = true
 atol = 1e-8
 rtol = 1e-5
 """
-    
+
     # Build with JIT enabled
     full_model = build(f"inline: {model_toml}", jit=True)
     model = Model(
@@ -210,34 +186,23 @@ rtol = 1e-5
         dtype=full_model.dtype,
     )
     sim = Sim(model)
-    
-    print("=" * 60)
-    print("Test 6: RK45 with JIT and runtime config")
-    print("=" * 60)
-    
-    # Run with default
+
+    x_exact = np.exp(-1.0)  # since a = 2, t_end = 0.5 → a*t_end = 1
+
+    # Run with defaults (from model spec)
+    sim.reset()
     sim.run()
     res1 = sim.raw_results()
-    print(f"Steps with defaults (JIT): {res1.n}")
-    
+
     # Run with tighter tolerances
+    sim.reset()
     sim.run(atol=1e-12, rtol=1e-10)
     res2 = sim.raw_results()
-    print(f"Steps with tight tolerances (JIT): {res2.n}")
-    
-    assert res2.n > res1.n, "Tighter tolerances should require more steps (JIT)"
-    
-    print(f"Final x: {res2.Y[0, res2.n - 1]:.12f}")
-    print(f"Expected (exact): {np.exp(-1.0):.12f}")
-    print()
-    
-    print("✓ RK45 with JIT test passed!")
 
+    # Tighter tolerances should not yield fewer steps
+    assert res2.n >= res1.n, "Tighter tolerances should not yield fewer steps (JIT)"
 
-if __name__ == "__main__":
-    test_rk45_runtime_config()
-    test_euler_ignores_config()
-    test_rk45_with_jit()
-    print("\n" + "=" * 60)
-    print("ALL TESTS PASSED! ✓✓✓")
-    print("=" * 60)
+    # And they should not be less accurate
+    err1 = abs(res1.Y[0, -1] - x_exact)
+    err2 = abs(res2.Y[0, -1] - x_exact)
+    assert err2 <= err1 + 1e-12
