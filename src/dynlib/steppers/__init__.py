@@ -3,11 +3,9 @@ from .base import StepperMeta, StepperInfo, StructSpec, StepperSpec
 from .registry import register, get_stepper, registry
 
 # Import concrete steppers to trigger auto-registration
-from .ode import euler
-from .ode import rk4
-from .ode import rk45
-from .ode import ab2
 from .discrete import map
+from .ode import euler, rk4, rk45
+from .ode import ab2, ab3
 
 __all__ = [
     "StepperMeta", "StepperInfo", "StructSpec", "StepperSpec",

@@ -2,6 +2,13 @@
 
 ---
 
+## [2.25.1] – 2025-11-15
+### Added
+- Added AB3 (Adams-Bashforth 3rd order) stepper for ODE simulations.
+- Added basic and contract tests for AB3.
+
+---
+
 ## [2.25.0] – 2025-11-15
 ### Added
 - Added AB2 (Adams-Bashforth 2nd order) stepper for ODE simulations.

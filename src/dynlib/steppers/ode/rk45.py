@@ -17,17 +17,7 @@ from dynlib.runtime.runner_api import OK, STEPFAIL
 # Import guards for NaN/Inf detection
 # When jit=False, this makes allfinite1d available in the closure
 # When jit=True, the stepper source is rendered with guards inlined
-try:
-    from dynlib.compiler.guards import allfinite1d, allfinite_scalar
-except ImportError:
-    # Fallback if guards not available (shouldn't happen in normal use)
-    def allfinite1d(arr):
-        for val in arr:
-            if math.isnan(val) or math.isinf(val):
-                return False
-        return True
-    def allfinite_scalar(val):
-        return not (math.isnan(val) or math.isinf(val))
+from dynlib.compiler.guards import allfinite1d, allfinite_scalar
 
 if TYPE_CHECKING:
     from typing import Callable

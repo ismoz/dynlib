@@ -20,7 +20,7 @@ DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "models"
 DECAY_MODEL = str(DATA_DIR / "decay.toml")
 
 
-@pytest.mark.parametrize("stepper", ["euler", "rk4", "rk45", "ab2"])
+@pytest.mark.parametrize("stepper", ["euler", "rk4", "rk45", "ab2", "ab3"])
 def test_jit_on_off_parity(stepper: str):
     """
     Guardrail: JIT on/off must produce identical results for the same
@@ -91,3 +91,9 @@ def test_stepper_registry_and_meta():
     # Second-order Adams–Bashforth
     assert ab2.meta.order == 2
     assert getattr(ab2.meta, "time_control", None) == "fixed"
+
+    ab3 = get_stepper("ab3")
+    assert ab3.meta.name == "ab3"
+    # Third-order Adams–Bashforth
+    assert ab3.meta.order == 3
+    assert getattr(ab3.meta, "time_control", None) == "fixed"

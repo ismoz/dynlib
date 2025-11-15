@@ -17,6 +17,10 @@ if TYPE_CHECKING:
 
 __all__ = ["EulerSpec"]
 
+# NOTE: Never add NaN / Inf checks in fixed-step steppers!
+# Runners handle that globally for all steppers.
+# Adaptive steppers may have these checks because they need them 
+# when determining the step size.
 
 class EulerSpec:
     """
