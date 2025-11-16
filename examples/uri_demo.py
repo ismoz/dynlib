@@ -3,9 +3,7 @@
 This script demonstrates the new path resolution and URI system,
 showing various ways to load and run models.
 """
-from dynlib.compiler.build import build
-from dynlib.runtime.sim import Sim
-from dynlib.runtime.model import Model
+from dynlib import setup
 
 
 def demo_inline_model():
@@ -36,33 +34,19 @@ def demo_inline_model():
     """
     
     uri = inline_model
-    full_model = build(uri, jit=False)
+    sim = setup(uri, stepper="euler", jit=False)
     
-    print(f"Model kind: {full_model.spec.kind}")
-    print(f"States: {full_model.spec.states}")
-    print(f"Stepper: {full_model.stepper_name}")
+    print(f"Model kind: {sim.model.spec.kind}")
+    print(f"States: {sim.model.spec.states}")
+    print(f"Stepper: {sim.model.stepper_name}")
     
     # Run simulation
-    model = Model(
-        spec=full_model.spec,
-        stepper_name=full_model.stepper_name,
-        struct=full_model.struct,
-        rhs=full_model.rhs,
-        events_pre=full_model.events_pre,
-        events_post=full_model.events_post,
-        stepper=full_model.stepper,
-        runner=full_model.runner,
-        spec_hash=full_model.spec_hash,
-        dtype=full_model.dtype,
-    )
+    sim.run(T=2.0)
+    results = sim.results()
     
-    sim = Sim(model)
-    sim.run()
-    results = sim.raw_results()
-    
-    print(f"Simulation ran {results.n} steps")
-    print(f"Initial x: {results.Y[0, 0]:.6f}")
-    print(f"Final x: {results.Y[0, results.n-1]:.6f}")
+    print(f"Simulation ran {len(results)} steps")
+    print(f"Initial x: {results['x'][0]:.6f}")
+    print(f"Final x: {results['x'][-1]:.6f}")
     print()
 
 
@@ -81,12 +65,12 @@ def demo_file_loading():
         return
     
     # Load using absolute path
-    full_model = build(str(model_path), jit=False)
+    sim = setup(str(model_path), stepper="euler", jit=False)
     
     print(f"Loaded from: {model_path}")
-    print(f"Model kind: {full_model.spec.kind}")
-    print(f"States: {full_model.spec.states}")
-    print(f"Default stepper: {full_model.stepper}")
+    print(f"Model kind: {sim.model.spec.kind}")
+    print(f"States: {sim.model.spec.states}")
+    print(f"Default stepper: {sim.model.stepper_name}")
     print()
 
 

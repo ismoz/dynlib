@@ -2,6 +2,15 @@
 
 ---
 
+## [2.26.2] – 2025-11-16
+### Changed
+- Updated `snapshot_semo.py` and `uri_demo.py` examples. All examples work at this point.
+
+### Tests
+- Updated `test_snapshot_persistence.py` test.
+
+---
+
 ## [2.26.1] – 2025-11-16
 ### Changed
 - Updated the docs throughout the package. Removed remnants of the old workbanks docs.
