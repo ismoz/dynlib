@@ -41,7 +41,6 @@ class RK4Spec:
                 family="runge-kutta",
                 order=4,
                 embedded_order=None,
-                dense_output=False,
                 stiff_ok=False,
                 aliases=("rk4_classic", "classical_rk4"),
             )

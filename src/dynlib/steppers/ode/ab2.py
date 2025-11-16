@@ -45,7 +45,6 @@ class AB2Spec:
                 family="adams-bashforth",
                 order=2,
                 embedded_order=None,
-                dense_output=False,
                 stiff_ok=False,
                 aliases=("adams_bashforth_2",),
             )

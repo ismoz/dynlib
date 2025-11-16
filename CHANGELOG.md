@@ -2,6 +2,17 @@
 
 ---
 
+## [2.26.5] – 2025-11-16
+### Added
+- Added new `StepperCaps` dataclass to hold stepper-specific features that can be added or removed 
+  without changing the rest of the stepper `StepperMeta` declarations.
+
+### Changed
+- Moved `dense_output` flag from `StepperMeta` to `StepperCaps` for better organization.
+- Updated all stepper implementations (Euler, RK4, RK45, AB2, AB3, Map) to use the new caps structure.
+
+---
+
 ## [2.26.4]
 ### Tests
 - Updated all tests according to the new workspaces design.

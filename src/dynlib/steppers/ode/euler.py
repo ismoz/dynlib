@@ -38,7 +38,6 @@ class EulerSpec:
                 family="euler",
                 order=1,
                 embedded_order=None,
-                dense_output=False,
                 stiff_ok=False,
                 aliases=("fwd_euler", "forward_euler"),
             )

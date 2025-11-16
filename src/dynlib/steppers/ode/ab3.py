@@ -56,7 +56,6 @@ class AB3Spec:
                 family="adams-bashforth",
                 order=3,
                 embedded_order=None,
-                dense_output=False,
                 stiff_ok=False,
                 aliases=("adams_bashforth_3",),
             )

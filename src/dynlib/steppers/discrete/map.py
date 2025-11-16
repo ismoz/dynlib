@@ -47,10 +47,9 @@ class MapSpec:
                 family="iter",
                 order=1,
                 embedded_order=None,
-                dense_output=False,
                 stiff_ok=False,
                 aliases=("iter", "discrete"),
-            )
+        )
         self.meta = meta
 
     def workspace_type(self) -> type | None:

@@ -58,7 +58,6 @@ class RK45Spec:
                 family="runge-kutta",
                 order=5,
                 embedded_order=4,
-                dense_output=False,  # Not implemented yet
                 stiff_ok=False,
                 aliases=("dopri5", "dormand_prince"),
             )

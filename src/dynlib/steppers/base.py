@@ -1,19 +1,41 @@
-# src/dynlib/steppers/base.py
 from __future__ import annotations
-from dataclasses import dataclass
-from typing import FrozenSet, Protocol, Callable, Optional
+from dataclasses import dataclass, field
+from typing import FrozenSet, Literal, Protocol, Callable, Optional
 import numpy as np
 
 from dynlib.runtime.types import Kind, TimeCtrl, Scheme
 
 __all__ = [
-    "StepperMeta", "StepperInfo", "StepperSpec",
+    "StepperCaps", "StepperMeta", "StepperInfo", "StepperSpec",
 ]
+
+JacobianPolicy = Literal["none", "optional", "required"]
+
+# NOTE: When you need to add a stepper with a new capability add a field below.
+#       You don't need to change any existing stepper. You only define the
+#       capabilities you want for that stepper. The defaulta are applied to the
+#       fields you don't specify.
+@dataclass(frozen=True)
+class StepperCaps:
+    """
+    Optional / implementation-level capabilities.
+    These are things you *can* add or remove without changing the mathematical
+    identity of the method.
+    """
+    dense_output: bool = False           # has continuous interpolation / dense output
+    jacobian: JacobianPolicy = "none"    # how this impl uses external Jacobian
+    # future:
+    # mass_matrix: bool = False
+    # fsal: bool = False
+    # new_feature: NewFeatureType = DefaultValue
+    # ...
 
 @dataclass(frozen=True)
 class StepperMeta:
     """
     Public metadata for a stepper.
+    Fundamental classification + suitability, plus a caps block
+    for optional capabilities.
     """
     name: str
     kind: Kind
@@ -23,9 +45,9 @@ class StepperMeta:
     family: str = ""
     order: int = 1
     embedded_order: int | None = None
-    dense_output: bool = False
-    stiff_ok: bool = False
+    stiff_ok: bool = False               # fundamental: intended for stiff use?
     aliases: tuple[str, ...] = ()
+    caps: StepperCaps = field(default_factory=StepperCaps)
 
 # Alias requested by guardrails
 StepperInfo = StepperMeta

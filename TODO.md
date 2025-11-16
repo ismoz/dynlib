@@ -4,18 +4,6 @@ This file lists the tasks and improvements planned for the project. Each task in
 
 ## Tasks
 
-1. **Old `StructSpec` Behavioral Flags**
-   - **Description**: Dropped `StructSpec` had these flags:
-      - `use_history`
-      - `use_f_history`
-      - `dense_output`
-      - `needs_jacobian`
-      First two are not relevant anymore because steppers can declare any amount of history in 
-      their workspaces. However, `dense_output` and `needs_jacobian` are still useful information. 
-      Because you may add external Jacobian arg to sims and dense output needs a different pipeline 
-      for results. Consider them placing into `StepperMeta` or `StepperSpec`.
-   - **Status**: Planned.
-
 2. **Multistep Methods**
    - **Description**: Implement multistep methods such as Adams and BDF.
    - **Status**: Planned.
