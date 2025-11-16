@@ -2,6 +2,13 @@
 
 ---
 
+## [2.26.3] – 2025-11-16
+### Changed
+- Removed NaN/Inf checks from `AB2` and `AB3` steppers, since they are fixed-step solvers.
+- Removed workbanks related docstrings from steppers.
+
+---
+
 ## [2.26.2] – 2025-11-16
 ### Changed
 - Updated `snapshot_semo.py` and `uri_demo.py` examples. All examples work at this point.

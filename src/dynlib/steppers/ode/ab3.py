@@ -13,14 +13,6 @@ Three-step explicit multistep method with startup:
           - 16/12 * f_{n-1}
           +  5/12 * f_{n-2}
         )
-
-History layout in `ss` (after lag prefix):
-
-    lane 0: f_{n-2}
-    lane 1: f_{n-1}
-    lane 2: f_n
-
-Persists f-history in `ss` and a step counter in `iw0`.
 """
 from __future__ import annotations
 from typing import TYPE_CHECKING, NamedTuple
@@ -28,10 +20,7 @@ import math
 import numpy as np
 
 from ..base import StepperMeta
-from dynlib.runtime.runner_api import OK, NAN_DETECTED, STEPFAIL
-
-# Import guards for NaN/Inf detection
-from dynlib.compiler.guards import allfinite1d, allfinite_scalar
+from dynlib.runtime.runner_api import OK
 
 if TYPE_CHECKING:
     from typing import Callable
@@ -120,10 +109,6 @@ class AB3Spec:
             stepper_config,
             y_prop, t_prop, dt_next, err_est
         ):
-            # Basic sanity check on dt (STEPFAIL if obviously invalid).
-            if not allfinite_scalar(dt) or dt <= 0.0:
-                err_est[0] = float("inf")
-                return STEPFAIL
 
             # Number of states
             n = y_curr.size
@@ -140,9 +125,6 @@ class AB3Spec:
             if step_idx == 0:
                 # Compute f0 = f(t0, y0) into f_nm1
                 rhs(t, y_curr, f_nm1, params, runtime_ws)
-                if not allfinite1d(f_nm1):
-                    err_est[0] = float("inf")
-                    return NAN_DETECTED
 
                 # Predictor: y_stage = y0 + dt * f0
                 for i in range(n):
@@ -150,23 +132,13 @@ class AB3Spec:
 
                 # Predictor derivative (at y_stage) into f_n (temporary)
                 rhs(t + dt, y_stage, f_n, params, runtime_ws)
-                if not allfinite1d(f_n):
-                    err_est[0] = float("inf")
-                    return NAN_DETECTED
 
                 # Heun update: y1 = y0 + dt/2 * (f0 + f_pred)
                 for i in range(n):
                     y_prop[i] = y_curr[i] + 0.5 * dt * (f_nm1[i] + f_n[i])
 
-                if not allfinite1d(y_prop):
-                    err_est[0] = float("inf")
-                    return NAN_DETECTED
-
                 # Refresh f_n with derivative at accepted state y1
                 rhs(t + dt, y_prop, f_n, params, runtime_ws)
-                if not allfinite1d(f_n):
-                    err_est[0] = float("inf")
-                    return NAN_DETECTED
 
                 # At this point:
                 #   f_nm1 = f0
@@ -189,15 +161,8 @@ class AB3Spec:
                 for i in range(n):
                     y_prop[i] = y_curr[i] + dt * (1.5 * f_n[i] - 0.5 * f_nm1[i])
 
-                if not allfinite1d(y_prop):
-                    err_est[0] = float("inf")
-                    return NAN_DETECTED
-
                 # Compute f2 = f(t2, y2) into f_next
                 rhs(t + dt, y_prop, f_next, params, runtime_ws)
-                if not allfinite1d(f_next):
-                    err_est[0] = float("inf")
-                    return NAN_DETECTED
 
                 # Rotate history to prepare for AB3:
                 #   f_nm2 <- f0
@@ -234,15 +199,8 @@ class AB3Spec:
                     )
                 )
 
-            if not allfinite1d(y_prop):
-                err_est[0] = float("inf")
-                return NAN_DETECTED
-
             # Compute f_{n+1} at proposed state; store temporarily in f_next
             rhs(t + dt, y_prop, f_next, params, runtime_ws)
-            if not allfinite1d(f_next):
-                err_est[0] = float("inf")
-                return NAN_DETECTED
 
             # Rotate history:
             #   new f_{n-2} = old f_{n-1}

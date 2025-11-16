@@ -2,7 +2,6 @@
 AB2 (Adams-Bashforth 2nd order, explicit, fixed-step) stepper implementation.
 
 Two-step explicit multistep method with simple 2nd-order startup (Heun).
-Persists f-history in `ss` and a step counter in `iw0`.
 """
 from __future__ import annotations
 from typing import TYPE_CHECKING, NamedTuple
@@ -10,10 +9,7 @@ import math
 import numpy as np
 
 from ..base import StepperMeta
-from dynlib.runtime.runner_api import OK, NAN_DETECTED
-
-# Import guards for NaN/Inf detection
-from dynlib.compiler.guards import allfinite1d, allfinite_scalar
+from dynlib.runtime.runner_api import OK
 
 if TYPE_CHECKING:
     from typing import Callable
@@ -113,9 +109,6 @@ class AB2Spec:
             if step_idx == 0:
                 # k1 = f(t, y)
                 rhs(t, y_curr, f_prev, params, runtime_ws)
-                if not allfinite1d(f_prev):
-                    err_est[0] = float("inf")
-                    return NAN_DETECTED
 
                 # Predictor: y_stage = y + dt * k1
                 for i in range(n):
@@ -123,24 +116,14 @@ class AB2Spec:
 
                 # k2 = f(t + dt, y_stage)
                 rhs(t + dt, y_stage, f_curr, params, runtime_ws)
-                if not allfinite1d(f_curr):
-                    err_est[0] = float("inf")
-                    return NAN_DETECTED
 
                 # Heun update: y_{1} = y + dt/2 * (k1 + k2)
                 for i in range(n):
                     y_prop[i] = y_curr[i] + 0.5 * dt * (f_prev[i] + f_curr[i])
 
-                if not allfinite1d(y_prop):
-                    err_est[0] = float("inf")
-                    return NAN_DETECTED
-
                 # AB2 requires derivative history at accepted states.
                 # Refresh f_curr with f(t1, y1) instead of the predictor derivative.
                 rhs(t + dt, y_prop, f_curr, params, runtime_ws)
-                if not allfinite1d(f_curr):
-                    err_est[0] = float("inf")
-                    return NAN_DETECTED
 
                 # Initialize history:
                 #   f_prev = f(t0, y0)  (already in f_prev)
@@ -158,15 +141,8 @@ class AB2Spec:
             for i in range(n):
                 y_prop[i] = y_curr[i] + dt * (1.5 * f_curr[i] - 0.5 * f_prev[i])
 
-            if not allfinite1d(y_prop):
-                err_est[0] = float("inf")
-                return NAN_DETECTED
-
             # Compute f_{n+1} at proposed state; store in f_next temporarily
             rhs(t + dt, y_prop, f_next, params, runtime_ws)
-            if not allfinite1d(f_next):
-                err_est[0] = float("inf")
-                return NAN_DETECTED
 
             # Rotate history:
             #   new f_prev = old f_curr
