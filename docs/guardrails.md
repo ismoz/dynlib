@@ -1,4 +1,4 @@
-# DYNLIB v2 Guardrails — ABI, DSL, Steppers
+# DYNLIB v2.26 Guardrails — ABI, DSL, Steppers, Workspaces
 
 > Canonical, compact references for implementation checks. No back-compat, no Optional, ABI frozen.
 
@@ -14,10 +14,8 @@ runner(
   max_steps: int, n_state: int, record_interval: int,
   # state/params
   y_curr: float[:], y_prev: float[:], params: float[:] | int[:],
-  # struct banks (views)
-  sp: float[:], ss: float[:],
-  sw0: float[:], sw1: float[:], sw2: float[:], sw3: float[:],
-  iw0: int32[:], bw0: uint8[:],
+  # workspaces
+  runtime_ws, stepper_ws,
   # proposals/outs (len-1 arrays where applicable)
   y_prop: float[:], t_prop: float[:], dt_next: float[:], err_est: float[:],
   # recording
@@ -48,13 +46,11 @@ status = stepper(
   t: float, dt: float,
   y_curr: float[:], rhs,
   params: float[:] | int[:],
-  sp: float[:], ss: float[:],
-  sw0: float[:], sw1: float[:], sw2: float[:], sw3: float[:],
-  iw0: int32[:], bw0: uint8[:],
+  stepper_ws, stepper_config,
   y_prop: float[:], t_prop: float[:], dt_next: float[:], err_est: float[:]
 ) -> int32
 ```
-**Rules**: reads `t, dt, y_curr, params, sp, ss`; writes `y_prop, t_prop[0], dt_next[0], err_est[0]` and may mutate `ss`. **Never** touches record/log buffers or cursors. Adaptive steppers may loop internally until accept/fail.
+**Rules**: reads `t, dt, y_curr, params, stepper_ws`; writes `y_prop, t_prop[0], dt_next[0], err_est[0]` and may mutate `stepper_ws`. **Never** touches record/log buffers, cursors, or runtime_ws. Adaptive steppers may loop internally until accept/fail.
 
 ### RHS
 ```
@@ -69,11 +65,10 @@ rhs(t: float, y_vec: float[:], dy_out: float[:], params: float[:] | int[:]) -> N
 ### Dtypes & Buffers
 - Model primary dtype from `[model].dtype` (default `float64`).
 - `T`: `float64`; `Y`/`EVT_LOG_DATA`: model dtype; `STEP:int64`, `FLAGS:int32`; `EVT_CODE`/`EVT_INDEX:int32`.
-- Work banks `sp, ss, sw*`: model dtype; `iw0:int32`, `bw0:uint8`.
 - `t_prop` is model dtype; committed `t` written to `T` as `float64`.
 
 ### Growth/Resume
-- On `GROW_REC`/`GROW_EVT`, wrapper reallocates (geometric), copies slices, and re-enters runner with updated caps/cursors. Runner must resume seamlessly.
+- On `GROW_REC`/`GROW_EVT`, wrapper reallocates (geometric), copies slices, and re-enters runner with updated caps/cursors and workspaces. Runner must resume seamlessly.
 
 ---
 
@@ -193,7 +188,7 @@ exclusive = true
 
 ---
 
-## 3) Steppers — Spec, StructSpec, Registry
+## 3) Steppers — Spec, Workspace, Registry
 
 ### StepperMeta / StepperInfo
 ```
@@ -213,89 +208,74 @@ aliases: tuple[str, ...]
 ### StepperSpec contract
 - Accept `meta: StepperMeta` in `__init__`.
 - Provide `emit(...)` for codegen.
-- Provide `struct_spec() -> StructSpec`.
-
-### StructSpec (sole extension point)
-```
-StructSpec(
-  sp_size, ss_size,
-  sw0_size, sw1_size, sw2_size, sw3_size,
-  iw0_size, bw0_size,
-  use_history=False, use_f_history=False,
-  dense_output=False, needs_jacobian=False,
-  embedded_order=None, stiff_ok=False
-)
-```
-**Add storage by sizes only.** Never add runner/stepper args. Runner reads flags for tiny maintenance hooks (e.g., history ring updates).
+- Provide `workspace_type() -> type` returning a NamedTuple type for stepper workspace.
+- Provide `make_workspace(n_state: int, dtype) -> workspace_instance` to allocate workspace.
 
 ### Registry Rules
 - Unique `name`; `aliases` map to same spec.
 - `kind` must match model kind at build time.
 - `time_control` tells runner fixed vs adaptive behavior.
 
-## 4) Stepper banks — Guardrails (usage, sizing, and validation)
+## 4) Stepper Workspaces — Guardrails (usage, ownership, and validation)
 
-The following guardrails consolidate and formalize the guidance from the stepper banks manual into explicit rules the build-time validator and stepper authors must follow. These are intended to make incorrect bank usage fail fast at build-time (or raise a clear warning) rather than producing subtle runtime bugs.
+The following guardrails formalize the separation of stepper and runtime workspaces introduced in v2.26.0. Workspaces cleanly separate responsibilities: stepper workspaces are private to each stepper for scratch and state, while runtime workspaces handle lag buffers and DSL machinery.
+
+### Workspace Separation
+- **Stepper Workspace**: Private NamedTuple-of-NumPy-views containing stepper-specific scratch arrays (e.g., stages, histories, Jacobians). Owned and managed by the stepper; allocated via `StepperSpec.make_workspace()`.
+- **Runtime Workspace**: Private NamedTuple containing lag buffers (lag_ring, lag_head, lag_info) for historical state access. Owned by the runner and DSL machinery; not accessible to steppers.
 
 ### Contract (short)
-- sp, ss, sw0..sw3 are float banks sized in "lanes"; lane count × n_state = items.
-- iw0 (`int32`) and bw0 (`uint8`) are small persistent integer/flag banks.
-- Stepper may read `y_curr`, `params`, `sp`, `ss`, and may mutate `sp`, `ss`, `sw*`, `iw0`, `bw0`.
-- Stepper MUST write only `y_prop[:]`, `t_prop[0]`, `dt_next[0]`, `err_est[0]` as outputs. It MUST NOT touch record/log buffers, cursors or runner-owned structures.
+- Stepper may read `y_curr`, `params`, `stepper_ws`, and may mutate `stepper_ws`.
+- Stepper MUST write only `y_prop[:]`, `t_prop[0]`, `dt_next[0]`, `err_est[0]` as outputs. It MUST NOT touch record/log buffers, cursors, runtime_ws, or any runner-owned structures.
+- Runtime workspace is managed by the runner for lag system; steppers never access it directly.
 
-### Lane-count and layout rules (enforced)
-- Sizes in `StructSpec` are lane counts: `0` => unused, `1` => `n_state`, `k` => `k * n_state`.
-- Lanes must be contiguous and stride-1. Allowed indexing inside stepper code is by whole lanes (for example `sw0[:n_state]`, `sw0[n_state:2*n_state]`). Non-contiguous or strided lane access is forbidden and must be rejected at build-time.
-- A stepper declaring lane counts must not assume partial lanes (no fractional lanes). If the algorithm needs a partial lane it must be reworked into full-lane storage or use `sp`/`ss` appropriately.
+### Ownership and Permitted Mutations (enforced)
+- Stepper workspace: Fully owned by stepper; may be mutated freely within a step/attempt. Persistence across steps/attempts is allowed (e.g., for FSAL caches, histories).
+- Runtime workspace: Read-only to steppers; managed by runner for lag buffers. Stepper code must never access or mutate runtime workspace.
 
-### Bank semantics & permitted mutations (enforced)
-- sp: ephemeral scratch within a single attempt. Must not be relied on across attempts; build-time check: steppers that declare persistence in `sp` should trigger a warning.
-- sw0..sw3: ephemeral stage work for an attempt. Must not be used to persist data across attempts/steps. Any scheme that expects stage banks to persist between calls must instead use `ss`.
-- ss: persistent stepper state across attempts/steps. Allowed uses: FSAL caches, dense-output coefficients, multi-step history (together with `iw0` indices). Mutations here are allowed.
-- iw0 and bw0: persistent integer heads/flags. Their declared sizes must be small integers >=0. `iw0` must be `int32`, `bw0` must be `uint8` (enforced by validator).
-
-### API/ownership hard rules (must be validated)
-- Stepper code must never read or write runner-owned record/log buffers, `T`, `Y`, `STEP`, `FLAGS`, event logs, or cursor/cap scalars. Violations are build-time errors.
+### API/Ownership Hard Rules (must be validated)
+- Stepper code must never read or write runner-owned record/log buffers, `T`, `Y`, `STEP`, `FLAGS`, event logs, cursors/cap scalars, or runtime_ws. Violations are build-time errors.
 - Stepper must not add or depend on extra function arguments beyond the declared ABI (no hidden args, no extra closures that capture runtime objects). This is part of the JIT/hot-path policy.
+- Workspace types must be NamedTuples with NumPy array fields; no Python objects or dynamic structures.
 
-### StructSpec sizing and compatibility checks (build-time)
+### Workspace Allocation and Compatibility Checks (build-time)
 Validator must enforce at model/stepper registration time:
-- All `StructSpec` sizes are non-negative integers.
-- `sw*`, `sp`, `ss` lane counts multiplied by `n_state` must be representable within available memory; extremely large lane counts should produce a warning and require explicit confirmation (to avoid accidental OOM).
-- If `dense_output=True` is declared, `ss_size` must be sufficient to store the declared dense-output coefficients; otherwise raise an error.
-- If `use_history=True` or `use_f_history=True` is declared, then `ss_size` and `iw0_size` must be large enough for the requested history length; otherwise raise an error.
+- `StepperSpec.workspace_type()` returns a valid NamedTuple type with array fields.
+- `StepperSpec.make_workspace(n_state, dtype)` allocates arrays of correct shapes and dtypes matching model dtype.
+- Workspace sizes must be representable within available memory; extremely large workspaces should produce a warning and require explicit confirmation (to avoid accidental OOM).
+- For steppers with dense output or history, workspace must include sufficient storage; otherwise raise an error.
 
-### Static code checks for steppers (recommended, implement in codegen/validation)
+### Static Code Checks for Steppers (recommended, implement in codegen/validation)
 At codegen/build-time perform static checks on emitted stepper code/metadata:
-- Verify the stepper writes only the allowed output arrays/positions (`y_prop`, `t_prop[0]`, `dt_next[0]`, `err_est[0]`). If writes to other outputs or to record buffers are detected, abort with explanatory error.
-- Ensure any accesses to `sp`, `sw*`, `ss` obey whole-lane slicing patterns. Reject uses of slicing that imply strided, non-contiguous, or negative indexing on lanes.
-- Detect persistence patterns: if local `sw*` lanes are used across attempts (e.g., used to pass values between calls), emit a warning or error instructing to move that storage to `ss`.
-- Ensure `iw0` and `bw0` are only used for small integer indices/flags. If code attempts to store large floats or non-integer types into these banks, raise an error.
+- Verify the stepper writes only the allowed output arrays/positions (`y_prop`, `t_prop[0]`, `dt_next[0]`, `err_est[0]`). If writes to other outputs, record buffers, or runtime_ws are detected, abort with explanatory error.
+- Ensure stepper only accesses `stepper_ws` fields; reject any access to runtime_ws or runner-owned structures.
+- Detect illegal mutations: stepper must not mutate inputs except `stepper_ws`.
 
-### Error vs Warning policy
-- Errors (block build/runtime): illegal writes (to record/log/cursors), illegal bank dtype usage (writing floats to `iw0`), non-integer/negative StructSpec sizes, non-contiguous lane access, missing storage when `dense_output/use_history` is declared.
-- Warnings (informational, but recommend fix): overly large bank sizes that look accidental, use of `sp` as persistent storage across attempts, use of many lanes where fewer suffice (suggest optimization), excessive dependence on `iw0` for complex state machines (suggest `ss`).
+### Error vs Warning Policy
+- Errors (block build/runtime): illegal writes (to record/log/cursors, runtime_ws), access to forbidden structures, invalid workspace types/shapes.
+- Warnings (informational, but recommend fix): overly large workspace sizes that look accidental, unused workspace fields (suggest optimization).
 
-### Helpful messages for stepper authors (short checklist)
+### Helpful Messages for Stepper Authors (short checklist)
 - Does my stepper only write `y_prop`, `t_prop[0]`, `dt_next[0]`, `err_est[0]`? If not, fix it.
-- Are all my banks sized as whole lanes? Use `sp`, `ss` for stuff that must persist.
-- Is any data that must survive an attempt stored in `ss` (not `sw*`/`sp`)? Move it if needed.
-- Are index/flag uses in `iw0`/`bw0` tightly bounded and integer/bitwise in nature? Otherwise use `ss`.
+- Does my stepper only access `stepper_ws` for storage? Never touch runtime_ws or runner buffers.
+- Is my workspace a NamedTuple with NumPy arrays? No Python objects.
+- Is any data that must persist across steps stored in stepper_ws? Ensure allocation is sufficient.
 
 ### Examples (quick)
-- RK4: `sw0..sw3=1`, `sp=1`, `ss=0` — OK.
-- RK45 (lane-packed): `sw0=2`, `sw1=2`, `sw2=2`, `sw3=1`, `sp=1`, `ss=0` — validator must ensure lane counts × `n_state` matches buffer lengths.
-- AB/AM multistep: `ss = m` lanes used for f-history and `iw0` used for ring head — ensure `iw0_size>=1` and `ss_size>=m`.
+- Euler: Minimal workspace with no arrays (empty NamedTuple).
+- RK4: Workspace with stage arrays (e.g., k1, k2, k3, k4 as arrays of shape (n_state,)).
+- RK45: Workspace with stages plus error estimation arrays.
+- AB2: Workspace with history ring for previous derivatives.
 
-### Suggested implementation notes for the validator (pseudocode)
+### Suggested Implementation Notes for the Validator (pseudocode)
 - On stepper registration:
-  - Check `StructSpec` sizes >= 0 and are ints.
-  - Expand lane sizes to element counts: lane_count * n_state and verify against backend buffer allocation logic.
-  - Static-scan emitted stepper code (or check metadata) for illegal writes (record buffers, other runner-owned arrays).
-  - Confirm slicing patterns are whole-lane only; reject strided/partial lane use.
+  - Validate `workspace_type()` returns NamedTuple with array fields.
+  - Check `make_workspace()` allocates correct shapes/dtypes.
+  - Static-scan emitted stepper code for illegal accesses (runtime_ws, runner buffers).
+  - Confirm stepper only mutates `stepper_ws`.
 
 ### Follow-ups
-- Implement these checks in `compiler/` (codegen/emit validation) and in `compiler/jit/*` where function bodies are decorated. Start with blocking illegal writes and lane-layout checks; add heuristics for warnings later.
+- Implement these checks in `compiler/` (codegen/emit validation) and in `compiler/jit/*` where function bodies are decorated. Start with blocking illegal accesses and workspace validation; add heuristics for warnings later.
 
 ---
 
@@ -315,4 +295,5 @@ At codegen/build-time perform static checks on emitted stepper code/metadata:
 
 ## Notes
 - These guardrails are deliberately strict: failing early at build-time avoids subtle runtime behavior and makes steppers portable and JIT-friendly.
-- If a stepper legitimately needs an uncommon pattern, extend `StructSpec` with a narrowly scoped opt-in flag and document the precise invariants required. Such extensions must be reviewed and added to the registry rules above.
+- Workspaces provide clean separation: stepper workspaces for algorithm-specific storage, runtime workspaces for DSL features like lagging.
+- If a stepper legitimately needs an uncommon workspace pattern, extend the NamedTuple with narrowly scoped fields and document the precise invariants required. Such extensions must be reviewed and added to the registry rules above.

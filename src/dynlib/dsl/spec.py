@@ -63,7 +63,7 @@ class ModelSpec:
     sim: SimDefaults
     tag_index: Dict[str, Tuple[str, ...]]  # tag -> event names, compile-time only
     presets: Tuple[PresetSpec, ...]  # inline presets from DSL
-    lag_map: Dict[str, Tuple[int, int, int]]  # state_name -> (max_depth, ss_offset, iw0_index)
+    lag_map: Dict[str, Tuple[int, int, int]]  # state_name -> (buffer_len, ring_offset, head_index)
     uses_lag: bool
     equations_use_lag: bool
 
@@ -170,22 +170,22 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
         for p in (normal.get("presets") or [])
     )
     
-    # Build lag_map: state_name -> (buffer_len, ss_offset, iw0_index)
+    # Build lag_map: state_name -> (buffer_len, ring_offset, head_index)
     # buffer_len = max_requested_lag + 1 (extra slot preserves current head)
-    # ss_offset is the starting lane in ss for this state's circular buffer
-    # iw0_index is the slot in iw0 for this state's head pointer
+    # ring_offset is the starting index in runtime_ws.lag_ring for this state's circular buffer
+    # head_index is the slot in runtime_ws.lag_head for this state's head pointer
     lag_map: Dict[str, Tuple[int, int, int]] = {}
-    ss_offset = 0
-    iw0_index = 0
+    ring_offset = 0
+    head_index = 0
 
     # Process lagged states in the order they appear in states tuple (deterministic)
     for state_name in states:
         if state_name in lag_requests:
             requested_depth = lag_requests[state_name]
             buffer_len = requested_depth + 1  # extra slot ensures lag_depth indexing works
-            lag_map[state_name] = (buffer_len, ss_offset, iw0_index)
-            ss_offset += buffer_len  # each lagged state gets buffer_len lanes
-            iw0_index += 1           # each lagged state gets one iw0 slot
+            lag_map[state_name] = (buffer_len, ring_offset, head_index)
+            ring_offset += buffer_len  # each lagged state gets buffer_len slots
+            head_index += 1           # each lagged state gets one head slot
 
     equations_use_lag = detect_equation_lag_usage(normal)
     uses_lag = bool(lag_map)

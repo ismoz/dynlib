@@ -12,11 +12,10 @@ Arguments are fixed: scalars + ndarrays only (no `None`/Optionals/objects).
 
 - **Scalars**: `t0`, `t_end`, `dt_init`, `max_steps`, `n_state`, `record_interval`.
 - **State/params**: `y_curr[n_state]`, `y_prev[n_state]`, `params[P]`.
-- **Struct banks (workspace)**
-  - Float64/Float32 (model primary dtype): `sw0[:]`, `sw1[:]`, `sw2[:]`, `sw3[:]`
-  - Int32: `iw0[:]`
-  - UInt8: `bw0[:]`
-  - *(0 lanes = unused; 1 lane = n_state; All are views carved from contiguous dtype-specific buffers allocated at init.)*
+- **Workspaces**:
+  - `runtime_ws`: NamedTuple owned by runner/DSL (e.g., lag buffers).
+  - `stepper_ws`: NamedTuple owned by stepper implementation.
+- **Stepper config**: `stepper_config` (read-only float64 array with runtime configuration).
 - **Proposal/outs**: `y_prop[n_state]`, `t_prop[1]`, `dt_next[1]`, `err_est[1]`.
 - **Recording**: `T[CAP]` (float64 time), `Y[n_state, CAP]` (model dtype), `STEP[CAP]` (int64), `FLAGS[CAP]` (int32).
 - **Optional event log**: `EVT_CODE[EVTCAP]`, `EVT_INDEX[EVTCAP]`, `EVT_LOG_DATA[EVTCAP, LOGW]` *(present with minimal size if logging disabled; `EVT_INDEX` stores the owning record index or -1 when no record was captured)*.
@@ -39,18 +38,18 @@ Arguments are fixed: scalars + ndarrays only (no `None`/Optionals/objects).
 ```python
 status = stepper(
   t, dt, y_curr, rhs, params,
-  sp, ss, sw0, sw1, sw2, sw3, iw0, bw0,
+  runtime_ws, stepper_ws, stepper_config,
   y_prop, t_prop, dt_next, err_est
 ) -> int32
 ```
-- **Read**: `t`, `dt`, `y_curr`, `params`, read-only constants `sp`, persistent `ss`.
-- **Write**: `y_prop`, `t_prop`, `dt_next`, `err_est`, and internal `ss` as needed.
+- **Read**: `t`, `dt`, `y_curr`, `params`, `runtime_ws`, `stepper_config` (read-only).
+- **Write**: `y_prop`, `t_prop`, `dt_next`, `err_est`, and internal `stepper_ws` as needed.
 - **Do not touch**: `y_curr`, record buffers, runner cursors.
 - **Behavior**: Adaptive methods loop internally until accept or fail; fixed-step returns `OK` once.
 
 #### RHS (used by all steppers)
 ```python
-rhs(t, y_vec, dy_out, params)
+rhs(t, y_vec, dy_out, params, runtime_ws)
 ```
 - Compiled from DSL; recomputes aux from the `y_vec` it receives, so multi-stage/adaptive evaluations are correct.
 
@@ -265,7 +264,7 @@ labA = ["Z:/labA/models", "//server/share/models"]
 ### Caching & JIT
 - Compute a spec hash from:
   - file contents of model + selected mods (after path resolution),
-  - chosen stepper, dtype, and StructSpec,
+  - chosen stepper, dtype, and workspace layouts,
   - dynlib + numba version pins.
 - Use that hash to name compiled artifacts (stable across machines if content matches).
 
@@ -281,7 +280,7 @@ labA = ["Z:/labA/models", "//server/share/models"]
 
 # Execution Semantics (per accepted step)
 1. Pre phase: compute aux from committed (t, y_curr) → run events_pre (mutate y_curr/params), recompute aux if needed.
-2. Stepper: calls rhs(t_s, y_stage, k_s, params) per stage; returns OK (accepted) or failure codes.
+2. Stepper: calls rhs(t_s, y_stage, k_s, params, runtime_ws) per stage; returns OK (accepted) or failure codes.
 3. Commit: on OK, y_prev ← y_curr, y_curr ← y_prop, t ← t_prop.
 4. Post phase: compute aux from committed state; run events_post.
 5. Record: write T, Y, STEP, FLAGS; capacity check → GROW_REC.
@@ -290,22 +289,16 @@ labA = ["Z:/labA/models", "//server/share/models"]
 ### Dtypes
 - One primary dtype per model (from `[model].dtype`, default float64).
 - Recording: T=float64, Y=model dtype, STEP=int64, FLAGS=int32.
-- Float banks use model dtype; iw0=int32; bw0=uint8.
-- Expression validation enforces dtype rules (e.g., no sin in int models unless you explicitly add casts).
-
-### StructSpec (per stepper, resolved at build time)
-- Declares sizes for banks: SP, SS, SW0..SW3 (model dtype), IW0 (int32), BW0 (uint8).
-- Declares feature flags (e.g., use_history, dense_output, needs_jacobian, embedded_order, stiff_ok).
-- Builder allocates contiguous buffers per dtype and slices views for banks; signature stays fixed.
+- Workspaces use model dtype where appropriate; expression validation enforces dtype rules (e.g., no sin in int models unless you explicitly add casts).
 
 ### Maintenance Hooks (post-commit, tiny & generic)
-- If use_history: push (t,y) and/or f(y) into history ring (iw0 holds heads).
-- If use_f_history: update multi-step RHS cache.
-- If dense_output: store last step’s stage/coefs in ss/sw* (stepper decides layout).
+- Lag buffers: circular buffers in runtime workspace for historical state access.
+- Dense output: store last step's stage/coefs in stepper workspace (stepper decides layout).
 
 ### Recording & Growth
 - Amortized O(1) geometric growth on GROW_REC (and GROW_EVT if enabled).
 - Wrapper doubles capacity, copies filled slices, updates cursors, resumes the same runner (no reinit).
+- Workspaces are allocated once per run and never grow; only RecordingPools/EventPools do.
 
 ### Error/Interrupt Discipline
 - **Fixed-step steppers** (euler, rk4): single attempt per step; return `OK` (accepted) or `NAN_DETECTED`/`STEPFAIL` (terminal).
@@ -331,9 +324,9 @@ labA = ["Z:/labA/models", "//server/share/models"]
 - Dtype rules enforced (no floats in int models unless explicit and supported).
 - For ODEs with int dtype → error.
 
-### Minimal “do/don’t”
-- **Do**: keep ABI frozen; declare all buffers in StructSpec; use feature flags for extras.
-- **Don’t**: add Optional args, Python objects, or per-step allocations; mutate global state inside steppers; run events on uncommitted state.
+### Minimal "do/don't"
+- **Do**: keep ABI frozen; declare workspace layouts in stepper specs; use feature flags for extras.
+- **Don't**: add Optional args, Python objects, or per-step allocations; mutate global state inside steppers; run events on uncommitted state.
 
 This is the whole playbook. If you stick to these contracts, you can add RK45, multistep, DDE history, dense output, Jacobians, and new DSL features without touching the runner signature or re-entangling the pipeline.
 
@@ -346,7 +339,7 @@ This is the whole playbook. If you stick to these contracts, you can add RK45, m
 ├── manuals/
 │   ├── ABI.md                 # runner ABI, buffers, status codes
 │   ├── DSL.md                 # TOML schema, mods verbs, events
-│   └── Steppers.md            # StepperSpec, StructSpec contracts
+│   └── Steppers.md            # StepperSpec, workspace contracts
 ├── examples/
 │   ├── models/                # sample TOML models + mods for docs/tests
 │   └── plot_demo.py
@@ -362,11 +355,12 @@ This is the whole playbook. If you stick to these contracts, you can add RK45, m
 │       │   ├── results.py     # Results dataclass + accessors
 │       │   ├── model.py       # Model(spec, compiled_runner, stepper_name)
 │       │   ├── sim.py         # thin Sim facade around Model + Wrapper
-│       │   └── types.py       # Literal aliases (Kind/TimeCtrl/Scheme)
+│       │   ├── types.py       # Literal aliases (Kind/TimeCtrl/Scheme)
+│       │   └── workspace.py   # RuntimeWorkspace, stepper workspace helpers
 │       │
 │       ├── steppers/          # jittable, numba-first implementations
 │       │   ├── __init__.py
-│       │   ├── base.py        # StepperMeta/Info, StepperSpec, StructSpec
+│       │   ├── base.py        # StepperMeta/Info, StepperSpec, workspace protocols
 │       │   ├── registry.py    # name -> StepperSpec
 │       │   ├── euler.py
 │       │   ├── rk4.py

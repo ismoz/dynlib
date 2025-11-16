@@ -11,7 +11,7 @@ The lag system provides access to historical state values in dynlib models using
 - ✅ O(1) circular buffer access (Numba-compatible)
 - ✅ Counted after successful committed steps (immune to buffer growth, early breaks, resume)
 - ✅ Works with both ODE and map models
-- ✅ No ABI changes (reuses existing `ss` and `iw0` banks with partitioning)
+- ✅ Dedicated runtime workspace (stepper ABI extended with runtime_ws parameter)
 
 ---
 
@@ -129,50 +129,40 @@ energy = "0.5 * v^2 + 0.5 * k * x^2"  # Track as ODE
 
 ## Storage Architecture
 
-### Circular Buffers in `ss` Bank
+### RuntimeWorkspace Structure
 
-Each lagged state gets a contiguous circular buffer:
+Lag buffers are stored in a dedicated `RuntimeWorkspace` NamedTuple:
+
+```python
+RuntimeWorkspace = namedtuple(
+    "RuntimeWorkspace",
+    ["lag_ring", "lag_head", "lag_info"],
+)
+```
+
+**Components:**
+- `lag_ring`: Contiguous array storing all circular buffers (dtype matches model)
+- `lag_head`: Array of current head indices for each lagged state (int32)
+- `lag_info`: Metadata array with shape (n_lagged_states, 3) containing (state_idx, depth, offset)
+
+### Circular Buffer Layout
+
+Each lagged state gets a contiguous segment in `lag_ring`:
 
 ```
-ss layout (lane-packed):
-┌──────────────────┬──────────────────┬────────────┐
-│ lag buffer for x │ lag buffer for y │ stepper ss │
-│  (depth 5 lanes) │  (depth 3 lanes) │   (rest)   │
-└──────────────────┴──────────────────┴────────────┘
-   ss[0..4]            ss[5..7]           ss[8..]
+lag_ring layout (contiguous):
+┌──────────────────┬──────────────────┬─────────────┐
+│ lag buffer for x │ lag buffer for y │ (unused)    │
+│  (depth 5)       │  (depth 3)       │             │
+└──────────────────┴──────────────────┴─────────────┘
+   offset=0           offset=5          end
 ```
 
 **Allocation:**
-- Each lagged state with depth `k` gets `k` lanes in `ss`
-- Stepper's own `ss` allocation follows lag buffers
-- Total `ss_size = lag_lanes + stepper_ss_lanes`
-
-### Head Indices in `iw0` Bank
-
-```
-iw0 layout (int32 elements):
-┌────────┬────────┬──────────────┐
-│ head_x │ head_y │ stepper iw0  │
-└────────┴────────┴──────────────┘
-  iw0[0]   iw0[1]    iw0[2..]
-  ↑                   ↑
-  lag reserved        stepper offset
-```
-
-**Partitioning:**
-- `iw0[0..iw0_lag_reserved-1]`: Lag circular buffer heads (RESERVED)
-- `iw0[iw0_lag_reserved..]`: Available for stepper use
-
-**Stepper Impact:**
-Steppers that use `iw0` must offset their accesses:
-
-```python
-# In stepper code:
-LAG_RESERVED = 2  # embedded compile-time constant
-
-my_counter = iw0[LAG_RESERVED + 0]  # stepper's first index
-my_ring_head = iw0[LAG_RESERVED + 1]  # stepper's second index
-```
+- Each lagged state with depth `k` gets `k` consecutive elements in `lag_ring`
+- Total `lag_ring` size = sum of all lag depths
+- `lag_head` has one entry per lagged state
+- `lag_info[j] = (state_idx, depth, offset)` for lagged state `j`
 
 ---
 
@@ -182,26 +172,23 @@ my_ring_head = iw0[LAG_RESERVED + 1]  # stepper's second index
 
 For `lag_x(k)` where state `x` has:
 - `depth = 5` (max lag)
-- `ss_offset = 0` (starts at ss[0])
-- `iw0_index = 0` (head at iw0[0])
+- `offset = 0` (starts at lag_ring[0])
+- `head_index = 0` (head at lag_head[0])
 
 **Lowered expression:**
 ```python
-ss[ss_offset + ((iw0[iw0_index] - k) % depth)]
-#  ss[0 + ((iw0[0] - k) % 5)]
+runtime_ws.lag_ring[offset + ((runtime_ws.lag_head[head_index] - k) % depth)]
+#  runtime_ws.lag_ring[0 + ((runtime_ws.lag_head[0] - k) % 5)]
 ```
 
 ### Initialization (at t=t0)
 
 ```python
 # Fill with IC for each lagged state
-for state_idx, depth, ss_offset, iw0_index in lag_state_info:
-    ic_value = y_curr[state_idx]
-    
-    for i in range(depth):
-        ss[ss_offset + i] = ic_value  # [IC, IC, IC, IC, IC]
-    
-    iw0[iw0_index] = depth - 1  # head at last position
+for j, (state_idx, depth, offset) in enumerate(lag_info):
+    value = y_curr[state_idx]
+    runtime_ws.lag_ring[offset : offset + depth] = value
+    runtime_ws.lag_head[j] = depth - 1  # head at last position
 ```
 
 **Why depth-1?** So that after first step commit, head wraps to 0.
@@ -212,48 +199,38 @@ for state_idx, depth, ss_offset, iw0_index in lag_state_info:
 
 ```python
 # In runner.py, after commit:
-for k in range(n_state):
-    y_prev[k] = y_curr[k]
-    y_curr[k] = y_prop[k]
-
-# NEW: Update lag buffers (if use_history=True)
-for lag_idx in range(num_lagged_states):
-    state_idx = lag_state_indices[lag_idx]
-    head = iw0[lag_idx]
-    depth = lag_depths[lag_idx]
-    ss_offset = lag_offsets[lag_idx]
-    
-    # Advance head (circular wraparound)
-    new_head = (head + 1) % depth
-    iw0[lag_idx] = new_head
-    
-    # Write new value at head position
-    ss[ss_offset + new_head] = y_curr[state_idx]
+for j in range(n_lagged_states):
+    state_idx, depth, offset = lag_info[j]
+    head = int(lag_head[j]) + 1
+    if head >= depth:
+        head = 0
+    lag_head[j] = head
+    lag_ring[offset + head] = y_curr[state_idx]
 ```
 
 **Example trace for x with depth=3:**
 
 ```
 Step 0 (IC=0.1):
-ss = [0.1, 0.1, 0.1], head=2
+lag_ring = [0.1, 0.1, 0.1], head=2
 
 Step 1 (y_curr=0.2):
 head = (2+1) % 3 = 0
-ss[0] = 0.2 → ss = [0.2, 0.1, 0.1], head=0
+lag_ring[0] = 0.2 → lag_ring = [0.2, 0.1, 0.1], head=0
 
 Step 2 (y_curr=0.3):
 head = (0+1) % 3 = 1
-ss[1] = 0.3 → ss = [0.2, 0.3, 0.1], head=1
+lag_ring[1] = 0.3 → lag_ring = [0.2, 0.3, 0.1], head=1
 
 Step 3 (y_curr=0.4):
 head = (1+1) % 3 = 2
-ss[2] = 0.4 → ss = [0.2, 0.3, 0.4], head=2
+lag_ring[2] = 0.4 → lag_ring = [0.2, 0.3, 0.4], head=2
 
 Access lag_x(1) at step 3:
-ss[0 + ((2 - 1) % 3)] = ss[1] = 0.3 ✓ (step 2 value)
+lag_ring[0 + ((2 - 1) % 3)] = lag_ring[1] = 0.3 ✓ (step 2 value)
 
 Access lag_x(2) at step 3:
-ss[0 + ((2 - 2) % 3)] = ss[0] = 0.2 ✓ (step 1 value)
+lag_ring[0 + ((2 - 2) % 3)] = lag_ring[0] = 0.2 ✓ (step 1 value)
 ```
 
 ---
@@ -263,8 +240,8 @@ ss[0 + ((2 - 2) % 3)] = ss[0] = 0.2 ✓ (step 1 value)
 ### Buffer Growth (GROW_REC, GROW_EVT)
 
 **Lag buffers are NOT reallocated** during recording/event buffer growth:
-- `ss` and `iw0` sizes are determined by lag depths (model-specific, not trajectory-dependent)
-- Wrapper doubles `rec`/`ev` buffers, but leaves `ss`/`iw0` unchanged
+- Runtime workspace sizes are determined by lag depths (model-specific, not trajectory-dependent)
+- Wrapper doubles `rec`/`ev` buffers, but leaves runtime workspace unchanged
 - Lag state preserved across re-entry
 
 ### Early Breaks (STEPFAIL, NAN_DETECTED, USER_BREAK)
@@ -275,7 +252,7 @@ ss[0 + ((2 - 2) % 3)] = ss[0] = 0.2 ✓ (step 1 value)
 
 ### Resume & Snapshots
 
-- `wrapper.py` already captures/restores `ss` and `iw0` via `_apply_workspace_seed()`
+- `RuntimeWorkspace` supports `snapshot_workspace()` and `restore_workspace()`
 - Lag buffers automatically included in workspace snapshots
 - No special handling needed
 
@@ -291,47 +268,43 @@ ss[0 + ((2 - 2) % 3)] = ss[0] = 0.2 ✓ (step 1 value)
    - `collect_lag_requests()` scans all expressions
    - Validates lag depths, state existence, integer literals
 
-2. **Metadata** (`dsl/spec.py`, `steppers/base.py`)
-   - `ModelSpec.lag_map`: {state_name -> (depth, ss_offset, iw0_index)}
-   - `StructSpec.iw0_lag_reserved`: Prefix slots for lag heads
+2. **Metadata** (`dsl/spec.py`)
+   - `ModelSpec.lag_map`: {state_name -> (depth, offset, head_index)}
+   - Tracks which states need lagging and their maximum depths
 
-3. **Allocation** (`compiler/build.py`)
-   - Augments stepper's `StructSpec` with lag requirements
-   - `ss_size += lag_lanes`, `iw0_size += num_lagged_states`
-   - Converts `lag_map` to `lag_state_info` for runtime
+3. **Runtime Workspace** (`runtime/workspace.py`)
+   - `RuntimeWorkspace` NamedTuple with `lag_ring`, `lag_head`, `lag_info`
+   - `make_runtime_workspace()` allocates lag buffers
+   - `initialize_lag_runtime_workspace()` seeds with initial conditions
+   - `snapshot_workspace()`/`restore_workspace()` support
 
-4. **Expression Lowering** (`compiler/codegen/rewrite.py`)
-   - `_NameLowerer` handles `lag_<name>(k)` calls (argument optional, defaults to 1)
-   - Generates circular buffer access: `ss[offset + ((iw0[idx] - k) % depth)]`
+4. **Allocation** (`compiler/build.py`)
+   - `_compute_lag_state_info()` converts lag_map to runtime metadata
+   - Runtime workspace allocated with proper lag buffer sizes
 
-5. **Function Signatures** (`compiler/codegen/emitter.py`)
-   - RHS: `def rhs(t, y_vec, dy_out, params, ss, iw0)`
-   - Events: `def events_pre(t, y_vec, params, evt_log_scratch, ss, iw0)`
+5. **Expression Lowering** (`compiler/codegen/rewrite.py`)
+   - `_make_lag_access()` generates runtime workspace access
+   - `runtime_ws.lag_ring[offset + ((runtime_ws.lag_head[idx] - k) % depth)]`
 
-6. **Initialization** (`runtime/wrapper.py`)
-   - `_initialize_lag_buffers_by_index()` fills with IC at t=t0
-   - Only on first run (resume uses `workspace_seed`)
+6. **Function Signatures** (`compiler/codegen/emitter.py`)
+   - RHS: `def rhs(t, y_vec, dy_out, params, runtime_ws)`
+   - Events: `def events_pre(t, y_vec, params, evt_log_scratch, runtime_ws)`
 
-### ❌ Remaining Work
+7. **Runner Updates** (`compiler/codegen/runner.py`, `runner_discrete.py`)
+   - Lag buffer updates after successful step commits
+   - Both continuous and discrete runners supported
 
-1. **Runner Update Hooks** (`compiler/codegen/runner.py`)
-   - **TODO:** Add lag buffer update after step commit
-   - **TODO:** Embed lag metadata as compile-time constants in generated runner
-   - **TODO:** Handle both continuous (`runner.py`) and discrete (`runner_discrete.py`) runners
+8. **Stepper ABI** (`steppers/base.py`, implementations)
+   - All steppers use new workspace-based ABI
+   - `StepperSpec.workspace_type()` declares workspace structure
+   - `StepperSpec.make_workspace()` allocates stepper-specific workspace
 
-2. **Stepper ABI Updates**
-   - **TODO:** Update all stepper `emit()` functions to pass `ss`/`iw0` to RHS calls
-   - Currently: `rhs(t, y_stage, k, params)`
-   - Required: `rhs(t, y_stage, k, params, ss, iw0)`
+### ✅ Tested
 
-3. **Documentation**
-   - **TODO:** Update `docs/stepper_banks.md` with iw0 partitioning rules
-   - **TODO:** Add examples to main README
-
-4. **Testing**
-   - **TODO:** Unit tests for `collect_lag_requests()`
-   - **TODO:** Integration test: simple logistic map with lag
-   - **TODO:** Test buffer initialization, wraparound, resume
+- Unit tests for lag detection and validation
+- Integration tests for lag buffer mechanics
+- Resume/snapshot functionality with lag buffers
+- Both ODE and map models with lagging
 
 ---
 
@@ -378,8 +351,10 @@ n=3: x = 3.8*(0.7*0.627 + 0.3*0.342)*(1-0.627) = 0.788
 ### Memory Overhead
 
 Per lagged state with depth `k`:
-- Storage: `k * sizeof(dtype)` bytes
-- Example: 3 states, depth 10, float64 → 3 * 10 * 8 = 240 bytes
+- Storage: `k * sizeof(dtype)` bytes in `RuntimeWorkspace.lag_ring`
+- Head indices: 1 int32 per lagged state in `RuntimeWorkspace.lag_head`
+- Metadata: 3 int32 per lagged state in `RuntimeWorkspace.lag_info`
+- Example: 3 states, depth 10, float64 → 3 * 10 * 8 = 240 bytes + overhead
 
 ### Computational Cost
 
@@ -418,10 +393,7 @@ index = (head - k) & 7  # bitwise AND (faster than %)
    Requires time-indexed history with interpolation.
 
 3. **Multi-Step Method Integration**
-   Share `ss` bank between lag buffers and Adams-Bashforth f-history:
-   ```python
-   ss_layout = [lag_x_buffer, lag_y_buffer, ab_f_history]
-   ```
+   Share lag buffers with Adams-Bashforth f-history in stepper workspace.
 
 4. **Diagnostic API**
    ```python
@@ -433,11 +405,12 @@ index = (head - k) & 7  # bitwise AND (faster than %)
 
 ## References
 
-- **Stepper Banks Design:** `docs/stepper_banks.md`
+- **Runtime Workspace:** `runtime/workspace.py`
 - **DSL Spec:** `dsl/spec.py`
 - **Expression Lowering:** `compiler/codegen/rewrite.py`
 - **Runner ABI:** `runtime/runner_api.py`
+- **Stepper Base:** `steppers/base.py`
 
 ---
 
-**Status:** Partially implemented (detection, allocation, lowering complete; runner hooks pending).
+**Status:** Fully implemented with workspace-based architecture.

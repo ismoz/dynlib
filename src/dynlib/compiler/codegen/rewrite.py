@@ -26,7 +26,7 @@ class NameMaps:
     aux_names: Tuple[str, ...]
     # function table: name -> (argnames, expr_str)
     functions: Dict[str, Tuple[Tuple[str, ...], str]]
-    # lag map: state_name -> (max_depth, ss_offset, iw0_index)
+    # lag map: state_name -> (buffer_len, ring_offset, head_index)
     lag_map: Dict[str, Tuple[int, int, int]] = None
 
 # Map DSL math names → math.<fn> (Numba-friendly)

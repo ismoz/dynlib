@@ -2,6 +2,17 @@
 
 ---
 
+## [2.26.1] – 2025-11-16
+### Changed
+- Updated the docs throughout the package. Removed remnants of the old workbanks docs.
+- Removed stepper_banks.md file and introduced stepper_workspace.md file.
+- Updated ISSUES.md and TODO.md files.
+
+### Fixed
+- Cobweb plotter was still using the old workbanks API. Now it also uses runtime workspace.
+
+---
+
 ## [2.26.0] – 2025-11-15
 ### Added
 - Introduced separate stepper and runtime workspaces to cleanly separate responsibilities:
@@ -21,16 +32,13 @@
   (sp, ss, sw*, iw0, bw0) that mixed stepper scratch with runtime state. Workspaces are now owned 
   by their respective components.
 - Updated stepper ABI: Simplified stepper signature to `stepper(t, dt, y_curr, rhs, params, 
-  stepper_ws, stepper_config, y_prop, t_prop, dt_next, err_est) -> int32`, removing bank arguments 
-  and passing stepper workspace directly.
+  runtime_ws, stepper_ws, stepper_config, y_prop, t_prop, dt_next, err_est) -> int32`, removing bank arguments 
+  and passing workspaces directly.
 - Updated runner ABI: Runner now accepts `runtime_ws` and `stepper_ws` instead of bank arrays. 
   Runner handles lag updates using runtime workspace instead of global `_LAG_STATE_INFO` and ss/iw0 
   banks. Removed `_LAG_STATE_INFO`.
 - Refactored lagging system: Lag buffers moved to dedicated runtime workspace with circular 
   buffer access. Removed partitioning of ss/iw0 banks for lags.
-- Updated wrapper and resume: `allocate_pools()` now returns `(runtime_ws, rec, ev)` instead 
-  of `(WorkBanks, rec, ev)`. Workspace snapshots/restore work on separate stepper and runtime 
-  workspaces.
 - Migrated all steppers: Updated Euler, RK4, RK45, AB2, AB3, and Map steppers to use new 
   workspace pattern. Each stepper defines its own NamedTuple workspace type and factory.
 - Updated code generation: RHS/event lowering now accesses lags via runtime workspace helpers 
