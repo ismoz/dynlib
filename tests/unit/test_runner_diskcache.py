@@ -54,7 +54,7 @@ def _to_runtime(full) -> Model:
     return Model(
         spec=full.spec,
         stepper_name=full.stepper_name,
-        struct=full.struct,
+        workspace_sig=full.workspace_sig,
         rhs=full.rhs,
         events_pre=full.events_pre,
         events_post=full.events_post,
@@ -62,6 +62,14 @@ def _to_runtime(full) -> Model:
         runner=full.runner,
         spec_hash=full.spec_hash,
         dtype=full.dtype,
+        rhs_source=full.rhs_source,
+        events_pre_source=full.events_pre_source,
+        events_post_source=full.events_post_source,
+        stepper_source=full.stepper_source,
+        lag_state_info=full.lag_state_info,
+        uses_lag=full.uses_lag,
+        equations_use_lag=full.equations_use_lag,
+        make_stepper_workspace=full.make_stepper_workspace,
     )
 
 
@@ -103,7 +111,7 @@ full = build(spec, stepper='euler', jit=True, disk_cache=True)
 model = Model(
     spec=full.spec,
     stepper_name=full.stepper_name,
-    struct=full.struct,
+    workspace_sig=full.workspace_sig,
     rhs=full.rhs,
     events_pre=full.events_pre,
     events_post=full.events_post,
@@ -111,6 +119,14 @@ model = Model(
     runner=full.runner,
     spec_hash=full.spec_hash,
     dtype=full.dtype,
+    rhs_source=full.rhs_source,
+    events_pre_source=full.events_pre_source,
+    events_post_source=full.events_post_source,
+    stepper_source=full.stepper_source,
+    lag_state_info=full.lag_state_info,
+    uses_lag=full.uses_lag,
+    equations_use_lag=full.equations_use_lag,
+    make_stepper_workspace=full.make_stepper_workspace,
 )
 Sim(model).run(max_steps=4)
 """

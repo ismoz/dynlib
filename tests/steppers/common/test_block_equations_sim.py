@@ -9,27 +9,9 @@ import numpy as np
 
 def _run_inline_model(model_toml: str):
     """Helper to run a model from inline TOML."""
-    from dynlib.compiler.build import build
-    from dynlib.runtime.sim import Sim
-    from dynlib.runtime.model import Model
+    from dynlib import setup
     
-    full_model = build(model="inline: " + model_toml)
-    
-    # Convert FullModel to Model for Sim
-    model = Model(
-        spec=full_model.spec,
-        stepper_name=full_model.stepper_name,
-        struct=full_model.struct,
-        rhs=full_model.rhs,
-        events_pre=full_model.events_pre,
-        events_post=full_model.events_post,
-        stepper=full_model.stepper,
-        runner=full_model.runner,
-        spec_hash=full_model.spec_hash,
-        dtype=full_model.dtype,
-    )
-    
-    sim = Sim(model)
+    sim = setup(model="inline: " + model_toml)
     sim.run()
     return sim.raw_results()
 

@@ -25,7 +25,7 @@ def test_workspace_rebinding_is_flagged():
         return 0
 
     issues = validate_stepper_function(bad_stepper, "bad_ws")
-    assert any("Workspace tuples are immutable" in issue.message for issue in issues), issues
+    assert any("Stepper must not write to runner-owned variable 'ws'" in issue.message for issue in issues), issues
 
 
 def test_valid_stepper_has_no_issues():

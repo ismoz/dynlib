@@ -2,6 +2,22 @@
 
 ---
 
+## [2.26.4]
+### Tests
+- Updated all tests according to the new workspaces design.
+- All tests pass and examples work at this point.
+
+### Fixed
+- Running the entire unit suite started failing with `ModuleNotFoundError: dynlib_stepper_<digest>` 
+  because numba’s cache metadata points to generated module names that were no longer importable 
+  once earlier tests cleaned up their in-memory modules. Added a cache importer meta-path finder 
+  plus sys.modules registration (`cache_importer.py`) so cached steppers/runners/triplets can 
+  always be re-imported from the dynlib cache root, which restores `pytest tests/unit` stability 
+  while keeping individual test 
+  runs unchanged.
+
+---
+
 ## [2.26.3] – 2025-11-16
 ### Changed
 - Removed NaN/Inf checks from `AB2` and `AB3` steppers, since they are fixed-step solvers.
@@ -11,7 +27,7 @@
 
 ## [2.26.2] – 2025-11-16
 ### Changed
-- Updated `snapshot_semo.py` and `uri_demo.py` examples. All examples work at this point.
+- Updated `snapshot_demo.py` and `uri_demo.py` examples. All examples work at this point.
 
 ### Tests
 - Updated `test_snapshot_persistence.py` test.
@@ -48,8 +64,8 @@
   (sp, ss, sw*, iw0, bw0) that mixed stepper scratch with runtime state. Workspaces are now owned 
   by their respective components.
 - Updated stepper ABI: Simplified stepper signature to `stepper(t, dt, y_curr, rhs, params, 
-  runtime_ws, stepper_ws, stepper_config, y_prop, t_prop, dt_next, err_est) -> int32`, removing bank arguments 
-  and passing workspaces directly.
+  runtime_ws, stepper_ws, stepper_config, y_prop, t_prop, dt_next, err_est) -> int32`, removing bank 
+  arguments and passing workspaces directly.
 - Updated runner ABI: Runner now accepts `runtime_ws` and `stepper_ws` instead of bank arrays. 
   Runner handles lag updates using runtime workspace instead of global `_LAG_STATE_INFO` and ss/iw0 
   banks. Removed `_LAG_STATE_INFO`.

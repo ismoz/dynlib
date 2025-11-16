@@ -125,9 +125,9 @@ def test_lagged_map_buffers_track_history(jit):
     steps = 12
     sim.run(N=steps, record=True, record_interval=1)
     results = sim.raw_results()
-    ws = results.final_stepper_ws
-    ss = ws["ss"]
-    iw0 = ws["iw0"]
+    ws = results.final_workspace["runtime"]  # Access runtime workspace for lag buffers
+    ss = ws["lag_ring"]
+    iw0 = ws["lag_head"]
     lag_info = model.lag_state_info or []
 
     for state_idx, depth, ss_offset, iw0_index in lag_info:

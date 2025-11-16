@@ -33,7 +33,7 @@ def _compile_model_from_toml(toml_str: str, jit: bool = True) -> Model:
     return Model(
         spec=full_model.spec,
         stepper_name=full_model.stepper_name,
-        struct=full_model.struct,
+        workspace_sig=full_model.workspace_sig,
         rhs=full_model.rhs,
         events_pre=full_model.events_pre,
         events_post=full_model.events_post,
@@ -41,6 +41,14 @@ def _compile_model_from_toml(toml_str: str, jit: bool = True) -> Model:
         runner=full_model.runner,
         spec_hash=full_model.spec_hash,
         dtype=full_model.dtype,
+        rhs_source=full_model.rhs_source,
+        events_pre_source=full_model.events_pre_source,
+        events_post_source=full_model.events_post_source,
+        stepper_source=full_model.stepper_source,
+        lag_state_info=full_model.lag_state_info,
+        uses_lag=full_model.uses_lag,
+        equations_use_lag=full_model.equations_use_lag,
+        make_stepper_workspace=full_model.make_stepper_workspace,
     )
 
 
@@ -152,16 +160,17 @@ def test_apply_preset_params_only():
     sim = Sim(model)
     
     # Initial params
-    state = sim._session_state
-    assert state.params_curr[0] == 1.0  # a
-    assert state.params_curr[1] == 2.0  # b
+    params = sim.param_vector()
+    assert params[0] == 1.0  # a
+    assert params[1] == 2.0  # b
     
     # Apply preset
     sim.apply_preset("test")
     
     # Check updated
-    assert state.params_curr[0] == 5.0  # a
-    assert state.params_curr[1] == 10.0  # b
+    params = sim.param_vector()
+    assert params[0] == 5.0  # a
+    assert params[1] == 10.0  # b
 
 
 def test_apply_preset_with_states():
@@ -195,18 +204,21 @@ def test_apply_preset_with_states():
     sim = Sim(model)
     
     # Initial state
-    state = sim._session_state
-    assert state.y_curr[0] == 1.0  # x
-    assert state.y_curr[1] == 2.0  # y
-    assert state.params_curr[0] == 1.0  # a
+    states = sim.state_vector()
+    params = sim.param_vector()
+    assert states[0] == 1.0  # x
+    assert states[1] == 2.0  # y
+    assert params[0] == 1.0  # a
     
     # Apply preset
     sim.apply_preset("test")
     
     # Check updated
-    assert state.y_curr[0] == 100.0  # x
-    assert state.y_curr[1] == 200.0  # y
-    assert state.params_curr[0] == 5.0  # a
+    states = sim.state_vector()
+    params = sim.param_vector()
+    assert states[0] == 100.0  # x
+    assert states[1] == 200.0  # y
+    assert params[0] == 5.0  # a
 
 
 def test_apply_preset_unknown_param():
@@ -319,10 +331,11 @@ def test_apply_preset_partial_states_update_only_listed():
     # Should update only listed targets
     sim.apply_preset("partial")
     
-    state = sim._session_state
-    assert state.y_curr[0] == 10.0  # updated x
-    assert state.y_curr[1] == 2.0   # y untouched
-    assert state.params_curr[0] == 2.0  # param updated
+    states = sim.state_vector()
+    params = sim.param_vector()
+    assert states[0] == 10.0  # updated x
+    assert states[1] == 2.0   # y untouched
+    assert params[0] == 2.0  # param updated
 
 
 def test_model_without_params_supports_state_only_presets(tmp_path):
@@ -347,10 +360,10 @@ def test_model_without_params_supports_state_only_presets(tmp_path):
     from dynlib.runtime.sim import Sim
     
     sim = Sim(model)
-    assert sim._session_state.params_curr.size == 0
+    assert sim.param_vector().size == 0
     
     sim.apply_preset("bump")
-    assert sim._session_state.y_curr[0] == 5.0
+    assert sim.state_vector()[0] == 5.0
     
     preset_file = tmp_path / "states_only.toml"
     preset_file.write_text(
@@ -365,7 +378,7 @@ def test_model_without_params_supports_state_only_presets(tmp_path):
     
     sim.load_preset("file_state", preset_file)
     sim.apply_preset("file_state")
-    assert sim._session_state.y_curr[0] == 7.5
+    assert sim.state_vector()[0] == 7.5
 
 
 def test_model_without_states_supports_param_only_presets(tmp_path):
@@ -389,10 +402,10 @@ def test_model_without_states_supports_param_only_presets(tmp_path):
     from dynlib.runtime.sim import Sim
     
     sim = Sim(model)
-    assert sim._session_state.y_curr.size == 0
+    assert sim.state_vector().size == 0
     
     sim.apply_preset("boost")
-    assert sim._session_state.params_curr[0] == 3.0
+    assert sim.param_vector()[0] == 3.0
     
     preset_file = tmp_path / "params_only.toml"
     preset_file.write_text(
@@ -407,7 +420,7 @@ def test_model_without_states_supports_param_only_presets(tmp_path):
     
     sim.load_preset("from_file", preset_file)
     sim.apply_preset("from_file")
-    assert sim._session_state.params_curr[0] == 4.0
+    assert sim.param_vector()[0] == 4.0
 
 
 def test_load_preset_from_file(tmp_path):
@@ -453,8 +466,9 @@ def test_load_preset_from_file(tmp_path):
     
     # Apply and verify
     sim.apply_preset("file_preset")
-    assert sim._session_state.params_curr[0] == 3.0
-    assert sim._session_state.params_curr[1] == 4.0
+    params = sim.param_vector()
+    assert params[0] == 3.0
+    assert params[1] == 4.0
 
 
 def test_load_preset_rejects_empty_definition(tmp_path):
@@ -701,20 +715,20 @@ def test_add_preset_captures_session_state():
     sim = Sim(model)
     
     # Mutate current session
-    sim._session_state.y_curr[:] = [42.0, -3.0]
-    sim._session_state.params_curr[:] = [8.0, 9.0]
+    sim.assign(x=42.0, y=-3.0, a=8.0, b=9.0)
     
     # Capture preset from session state
     sim.add_preset("snapshot")
     assert "snapshot" in sim.list_presets("*")
     
     # Change session again to ensure preset restores captured values
-    sim._session_state.y_curr[:] = [0.0, 0.0]
-    sim._session_state.params_curr[:] = [0.0, 0.0]
+    sim.assign(x=0.0, y=0.0, a=0.0, b=0.0)
     
     sim.apply_preset("snapshot")
-    np.testing.assert_allclose(sim._session_state.y_curr, [42.0, -3.0])
-    np.testing.assert_allclose(sim._session_state.params_curr, [8.0, 9.0])
+    states = sim.state_vector()
+    params = sim.param_vector()
+    np.testing.assert_allclose(states, [42.0, -3.0])
+    np.testing.assert_allclose(params, [8.0, 9.0])
 
 
 def test_add_preset_supports_arrays_and_overwrite():
@@ -750,8 +764,10 @@ def test_add_preset_supports_arrays_and_overwrite():
     )
     sim.apply_preset("runtime_copy")
     
-    assert sim._session_state.y_curr[0] == 10.0
-    assert sim._session_state.params_curr[0] == 20.0
+    states = sim.state_vector()
+    params = sim.param_vector()
+    assert states[0] == 10.0
+    assert params[0] == 20.0
 
 
 def test_save_preset_requires_non_empty_payload(tmp_path):
@@ -860,13 +876,12 @@ def test_save_preset_partial_states_subset(tmp_path):
     from dynlib.runtime.sim import Sim
     
     sim = Sim(model)
-    sim._session_state.params_curr[0] = 12.0
-    sim._session_state.y_curr[:] = [6.0, 7.0]
+    sim.assign(a=12.0, x=6.0, y=7.0)
     
     sim.add_preset(
         "partial",
-        params={"a": float(sim._session_state.params_curr[0])},
-        states={"x": float(sim._session_state.y_curr[0])},
+        params={"a": sim.param_vector()[0]},
+        states={"x": sim.state_vector()[0]},
         overwrite=True,
     )
     
@@ -913,8 +928,7 @@ def test_save_preset_with_states(tmp_path):
     sim = Sim(model)
     
     # Modify state
-    sim._session_state.y_curr[0] = 100.0
-    sim._session_state.y_curr[1] = 200.0
+    sim.assign(x=100.0, y=200.0)
     
     sim.add_preset("test", overwrite=True)
     
@@ -1004,7 +1018,7 @@ def test_save_preset_overwrite(tmp_path):
     sim.save_preset("test", preset_file)
     
     # Modify param
-    sim._session_state.params_curr[0] = 99.0
+    sim.assign(a=99.0)
     
     sim.add_preset("test", overwrite=True)
     
@@ -1086,16 +1100,15 @@ def test_roundtrip_save_load(tmp_path):
     
     # Apply original
     sim.apply_preset("orig")
-    orig_params = sim._session_state.params_curr.copy()
-    orig_states = sim._session_state.y_curr.copy()
+    orig_params = sim.param_vector().copy()
+    orig_states = sim.state_vector().copy()
     
     # Save
     sim.add_preset("orig", overwrite=True)
     sim.save_preset("orig", preset_file, overwrite=True)
     
     # Reset to defaults
-    sim._session_state.params_curr[:] = [1.0, 2.0]
-    sim._session_state.y_curr[:] = [1.0, 2.0]
+    sim.assign(x=1.0, y=2.0, a=1.0, b=2.0)
     
     # Load back
     sim2 = Sim(model)
@@ -1105,8 +1118,8 @@ def test_roundtrip_save_load(tmp_path):
     sim2.apply_preset("orig")
     
     # Compare
-    np.testing.assert_array_almost_equal(sim2._session_state.params_curr, orig_params)
-    np.testing.assert_array_almost_equal(sim2._session_state.y_curr, orig_states)
+    np.testing.assert_array_almost_equal(sim2.param_vector(), orig_params)
+    np.testing.assert_array_almost_equal(sim2.state_vector(), orig_states)
 
 
 def test_precision_warning_float64_to_float32():
@@ -1173,19 +1186,20 @@ def test_apply_does_not_touch_time_or_stepper():
     sim.run(T=1.0, max_steps=100)
     
     # Capture state before apply
-    t_before = sim._session_state.t_curr
-    dt_before = sim._session_state.dt_curr
-    step_before = sim._session_state.step_count
-    ws_before = dict(sim._session_state.stepper_ws)
+    summary_before = sim.session_state_summary()
+    ws_before = sim.stepper_config()
     
     # Apply preset
     sim.apply_preset("test")
     
     # Verify untouched
-    assert sim._session_state.t_curr == t_before
-    assert sim._session_state.dt_curr == dt_before
-    assert sim._session_state.step_count == step_before
-    assert sim._session_state.stepper_ws.keys() == ws_before.keys()
+    summary_after = sim.session_state_summary()
+    ws_after = sim.stepper_config()
+    
+    assert summary_after["t"] == summary_before["t"]
+    assert summary_after["dt"] == summary_before["dt"]
+    assert summary_after["step"] == summary_before["step"]
+    np.testing.assert_array_equal(ws_after, ws_before)
 
 
 def test_load_unknown_schema(tmp_path):

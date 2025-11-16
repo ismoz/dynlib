@@ -617,6 +617,7 @@ class JitTripletCache:
             self._delete_cache_dir()
             return None
         module = importlib.util.module_from_spec(spec)
+        sys.modules[self.module_name] = module
         try:
             spec.loader.exec_module(module)  # type: ignore[attr-defined]
         except Exception:
@@ -624,7 +625,6 @@ class JitTripletCache:
                 del sys.modules[self.module_name]
             self._delete_cache_dir()
             return None
-        sys.modules[self.module_name] = module
         fn = getattr(module, self.function_name, None)
         if fn is None:
             self._delete_cache_dir()
@@ -773,6 +773,7 @@ class _StepperDiskCache:
             self._delete_cache_dir()
             return None
         module = importlib.util.module_from_spec(spec)
+        sys.modules[self.module_name] = module
         try:
             spec.loader.exec_module(module)  # type: ignore[attr-defined]
         except Exception:
@@ -780,7 +781,6 @@ class _StepperDiskCache:
                 del sys.modules[self.module_name]
             self._delete_cache_dir()
             return None
-        sys.modules[self.module_name] = module
         fn = getattr(module, "stepper", None)
         if fn is None:
             self._delete_cache_dir()

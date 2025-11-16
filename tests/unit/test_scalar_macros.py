@@ -34,17 +34,18 @@ def test_scalar_macros_available_in_all_sections():
     spec = build_spec(parse_model_v2(doc))
     callables = build_callables(spec, stepper_name="euler", jit=False, dtype="float64")
 
+    from dynlib.runtime.workspace import make_runtime_workspace
+    runtime_ws = make_runtime_workspace(lag_state_info=None, dtype=np.float64)
+
     y = np.array([-0.5], dtype=np.float64)
     dy = np.zeros_like(y)
     params = np.zeros(0, dtype=np.float64)
-    ss = np.zeros(0, dtype=np.float64)
-    iw0 = np.zeros(0, dtype=np.int32)
 
-    callables.rhs(0.0, y, dy, params, ss, iw0)
+    callables.rhs(0.0, y, dy, params, runtime_ws)
     assert dy[0] == pytest.approx(-1.0)
 
     scratch = np.zeros(1, dtype=np.float64)
-    code, log_len = callables.events_post(0.0, y, params, scratch, ss, iw0)
+    code, log_len = callables.events_post(0.0, y, params, scratch, runtime_ws)
     assert code == 0
     assert log_len == 0
     assert y[0] == pytest.approx(0.0)

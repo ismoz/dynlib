@@ -101,7 +101,7 @@ stepper = "euler"
     model = Model(
         spec=full_model.spec,
         stepper_name=full_model.stepper_name,
-        struct=full_model.struct,
+        workspace_sig=full_model.workspace_sig,
         rhs=full_model.rhs,
         events_pre=full_model.events_pre,
         events_post=full_model.events_post,
@@ -109,6 +109,10 @@ stepper = "euler"
         runner=full_model.runner,
         spec_hash=full_model.spec_hash,
         dtype=full_model.dtype,
+        lag_state_info=full_model.lag_state_info,
+        uses_lag=full_model.uses_lag,
+        equations_use_lag=full_model.equations_use_lag,
+        make_stepper_workspace=full_model.make_stepper_workspace,
     )
     
     sim = Sim(model)
@@ -516,7 +520,7 @@ def test_load_existing_decay_model():
     model = Model(
         spec=full_model.spec,
         stepper_name=full_model.stepper_name,
-        struct=full_model.struct,
+        workspace_sig=full_model.workspace_sig,
         rhs=full_model.rhs,
         events_pre=full_model.events_pre,
         events_post=full_model.events_post,
@@ -524,6 +528,10 @@ def test_load_existing_decay_model():
         runner=full_model.runner,
         spec_hash=full_model.spec_hash,
         dtype=full_model.dtype,
+        lag_state_info=full_model.lag_state_info,
+        uses_lag=full_model.uses_lag,
+        equations_use_lag=full_model.equations_use_lag,
+        make_stepper_workspace=full_model.make_stepper_workspace,
     )
     
     sim = Sim(model)

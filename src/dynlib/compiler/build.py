@@ -12,6 +12,7 @@ from dynlib.steppers.registry import get_stepper
 from dynlib.compiler.codegen.emitter import emit_rhs_and_events, CompiledCallables
 from dynlib.compiler.codegen import runner as runner_codegen
 from dynlib.compiler.codegen import runner_discrete as runner_discrete_codegen
+from dynlib.compiler.codegen.cache_importer import register_cache_root
 from dynlib.compiler.codegen.validate import validate_stepper_function, report_validation_issues
 from dynlib.compiler.jit.compile import maybe_jit_triplet, jit_compile
 from dynlib.compiler.jit.cache import JITCache, CacheKey
@@ -681,6 +682,7 @@ def build(
     cache_root_path: Optional[Path] = None
     if jit and disk_cache:
         cache_root_path = resolve_cache_root(config_in_use)
+        register_cache_root(cache_root_path)
     
     # Build RHS and events
     pieces = build_callables(

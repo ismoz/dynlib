@@ -130,6 +130,7 @@ class RunnerDiskCache:
         if spec is None or spec.loader is None:
             raise DiskCacheUnavailable(f"unable to load runner module from {module_path}")
         module = importlib.util.module_from_spec(spec)
+        sys.modules[self.module_name] = module
         try:
             spec.loader.exec_module(module)  # type: ignore[attr-defined]
         except RuntimeError as exc:
@@ -146,7 +147,6 @@ class RunnerDiskCache:
             with contextlib.suppress(KeyError):
                 del sys.modules[self.module_name]
             raise
-        sys.modules[self.module_name] = module
         runner_fn = getattr(module, self._config.export_name, None)
         if runner_fn is None:
             raise DiskCacheUnavailable(

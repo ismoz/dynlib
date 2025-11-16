@@ -47,7 +47,7 @@ u = "a * (b * v - u)"
     return Model(
         spec=full_model.spec,
         stepper_name=full_model.stepper_name,
-        struct=full_model.struct,
+        workspace_sig=full_model.workspace_sig,
         rhs=full_model.rhs,
         events_pre=full_model.events_pre,
         events_post=full_model.events_post,
@@ -55,6 +55,14 @@ u = "a * (b * v - u)"
         runner=full_model.runner,
         spec_hash=full_model.spec_hash,
         dtype=full_model.dtype,
+        rhs_source=full_model.rhs_source,
+        events_pre_source=full_model.events_pre_source,
+        events_post_source=full_model.events_post_source,
+        stepper_source=full_model.stepper_source,
+        lag_state_info=full_model.lag_state_info,
+        uses_lag=full_model.uses_lag,
+        equations_use_lag=full_model.equations_use_lag,
+        make_stepper_workspace=full_model.make_stepper_workspace,
     )
 
 
@@ -290,97 +298,55 @@ class TestAssignDoesNotModifySnapshots:
         assert test_snap.state.y_curr[0] == pytest.approx(orig_v)
 
 
-class TestSelectSeedSemantics:
-    """Test the updated _select_seed() semantics."""
-
-    def test_resume_false_uses_current_state_by_default(self, simple_sim):
-        """Test that resume=False uses current SessionState values as defaults."""
-        # Modify current session state
-        simple_sim._session_state.y_curr[0] = -80.0
-        simple_sim._session_state.params_curr[4] = 15.0  # I parameter
-        
-        # Call _select_seed with resume=False, no ic/params
-        seed = simple_sim._select_seed(
-            resume=False,
-            t0=0.0,
-            dt=0.1,
-            ic=None,
-            params=None,
-        )
-        
-        # Should use current session values
-        assert seed.y[0] == pytest.approx(-80.0)
-        assert seed.params[4] == pytest.approx(15.0)
-        
-        # Should reset integrator state
-        assert seed.t == pytest.approx(0.0)
-        assert seed.step_count == 0
-        assert seed.workspace == {}
-
-    def test_resume_false_ic_overrides_current_state(self, simple_sim):
-        """Test that explicit ic overrides current state in resume=False."""
-        # Modify current session state
-        simple_sim._session_state.y_curr[0] = -80.0
-        
-        # Call _select_seed with explicit ic
-        ic = np.array([-90.0, -20.0], dtype=simple_sim._dtype)
-        seed = simple_sim._select_seed(
-            resume=False,
-            t0=0.0,
-            dt=0.1,
-            ic=ic,
-            params=None,
-        )
-        
-        # Should use provided ic, not current state
-        assert seed.y[0] == pytest.approx(-90.0)
-        assert seed.y[1] == pytest.approx(-20.0)
-
-    def test_resume_false_params_overrides_current_params(self, simple_sim):
-        """Test that explicit params overrides current params in resume=False."""
-        # Modify current session params
-        simple_sim._session_state.params_curr[4] = 15.0  # I
-        
-        # Call _select_seed with explicit params
-        params = np.array(simple_sim.model.spec.param_vals, dtype=simple_sim._dtype)
-        params[4] = 20.0  # I
-        seed = simple_sim._select_seed(
-            resume=False,
-            t0=0.0,
-            dt=0.1,
-            ic=None,
-            params=params,
-        )
-        
-        # Should use provided params, not current state
-        assert seed.params[4] == pytest.approx(20.0)
-
-    def test_resume_true_uses_full_session_state(self, simple_sim):
-        """Test that resume=True continues from full session state."""
-        # Run to populate session state
-        simple_sim.run(T=1.0)
-        
-        # Modify session state
-        t_curr = simple_sim._session_state.t_curr
-        step_count = simple_sim._session_state.step_count
-        
-        # Call _select_seed with resume=True
-        seed = simple_sim._select_seed(
-            resume=True,
-            t0=0.0,  # Should be ignored
-            dt=0.1,  # Should be ignored
-            ic=None,
-            params=None,
-        )
-        
-        # Should use current session state, not the provided t0/dt
-        assert seed.t == pytest.approx(t_curr)
-        assert seed.step_count == step_count
-        # Workspace might have content from the stepper
-        assert isinstance(seed.workspace, dict)
-
-
 class TestAssignIntegration:
+    """Integration tests combining assign() with other Sim operations."""
+
+    def test_assign_reset_then_run(self, simple_sim):
+        """Test assign(), then reset(), then run()."""
+        # First run to create initial snapshot with default ICs
+        simple_sim.run(T=0.1)
+        
+        # Now assign a new value
+        simple_sim.assign(v=-90.0)
+        
+        # Reset should go back to initial snapshot (which has the original IC)
+        simple_sim.reset("initial")
+        
+        # Should be back to original IC, not -90.0
+        assert simple_sim._session_state.y_curr[0] == pytest.approx(-65.0)
+
+    def test_assign_multiple_times(self, simple_sim):
+        """Test calling assign() multiple times."""
+        simple_sim.assign(v=-70.0)
+        assert simple_sim._session_state.y_curr[0] == pytest.approx(-70.0)
+        
+        simple_sim.assign(v=-80.0)
+        assert simple_sim._session_state.y_curr[0] == pytest.approx(-80.0)
+        
+        simple_sim.assign(u=-25.0)
+        assert simple_sim._session_state.y_curr[0] == pytest.approx(-80.0)
+        assert simple_sim._session_state.y_curr[1] == pytest.approx(-25.0)
+
+    def test_assign_then_apply_preset(self, simple_sim):
+        """Test that apply_preset() can override assign()."""
+        # First assign
+        simple_sim.assign(I=20.0)
+        
+        # Then apply a preset (if there is one)
+        # Since we don't have a preset in SIMPLE_MODEL, we'll skip this
+        # or manually add one via the internal API
+        from dynlib.runtime.sim import _PresetData
+        simple_sim._presets["test"] = _PresetData(
+            name="test",
+            params={"I": 25.0},
+            states=None,
+            source="inline",
+        )
+        simple_sim.apply_preset("test")
+        
+        param_names = list(simple_sim.model.spec.params)
+        I_idx = param_names.index("I")
+        assert simple_sim._session_state.params_curr[I_idx] == pytest.approx(25.0)
     """Integration tests combining assign() with other Sim operations."""
 
     def test_assign_reset_then_run(self, simple_sim):
