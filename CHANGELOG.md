@@ -2,6 +2,16 @@
 
 ---
 
+## [2.27.1] – 2025-11-17
+### Changed
+- Improved BDF2_JIT stepper by adding checks for NaN/Inf values during calculations to exit early in 
+  case of invalid data. Also improved Jacobian calculations.
+
+### Tests
+- Added BDF2_JIT stepper contract and accuracy tests.
+
+---
+
 ## [2.27.0] – 2025-11-17
 ### Added
 - Jit compatible BDF2 (Backward Differentiation Formula 2nd Order) stepper `bdf2_jit` is added. It 

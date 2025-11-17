@@ -6,6 +6,7 @@ import numpy as np
 
 from ..base import StepperMeta, StepperCaps
 from dynlib.runtime.runner_api import OK, STEPFAIL
+from dynlib.compiler.guards import allfinite1d
 
 if TYPE_CHECKING:
     from typing import Callable
@@ -196,6 +197,11 @@ class BDF2JITSpec:
                         if abs_r > max_r:
                             max_r = abs_r
 
+                # If residual contains NaN/Inf, bail out early instead of
+                # wasting work on Newton iterations with invalid data.
+                if not allfinite1d(residual):
+                    return STEPFAIL
+
                 # Convergence check on max-norm of F
                 if max_r <= newton_tol:
                     converged = True
@@ -209,13 +215,17 @@ class BDF2JITSpec:
 
                     base = y_guess[j]
                     abs_base = base if base >= 0.0 else -base
-                    scale = 1.0  # Fixed scale for better accuracy
+                    # Scale eps with max(1, |y_j|) to improve numeric Jacobian.
+                    scale = abs_base if abs_base > 1.0 else 1.0
                     eps = jac_eps * scale
                     if eps == 0.0:
                         eps = jac_eps
                     y_tmp[j] = y_tmp[j] + eps
 
                     rhs(t_new, y_tmp, f_tmp, params, runtime_ws)
+                    # If the perturbed RHS is non-finite, abort this step.
+                    if not allfinite1d(f_tmp):
+                        return STEPFAIL
                     inv_eps = 1.0 / eps
 
                     if step_idx == 0:

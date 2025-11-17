@@ -20,7 +20,7 @@ DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "models"
 DECAY_MODEL = str(DATA_DIR / "decay.toml")
 
 
-@pytest.mark.parametrize("stepper", ["euler", "rk4", "rk45", "ab2", "ab3"])
+@pytest.mark.parametrize("stepper", ["euler", "rk4", "rk45", "ab2", "ab3", "bdf2_jit"])
 def test_jit_on_off_parity(stepper: str):
     """
     Guardrail: JIT on/off must produce identical results for the same
@@ -97,3 +97,11 @@ def test_stepper_registry_and_meta():
     # Third-order Adams–Bashforth
     assert ab3.meta.order == 3
     assert getattr(ab3.meta, "time_control", None) == "fixed"
+
+    bdf2_jit = get_stepper("bdf2_jit")
+    assert bdf2_jit.meta.name == "bdf2_jit"
+    # Second-order BDF
+    assert bdf2_jit.meta.order == 2
+    assert getattr(bdf2_jit.meta, "time_control", None) == "fixed"
+    # Jacobian capability: internal numeric J, no external Jacobian API
+    assert bdf2_jit.meta.caps.jacobian == "internal"
