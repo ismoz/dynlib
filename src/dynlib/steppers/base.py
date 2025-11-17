@@ -1,3 +1,4 @@
+# src/dynlib/steppers/base.py
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import FrozenSet, Literal, Protocol, Callable, Optional
@@ -9,7 +10,7 @@ __all__ = [
     "StepperCaps", "StepperMeta", "StepperInfo", "StepperSpec",
 ]
 
-JacobianPolicy = Literal["none", "optional", "required"]
+JacobianPolicy = Literal["none", "internal", "optional", "required"]
 
 # NOTE: When you need to add a stepper with a new capability add a field below.
 #       You don't need to change any existing stepper. You only define the

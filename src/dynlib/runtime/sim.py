@@ -564,6 +564,7 @@ class Sim:
                 cap_evt=cap_evt,
                 stepper_config=stepper_config,
             )
+            self._ensure_runner_done(warm_result, phase="transient warm-up")
             self._session_state = self._state_from_results(
                 warm_result, base_steps=seed.step_count, stepper_config=stepper_config
             )
@@ -603,14 +604,15 @@ class Sim:
             cap_evt=cap_evt,
             stepper_config=stepper_config,
         )
-        if self._time_shift != 0.0:
-            self._rebase_times(recorded_result, self._time_shift)
-        self._session_state = self._state_from_results(
-            recorded_result,
-            base_steps=base_steps_for_session,
-            stepper_config=stepper_config,
-        )
         try:
+            self._ensure_runner_done(recorded_result, phase="recorded run")
+            if self._time_shift != 0.0:
+                self._rebase_times(recorded_result, self._time_shift)
+            self._session_state = self._state_from_results(
+                recorded_result,
+                base_steps=base_steps_for_session,
+                stepper_config=stepper_config,
+            )
             self._append_results(
                 recorded_result,
                 step_offset_initial=step_offset_initial,
@@ -1991,6 +1993,19 @@ class Sim:
             target_steps=target_steps,
             lag_state_info=getattr(self.model, "lag_state_info", None),
             make_stepper_workspace=getattr(self.model, "make_stepper_workspace", None),
+        )
+
+    def _ensure_runner_done(self, result: Results, *, phase: str) -> None:
+        """Raise when the wrapped runner did not complete successfully."""
+        status_value = int(result.status)
+        if status_value == int(Status.DONE):
+            return
+        try:
+            status_name = Status(status_value).name
+        except ValueError:
+            status_name = f"Status<{status_value}>"
+        raise RuntimeError(
+            f"Runner exited with status {status_name} ({status_value}) during {phase}"
         )
 
     def _state_from_results(

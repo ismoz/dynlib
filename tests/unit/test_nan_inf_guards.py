@@ -11,6 +11,7 @@ Verifies that:
 """
 from pathlib import Path
 import numpy as np
+import pytest
 
 from dynlib.compiler.build import build
 from dynlib.runtime.sim import Sim
@@ -162,14 +163,13 @@ x = "1000.0 * x * x"
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", message="overflow encountered")
         warnings.filterwarnings("ignore", message="run_with_wrapper exited early")
-        sim.run(T=10.0, max_steps=100)
+        with pytest.raises(RuntimeError, match="NAN_DETECTED"):
+            sim.run(T=10.0, max_steps=100)
     
-    # Check that the simulation stopped due to NaN/Inf detection
+    # Session state should remain at the initial snapshot since run() aborted
     summary = sim.session_state_summary()
-    assert summary["status"] == "NAN_DETECTED", (
-        f"Expected NAN_DETECTED status, got {summary['status']}. "
-        f"Simulation ran to t={summary['t']}, step={summary['step']}"
-    )
+    assert summary["step"] == 0
+    assert summary["status"] == "DONE"
     
     print(f"✓ Runner Inf detection test passed! Detected Inf at t={summary['t']:.3f}, step={summary['step']}")
 

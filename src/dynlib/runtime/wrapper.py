@@ -228,8 +228,9 @@ def run_with_wrapper(
 
         if status_value in (USER_BREAK, STEPFAIL, NAN_DETECTED):
             status_name = Status(status_value).name
+            t_final = float(t_out[0])
             warnings.warn(
-                f"run_with_wrapper exited early with status {status_name} ({status_value})",
+                f"run_with_wrapper exited early at t = {t_final:.2f} with status {status_name} ({status_value})",
                 RuntimeWarning,
                 stacklevel=2,
             )
@@ -241,7 +242,6 @@ def run_with_wrapper(
                 "runtime": snapshot_workspace(runtime_ws),
             }
             final_dt = float(dt_next[0]) if step_curr > 0 else float(dt_curr)
-            t_final = float(t_out[0])
             return Results(
                 T=rec.T, Y=rec.Y, STEP=rec.STEP, FLAGS=rec.FLAGS,
                 EVT_CODE=ev.EVT_CODE, EVT_INDEX=ev.EVT_INDEX,

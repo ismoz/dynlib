@@ -2,6 +2,40 @@
 
 ---
 
+## [2.27.0] – 2025-11-17
+### Added
+- Jit compatible BDF2 (Backward Differentiation Formula 2nd Order) stepper `bdf2_jit` is added. It 
+  utilizes a simple Newton method plus custom numeric Jacobian. Therefore, it is not as reliable as 
+  other solvers utilizing minpack or similar dedicated root finders. However, it is numba compatible, 
+  so it can be used for fast simulations or analysis of stiff models to some extend.
+
+## Changed
+- Changed `JacobianPolicy` values as `none`, `internal`, `optional`, `required`.
+  - `none`     : No Jacobian during calculations.
+  - `internal` : Uses a numerical Jacobian approximation. Users can't pass externally.
+  - `optional` : Users can provide external Jacobian. Fallback is `internal`.
+  - `required` : USers should pass an external Jacobian.
+
+### Fixed
+- Simulations were continuing after transient or subsequent runs with `resume=True` even though a 
+  `STEPFAIL` was raised by the steppers previously. Ensured the transient warm-up respects runner 
+  failures by validating each warm-result before touching session state or shifting time, so `Sim.run` 
+  now aborts immediately on a `STEPFAIL`/`NAN_DETECTED` instead of rolling forward with stale values. 
+  Wrapped the recorded run in the same guard, so no rebasing, session-state updates, or segment 
+  stitching happens unless the wrapper reports `DONE`, keeping resume histories consistent.
+- Added `_ensure_runner_done` to give a clear RuntimeError that includes the failing phase and status 
+  name, centralizing the exit check.
+
+### Tests
+- Added regression tests `tests/unit/test_sim_failure.py` that monkeypatch `_execute_run` to simulate 
+  `STEPFAIL` returns, covering both transient and main segments, and verifying that state/records remain 
+  untouched and `run()` raises.
+- Updated `tests/unit/test_nan_inf_guards.py` to import pytest, expect `Sim.run()` to raise a RuntimeError 
+  mentioning `NAN_DETECTED`, and assert the session state remains untouched after the aborted run. This 
+  aligns the test with the stricter failure handling added to `Sim.run`.
+
+---
+
 ## [2.26.5] – 2025-11-16
 ### Added
 - Added new `StepperCaps` dataclass to hold stepper-specific features that can be added or removed 
