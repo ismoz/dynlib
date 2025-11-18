@@ -2,6 +2,25 @@
 
 ---
 
+## [2.28.0] – 2025-11-18
+### Added
+- Introduced `ConfigMixin` base class in `config_base.py` for automatic stepper configuration handling. 
+  It makes stepper declarations more concise.
+- Added `config_utils.py` file that provides common tools for stepper config values handling. 
+- Added new `bdf2` stepper that uses `scipy.optimize.root` for solving implicit equations.
+- Added `requires_scipy` flag to stepper capabilities to indicate scipy dependency.
+- Added support for string enum values in stepper configurations via `config_enum_maps()`.
+
+### Changed
+- Refactored all stepper implementations to use `ConfigMixin` for config management.
+- Updated `_build_stepper_config` to automatically convert string config values to integer enum values 
+  using `convert_config_enums` (provided in `config_utils.py`).
+- Updated stepper config default value precedence to: Stepper Config Defaults < Model [sim] table values 
+  < User Inputs. This is handled by the `default_config` method of the `ConfigMixin` class. So this base 
+  class must be applied to the steppers for this precedence to apply.
+
+---
+
 ## [2.27.2] – 2025-11-18
 ### Added
 - Added `jit_capable` flag to `StepperCaps` to specify if a stepper supports JIT compilation.

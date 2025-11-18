@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, NamedTuple
 import numpy as np
 
 from ..base import StepperMeta
+from ..config_base import ConfigMixin
 from dynlib.runtime.runner_api import OK, STEPFAIL
 
 # Import guards for NaN/Inf detection
@@ -23,22 +24,10 @@ from dynlib.compiler.guards import allfinite1d, allfinite_scalar
 if TYPE_CHECKING:
     from typing import Callable
 
-__all__ = ["RK45Spec", "RK45Config"]
+__all__ = ["RK45Spec"]
 
 
-@dataclass
-class RK45Config:
-    """Runtime configuration for RK45 stepper."""
-    atol: float = 1e-6
-    rtol: float = 1e-3
-    safety: float = 0.9
-    min_factor: float = 0.2
-    max_factor: float = 5.0
-    max_tries: int = 10
-    min_step: float = 1e-12
-
-
-class RK45Spec:
+class RK45Spec(ConfigMixin):
     """
     Dormand-Prince RK45: 5th-order method with embedded 4th-order error estimate.
     
@@ -47,6 +36,18 @@ class RK45Spec:
     
     Adaptive, order 5, explicit scheme for ODEs.
     """
+    
+    @dataclass
+    class Config:
+        """Runtime configuration for RK45 stepper."""
+        atol: float = 1e-6
+        rtol: float = 1e-3
+        safety: float = 0.9
+        min_factor: float = 0.2
+        max_factor: float = 5.0
+        max_tries: int = 10
+        min_step: float = 1e-12
+    
     def __init__(self, meta: StepperMeta | None = None):
         if meta is None:
             meta = StepperMeta(
@@ -88,68 +89,6 @@ class RK45Spec:
             k6=zeros(),
             k7=zeros(),
         )
-
-    def config_spec(self) -> type:
-        """Return RK45Config dataclass for runtime configuration."""
-        return RK45Config
-    
-    def default_config(self, model_spec=None) -> RK45Config:
-        """
-        Create default RK45 config, optionally reading from model_spec.
-        
-        Args:
-            model_spec: Optional ModelSpec to read atol/rtol from
-        
-        Returns:
-            RK45Config instance with defaults
-        """
-        config = RK45Config()
-        
-        # Override from model_spec if available
-        if model_spec is not None:
-            import dataclasses
-            updates = {}
-            if hasattr(model_spec.sim, 'atol'):
-                updates['atol'] = float(model_spec.sim.atol)
-            if hasattr(model_spec.sim, 'rtol'):
-                updates['rtol'] = float(model_spec.sim.rtol)
-            
-            if updates:
-                config = dataclasses.replace(config, **updates)
-        
-        return config
-    
-    def pack_config(self, config: RK45Config | None) -> np.ndarray:
-        """
-        Pack RK45Config into float64 array.
-        
-        Layout (7 floats):
-            [0] atol
-            [1] rtol
-            [2] safety
-            [3] min_factor
-            [4] max_factor
-            [5] max_tries (as float)
-            [6] min_step
-        
-        Args:
-            config: RK45Config instance (or None)
-        
-        Returns:
-            float64 array with packed values
-        """
-        if config is None:
-            config = RK45Config()
-        
-        return np.array([
-            config.atol,
-            config.rtol,
-            config.safety,
-            config.min_factor,
-            config.max_factor,
-            float(config.max_tries),
-            config.min_step,
-        ], dtype=np.float64)
 
     def emit(self, rhs_fn: Callable, model_spec=None) -> Callable:
         """

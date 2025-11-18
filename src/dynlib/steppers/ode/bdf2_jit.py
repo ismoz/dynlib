@@ -7,6 +7,7 @@ import numpy as np
 from ..base import StepperMeta, StepperCaps
 from dynlib.runtime.runner_api import OK, STEPFAIL
 from dynlib.compiler.guards import allfinite1d
+from ..config_base import ConfigMixin
 
 if TYPE_CHECKING:
     from typing import Callable
@@ -15,7 +16,7 @@ if TYPE_CHECKING:
 __all__ = ["BDF2JITSpec"]
 
 
-class BDF2JITSpec:
+class BDF2JITSpec(ConfigMixin):
     """
     Numba Compatible Implicit 2-step BDF method (order 2, fixed-step).
 
@@ -29,7 +30,7 @@ class BDF2JITSpec:
     """
 
     @dataclass
-    class BDF2Config:
+    class Config:
         # Absolute residual tolerance (on max-norm of F)
         newton_tol: float = 1e-8
         # Iteration budget (chaotic / stiff systems usually need a bit more)
@@ -93,24 +94,6 @@ class BDF2JITSpec:
             f_tmp=vec(),
             residual=vec(),
             J=np.zeros((n_state, n_state), dtype=dtype),
-        )
-
-    def config_spec(self) -> type | None:
-        return BDF2JITSpec.BDF2Config
-
-    def default_config(self, model_spec=None):
-        return BDF2JITSpec.BDF2Config()
-
-    def pack_config(self, config) -> np.ndarray:
-        if config is None:
-            return np.array([], dtype=np.float64)
-        return np.array(
-            [
-                config.newton_tol,
-                float(config.newton_max_iter),
-                config.jac_eps,
-            ],
-            dtype=np.float64,
         )
 
     def emit(self, rhs_fn: Callable, model_spec=None) -> Callable:

@@ -16,6 +16,7 @@ import numpy as np
 
 from ..base import StepperMeta
 from dynlib.runtime.runner_api import OK
+from ..config_base import ConfigMixin
 
 if TYPE_CHECKING:
     from typing import Callable
@@ -27,7 +28,7 @@ class MapWorkspace(NamedTuple):
     y_next: np.ndarray
 
 
-class MapSpec:
+class MapSpec(ConfigMixin):
     """
     Discrete-time map stepper: y_{n+1} = F(t_n, y_n; params)
 
@@ -35,6 +36,7 @@ class MapSpec:
     - Single proposal per call (no accept/reject loop)
     - dt is a label spacing only; not used in dynamics
     """
+    CONFIG = None  # No runtime configuration
 
     def __init__(self, meta: StepperMeta | None = None):
         if meta is None:
@@ -59,18 +61,6 @@ class MapSpec:
         return MapWorkspace(
             y_next=np.zeros((n_state,), dtype=dtype),
         )
-
-    def config_spec(self) -> type | None:
-        """Maps have no runtime-configurable parameters."""
-        return None
-
-    def default_config(self, model_spec=None):
-        """No config."""
-        return None
-
-    def pack_config(self, config) -> np.ndarray:
-        """No config -> empty array."""
-        return np.array([], dtype=np.float64)
 
     def emit(self, map_fn: Callable, model_spec=None) -> Callable:
         """

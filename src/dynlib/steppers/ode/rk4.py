@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, NamedTuple
 import numpy as np
 
 from ..base import StepperMeta
+from ..config_base import ConfigMixin
 from dynlib.runtime.runner_api import OK
 
 if TYPE_CHECKING:
@@ -17,7 +18,7 @@ if TYPE_CHECKING:
 __all__ = ["RK4Spec"]
 
 
-class RK4Spec:
+class RK4Spec(ConfigMixin):
     """
     Classic 4th-order Runge-Kutta stepper (explicit, fixed-step).
     
@@ -30,6 +31,8 @@ class RK4Spec:
     
     Fixed-step, order 4, explicit scheme for ODEs.
     """
+    Config = None  # No runtime configuration
+    
     def __init__(self, meta: StepperMeta | None = None):
         if meta is None:
             meta = StepperMeta(
@@ -70,18 +73,6 @@ class RK4Spec:
             k3=zeros(),
             k4=zeros(),
         )
-
-    def config_spec(self) -> type | None:
-        """RK4 has no runtime-configurable parameters."""
-        return None
-    
-    def default_config(self, model_spec=None):
-        """RK4 has no config."""
-        return None
-    
-    def pack_config(self, config) -> np.ndarray:
-        """RK4 has no config - return empty array."""
-        return np.array([], dtype=np.float64)
 
     def emit(self, rhs_fn: Callable, model_spec=None) -> Callable:
         """

@@ -10,6 +10,7 @@ import numpy as np
 
 from ..base import StepperMeta
 from dynlib.runtime.runner_api import OK
+from ..config_base import ConfigMixin
 
 if TYPE_CHECKING:
     from typing import Callable
@@ -17,7 +18,7 @@ if TYPE_CHECKING:
 __all__ = ["AB2Spec"]
 
 
-class AB2Spec:
+class AB2Spec(ConfigMixin):
     """
     Explicit 2-step Adams–Bashforth method (order 2, fixed-step).
 
@@ -34,6 +35,8 @@ class AB2Spec:
             f_{-1} = k1 (at t_0, y_0)
             f_0    = k2 (at t_1, y_1)
     """
+    CONFIG = None  # No runtime configuration
+
     def __init__(self, meta: StepperMeta | None = None):
         if meta is None:
             meta = StepperMeta(
@@ -69,18 +72,6 @@ class AB2Spec:
             y_stage=zeros(),
             step_index=np.zeros((1,), dtype=np.int64),
         )
-
-    def config_spec(self) -> type | None:
-        """AB2 has no runtime-configurable parameters."""
-        return None
-
-    def default_config(self, model_spec=None):
-        """AB2 has no config."""
-        return None
-
-    def pack_config(self, config) -> np.ndarray:
-        """AB2 has no config - return empty array."""
-        return np.array([], dtype=np.float64)
 
     def emit(self, rhs_fn: Callable, model_spec=None) -> Callable:
         """

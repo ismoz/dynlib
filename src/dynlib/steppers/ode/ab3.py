@@ -21,6 +21,7 @@ import numpy as np
 
 from ..base import StepperMeta
 from dynlib.runtime.runner_api import OK
+from ..config_base import ConfigMixin
 
 if TYPE_CHECKING:
     from typing import Callable
@@ -28,7 +29,7 @@ if TYPE_CHECKING:
 __all__ = ["AB3Spec"]
 
 
-class AB3Spec:
+class AB3Spec(ConfigMixin):
     """
     Explicit 3-step Adams–Bashforth method (order 3, fixed-step).
 
@@ -45,6 +46,8 @@ class AB3Spec:
       - Step 1 (n = 1): AB2 from t1 to t2 using f0, f1, then rotate history
         to [f0, f1, f2] so AB3 is ready from step 2 onward.
     """
+    CONFIG = None  # No runtime configuration
+
     def __init__(self, meta: StepperMeta | None = None):
         if meta is None:
             meta = StepperMeta(
@@ -82,18 +85,6 @@ class AB3Spec:
             y_stage=zeros(),
             step_index=np.zeros((1,), dtype=np.int64),
         )
-
-    def config_spec(self) -> type | None:
-        """AB3 has no runtime-configurable parameters."""
-        return None
-
-    def default_config(self, model_spec=None):
-        """AB3 has no config."""
-        return None
-
-    def pack_config(self, config) -> np.ndarray:
-        """AB3 has no config - return empty array."""
-        return np.array([], dtype=np.float64)
 
     def emit(self, rhs_fn: Callable, model_spec=None) -> Callable:
         """

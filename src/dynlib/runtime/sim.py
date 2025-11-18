@@ -2246,6 +2246,8 @@ class Sim:
     def _build_stepper_config(self, kwargs: dict, prev_config: Optional[np.ndarray]) -> np.ndarray:
         """
         Build stepper config array from run() kwargs, session defaults, and prior runs.
+        
+        Handles string→int enum conversion for config fields that accept string values.
         """
         stepper_name = self.model.stepper_name
         stepper_spec = self._stepper_spec
@@ -2278,6 +2280,22 @@ class Sim:
                 RuntimeWarning,
                 stacklevel=3,
             )
+        
+        # Convert string enum values to ints if stepper declares enum mappings
+        enum_maps = None
+        if hasattr(stepper_spec, 'config_enum_maps'):
+            try:
+                enum_maps = stepper_spec.config_enum_maps()
+            except Exception:
+                pass  # Stepper doesn't implement it or returned None
+        
+        if enum_maps and config_updates:
+            from dynlib.steppers.config_utils import convert_config_enums
+            try:
+                config_updates = convert_config_enums(config_updates, enum_maps, stepper_name)
+            except ValueError as e:
+                # Re-raise with context about where this came from
+                raise ValueError(f"Invalid stepper config: {e}") from None
 
         final_config = (
             dataclasses.replace(default_config, **config_updates) if config_updates else default_config

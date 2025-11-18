@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, NamedTuple
 import numpy as np
 
 from ..base import StepperMeta
+from ..config_base import ConfigMixin
 from dynlib.runtime.runner_api import OK
 
 if TYPE_CHECKING:
@@ -21,12 +22,14 @@ __all__ = ["EulerSpec"]
 # Adaptive steppers may have these checks because they need them 
 # when determining the step size.
 
-class EulerSpec:
+class EulerSpec(ConfigMixin):
     """
     Explicit Euler stepper: y_{n+1} = y_n + dt * f(t_n, y_n)
 
     Fixed-step, order 1, explicit scheme for ODEs.
     """
+    Config = None  # No runtime configuration
+    
     def __init__(self, meta: StepperMeta | None = None):
         if meta is None:
             meta = StepperMeta(
@@ -58,18 +61,6 @@ class EulerSpec:
         return EulerSpec.Workspace(
             dy=np.zeros((n_state,), dtype=dtype),
         )
-
-    def config_spec(self) -> type | None:
-        """Euler has no runtime-configurable parameters."""
-        return None
-    
-    def default_config(self, model_spec=None):
-        """Euler has no config."""
-        return None
-    
-    def pack_config(self, config) -> np.ndarray:
-        """Euler has no config - return empty array."""
-        return np.array([], dtype=np.float64)
 
     def emit(self, rhs_fn: Callable, model_spec=None) -> Callable:
         """

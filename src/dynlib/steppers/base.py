@@ -26,6 +26,7 @@ class StepperCaps:
     dense_output: bool = False           # has continuous interpolation / dense output
     jacobian: JacobianPolicy = "none"    # how this impl uses external Jacobian
     jit_capable: bool = True             # can be jitted
+    requires_scipy: bool = False
     # future:
     # mass_matrix: bool = False
     # fsal: bool = False
@@ -58,14 +59,20 @@ StepperInfo = StepperMeta
 class StepperSpec(Protocol):
     """
     Abstract interface for stepper specs used by the build/codegen layer.
-    Implementations MUST:
-      - accept `meta: StepperMeta` in __init__
-      - provide `workspace_type() -> type | None` for NamedTuple layout
-      - provide `make_workspace(n_state, dtype, model_spec=None) -> object`
-      - provide `config_spec() -> type | None` (dataclass type for runtime config, or None)
-      - provide `default_config(model_spec=None)` (create default config instance)
-      - provide `pack_config(config) -> np.ndarray` (pack config to float64 array)
-      - provide `emit(rhs_fn, model_spec=None) -> Callable` that returns a jittable stepper function
+    
+    Implementations MUST provide:
+      - `meta: StepperMeta` attribute
+      - `__init__(meta)` constructor
+      - `workspace_type() -> type | None` for NamedTuple layout
+      - `make_workspace(n_state, dtype, model_spec=None) -> object`
+      - `emit(rhs_fn, model_spec=None) -> Callable` that returns a jittable stepper function
+    
+    For runtime configuration support, either:
+      1. Inherit from ConfigMixin and set `Config` class attribute (recommended), OR
+      2. Manually implement: config_spec(), default_config(), pack_config(), config_enum_maps()
+    
+    ConfigMixin provides automatic implementations based on a single Config declaration.
+    See steppers.config_base.ConfigMixin for usage examples.
     """
 
     meta: StepperMeta
@@ -83,27 +90,20 @@ class StepperSpec(Protocol):
         """
         Return dataclass type for runtime configuration, or None.
         
-        If None, stepper has no runtime config (e.g., fixed-step methods).
-        If a dataclass, it should contain only numeric fields (float/int).
+        NOTE: If using ConfigMixin, this is auto-implemented from Config attribute.
+        Only override manually if not using ConfigMixin.
         
-        Example:
-            @dataclass
-            class RK45Config:
-                atol: float = 1e-8
-                rtol: float = 1e-5
-                safety: float = 0.9
-                min_factor: float = 0.2
-                max_factor: float = 10.0
-                max_tries: int = 10
-                min_step: float = 1e-12
-            
-            return RK45Config
+        Returns:
+            Config dataclass type or None
         """
         ...
     
     def default_config(self, model_spec=None):
         """
         Create default config instance, optionally reading from model_spec.
+        
+        NOTE: If using ConfigMixin, this is auto-implemented.
+        Only override manually if not using ConfigMixin or need model_spec overrides.
         
         Args:
             model_spec: Optional ModelSpec to read defaults from
@@ -117,11 +117,32 @@ class StepperSpec(Protocol):
         """
         Pack config dataclass into float64 array.
         
+        NOTE: If using ConfigMixin, this is auto-implemented using pack_config_auto().
+        Only override manually if you need custom packing logic.
+        
         Args:
             config: Instance of config dataclass (or None)
         
         Returns:
             1D float64 array. Empty array if config is None.
+        """
+        ...
+    
+    def config_enum_maps(self) -> dict[str, dict[str, int]] | None:
+        """
+        Return string→int enum mappings for config fields (optional).
+        
+        NOTE: If using ConfigMixin, this is auto-implemented from Config.__enums__.
+        Only override manually if not using ConfigMixin.
+        
+        Returns:
+            Dict mapping field names to {string_value: int_code} dicts, or None.
+        
+        Example (in Config class):
+            @dataclass
+            class Config:
+                method: str = 'hybr'
+                __enums__ = {"method": {"hybr": 0, "lm": 1, "broyden1": 2}}
         """
         ...
     
