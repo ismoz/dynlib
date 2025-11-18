@@ -400,7 +400,7 @@ class Sim:
             if self._run_defaults.max_steps is not None:
                 max_steps = self._run_defaults.max_steps
             else:
-                max_steps = 100000
+                max_steps = sim_defaults.max_steps
 
         # capacities
         if cap_rec is None:
@@ -611,7 +611,7 @@ class Sim:
                     f"Simulation terminated after reaching max_steps ({max_steps}) steps. "
                     f"The target end time T={target_T} may not have been reached.",
                     RuntimeWarning,
-                    stacklevel=2,
+                    stacklevel=3,
                 )
             if self._time_shift != 0.0:
                 self._rebase_times(recorded_result, self._time_shift)

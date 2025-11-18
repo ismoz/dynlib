@@ -34,6 +34,7 @@ class SimDefaults:
     # Adaptive stepper tolerances (used by RK45, etc.)
     atol: float = 1e-8
     rtol: float = 1e-5
+    max_steps: int = 1_000_000
     _stepper_defaults: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
     def __post_init__(self):
@@ -116,7 +117,7 @@ def _build_tag_index(events: Tuple[EventSpec, ...]) -> Dict[str, Tuple[str, ...]
 
 
 _SIM_KNOWN_KEYS = frozenset(
-    {"t0", "t_end", "dt", "stepper", "record", "atol", "rtol"}
+    {"t0", "t_end", "dt", "stepper", "record", "atol", "rtol", "max_steps"}
 )
 
 
@@ -186,6 +187,7 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
         record=bool(sim_in.get("record", SimDefaults.record)),
         atol=float(sim_in.get("atol", SimDefaults.atol)),
         rtol=float(sim_in.get("rtol", SimDefaults.rtol)),
+        max_steps=int(sim_in.get("max_steps", SimDefaults.max_steps)),
         _stepper_defaults=sim_extras,
     )
 
@@ -291,6 +293,7 @@ def _json_canon(obj: Any) -> str:
                 "record": o.record,
                 "atol": o.atol,
                 "rtol": o.rtol,
+                "max_steps": o.max_steps,
             }
             stepper_defaults = dict(o.stepper_defaults())
             if stepper_defaults:

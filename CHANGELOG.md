@@ -2,6 +2,22 @@
 
 ---
 
+## [2.28.3] – 2025-11-19
+### Added
+- Added `bdf2a_scipy` stepper which is adaptive BDF2 solver based on scipy root solvers.
+
+### Tests
+- Added accuracy and contract tests for `bdf2a_scipy`.
+
+### Fixed
+- `bdf2` was underperforming according to the `accuracy_demo.py`. Added scale-aware residual bookkeeping 
+  and a correction-based convergence check to the Newton loop so the solver can no longer declare success 
+  while the update is still O(dt) in size; both BDF1 and BDF2 branches now track the largest state 
+  magnitude and require the max residual and the scaled correction to fall below newton_tol before exiting, 
+  which restores the intended second-order accuracy. This fixed its very low accuracy.
+
+---
+
 ## [2.28.2] – 2025-11-18
 ### Added
 - Added Van der Pol oscillator model and its example with jit-enabled `bdf2` stepper.

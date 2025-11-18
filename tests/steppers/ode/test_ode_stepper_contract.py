@@ -113,3 +113,12 @@ def test_stepper_registry_and_meta():
     assert getattr(bdf2_scipy.meta, "time_control", None) == "fixed"
     # Jacobian capability: internal numeric J, no external Jacobian API
     assert bdf2_scipy.meta.caps.jacobian == "internal"
+
+    bdf2a_scipy = get_stepper("bdf2a_scipy")
+    assert bdf2a_scipy.meta.name == "bdf2a_scipy"
+    # Second-order BDF
+    assert bdf2a_scipy.meta.order == 2
+    assert bdf2a_scipy.meta.embedded_order == 1
+    assert getattr(bdf2a_scipy.meta, "time_control", None) == "adaptive"
+    # Jacobian capability: internal numeric J, no external Jacobian API
+    assert bdf2a_scipy.meta.caps.jacobian == "internal"

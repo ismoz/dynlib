@@ -153,8 +153,6 @@ class BDF2JITSpec(ConfigMixin):
                     y_guess[i] = (4.0/3.0)*y_curr[i] - (1.0/3.0)*y_nm1[i] + (2.0/3.0)*dt * f_tmp[i]
 
             # ----------------- Newton loop (BDF1 or BDF2) -----------------
-            inv_dt = 1.0 / dt
-
             converged = False
 
             for it in range(newton_max_iter):
@@ -163,14 +161,25 @@ class BDF2JITSpec(ConfigMixin):
 
                 # residual and its max norm
                 max_r = 0.0
+                max_scale = 0.0
                 if step_idx == 0:
-                    # BDF1: F(y) = (y - y0)/dt - f
+                    # BDF1: F(y) = y - y0 - dt * f
                     for i in range(n):
-                        r_i = (y_guess[i] - y_curr[i]) * inv_dt - f_val[i]
+                        r_i = y_guess[i] - y_curr[i] - dt * f_val[i]
                         residual[i] = r_i
                         abs_r = r_i if r_i >= 0.0 else -r_i
                         if abs_r > max_r:
                             max_r = abs_r
+                        abs_y = y_guess[i]
+                        if abs_y < 0.0:
+                            abs_y = -abs_y
+                        if abs_y > max_scale:
+                            max_scale = abs_y
+                        abs_curr = y_curr[i]
+                        if abs_curr < 0.0:
+                            abs_curr = -abs_curr
+                        if abs_curr > max_scale:
+                            max_scale = abs_curr
                 else:
                     # BDF2: F(y) = y - (4/3)y_n + (1/3)y_{n-1} - (2/3)dt f
                     for i in range(n):
@@ -179,16 +188,26 @@ class BDF2JITSpec(ConfigMixin):
                         abs_r = r_i if r_i >= 0.0 else -r_i
                         if abs_r > max_r:
                             max_r = abs_r
+                        abs_y = y_guess[i]
+                        if abs_y < 0.0:
+                            abs_y = -abs_y
+                        if abs_y > max_scale:
+                            max_scale = abs_y
+                        abs_curr = y_curr[i]
+                        if abs_curr < 0.0:
+                            abs_curr = -abs_curr
+                        if abs_curr > max_scale:
+                            max_scale = abs_curr
+                        abs_prev = y_nm1[i]
+                        if abs_prev < 0.0:
+                            abs_prev = -abs_prev
+                        if abs_prev > max_scale:
+                            max_scale = abs_prev
 
                 # If residual contains NaN/Inf, bail out early instead of
                 # wasting work on Newton iterations with invalid data.
                 if not allfinite1d(residual):
                     return STEPFAIL
-
-                # Convergence check on max-norm of F
-                if max_r <= newton_tol:
-                    converged = True
-                    break
 
                 # Build Jacobian J = dF/dy, using numeric df/dy and adding diagonal term
                 for j in range(n):
@@ -212,13 +231,13 @@ class BDF2JITSpec(ConfigMixin):
                     inv_eps = 1.0 / eps
 
                     if step_idx == 0:
-                        # BDF1: F(y) = (y - y0)/dt - f
+                        # BDF1: F(y) = y - y0 - dt * f
                         for i in range(n):
                             df_ij = (f_tmp[i] - f_val[i]) * inv_eps
                             if i == j:
-                                J[i, j] = inv_dt - df_ij
+                                J[i, j] = 1.0 - dt * df_ij
                             else:
-                                J[i, j] = -df_ij
+                                J[i, j] = -dt * df_ij
                     else:
                         # BDF2: F(y) = y - (4/3)y_n + (1/3)y_{n-1} - (2/3)dt f
                         for i in range(n):
@@ -300,9 +319,25 @@ class BDF2JITSpec(ConfigMixin):
                     residual[i2] = sum_val / diag
                     i2 -= 1
 
-                # Update y_guess += delta (delta is in residual)
+                # Update y_guess += delta (delta is in residual) and track scaled correction
+                max_delta_scaled = 0.0
                 for i in range(n):
-                    y_guess[i] = y_guess[i] + residual[i]
+                    delta_i = residual[i]
+                    y_old = y_guess[i]
+                    y_guess[i] = y_old + delta_i
+
+                    abs_delta = delta_i if delta_i >= 0.0 else -delta_i
+                    abs_scale = y_old if y_old >= 0.0 else -y_old
+                    if abs_scale < 1.0:
+                        abs_scale = 1.0
+                    scaled = abs_delta / abs_scale
+                    if scaled > max_delta_scaled:
+                        max_delta_scaled = scaled
+
+                scale_tol = max_scale if max_scale > 1.0 else 1.0
+                if max_r <= newton_tol * scale_tol and max_delta_scaled <= newton_tol:
+                    converged = True
+                    break
 
             if not converged:
                 return STEPFAIL

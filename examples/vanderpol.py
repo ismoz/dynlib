@@ -10,7 +10,7 @@ sim = setup("builtin://ode/vanderpol",
             jit=True)
 
 sim.assign(mu=mu)
-sim.config(dt=5e-4, max_steps=6_500_000)
+sim.config(dt=5e-5, max_steps=6_500_000)
 sim.run(T=3000.0)
 res = sim.results()
 
