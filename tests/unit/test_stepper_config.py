@@ -1,7 +1,34 @@
+import dataclasses
+
 import numpy as np
+import pytest
+
 from dynlib.compiler.build import build
 from dynlib.runtime.sim import Sim
 from dynlib.runtime.model import Model
+from dynlib.steppers.registry import get_stepper
+
+
+def _make_sim(model_toml: str, *, stepper_override: str | None = None, jit: bool = False):
+    """Build a Sim + FullModel pair from inline TOML."""
+    full_model = build(f"inline: {model_toml}", stepper=stepper_override, jit=jit)
+    model = Model(
+        spec=full_model.spec,
+        stepper_name=full_model.stepper_name,
+        workspace_sig=full_model.workspace_sig,
+        rhs=full_model.rhs,
+        events_pre=full_model.events_pre,
+        events_post=full_model.events_post,
+        stepper=full_model.stepper,
+        runner=full_model.runner,
+        spec_hash=full_model.spec_hash,
+        dtype=full_model.dtype,
+        lag_state_info=full_model.lag_state_info,
+        uses_lag=full_model.uses_lag,
+        equations_use_lag=full_model.equations_use_lag,
+        make_stepper_workspace=full_model.make_stepper_workspace,
+    )
+    return Sim(model), full_model
 
 
 def test_rk45_runtime_config():
@@ -218,3 +245,163 @@ rtol = 1e-5
     err1 = abs(res1.Y[0, -1] - x_exact)
     err2 = abs(res2.Y[0, -1] - x_exact)
     assert err2 <= err1 + 1e-12
+
+
+def test_config_mixin_respects_model_sim_overrides():
+    """Model [sim] entries override stepper defaults while unspecified fields use DSL defaults."""
+    model_toml = """
+[model]
+type = "ode"
+
+[states]
+x = 1.0
+
+[params]
+a = 2.0
+
+[equations.rhs]
+x = "-a*x"
+
+[sim]
+t0 = 0.0
+t_end = 1.0
+dt = 0.05
+stepper = "rk45"
+record = true
+atol = 1e-4
+"""
+    sim, full_model = _make_sim(model_toml, jit=False)
+    rk45_spec = get_stepper("rk45")
+    cfg = rk45_spec.default_config(full_model.spec)
+    assert cfg.atol == pytest.approx(1e-4)
+    # rtol not provided in TOML, so it should fall back to the DSL default stored on ModelSpec.sim
+    assert cfg.rtol == pytest.approx(full_model.spec.sim.rtol)
+    np.testing.assert_allclose(sim.stepper_config(), rk45_spec.pack_config(cfg))
+
+
+def test_sim_overrides_ignored_when_stepper_changed():
+    """[sim] config entries are skipped if the runtime stepper has no config."""
+    model_toml = """
+[model]
+type = "ode"
+
+[states]
+x = 1.0
+
+[params]
+a = 1.0
+
+[equations.rhs]
+x = "-a*x"
+
+[sim]
+t0 = 0.0
+t_end = 0.5
+dt = 0.05
+stepper = "rk45"
+record = true
+atol = 1e-5
+"""
+    sim, _ = _make_sim(model_toml, stepper_override="euler", jit=False)
+    # The compiled model runs with Euler despite the DSL requesting rk45.
+    assert sim.model.stepper_name == "euler"
+    cfg = sim.stepper_config()
+    assert cfg.size == 0, "Euler should not expose a runtime config array"
+
+
+def test_user_partial_stepper_overrides_merge_with_model_defaults():
+    """User-provided kwargs should override only the named fields."""
+    model_toml = """
+[model]
+type = "ode"
+
+[states]
+x = 1.0
+
+[params]
+a = 2.0
+
+[equations.rhs]
+x = "-a*x"
+
+[sim]
+t0 = 0.0
+t_end = 1.0
+dt = 0.1
+stepper = "rk45"
+record = true
+rtol = 1e-5
+"""
+    sim, full_model = _make_sim(model_toml, jit=False)
+    rk45_spec = get_stepper("rk45")
+    base_cfg = rk45_spec.default_config(full_model.spec)
+    updated_cfg = dataclasses.replace(base_cfg, atol=1e-9)
+    expected = rk45_spec.pack_config(updated_cfg)
+    new_cfg = sim.stepper_config(atol=1e-9)
+    np.testing.assert_allclose(new_cfg, expected)
+    # Subsequent reads keep the stored overrides intact
+    np.testing.assert_allclose(sim.stepper_config(), expected)
+
+
+def test_sim_extra_numeric_defaults_feed_stepper_config():
+    """Unknown [sim] keys should pre-populate matching stepper config fields."""
+    model_toml = """
+[model]
+type = "ode"
+
+[states]
+x = 1.0
+
+[params]
+a = 1.0
+
+[equations.rhs]
+x = "-a*x"
+
+[sim]
+t0 = 0.0
+t_end = 1.0
+dt = 0.1
+stepper = "rk45"
+record = true
+safety = 0.45
+max_factor = 4.25
+"""
+    sim, full_model = _make_sim(model_toml, jit=False)
+    rk45_spec = get_stepper("rk45")
+    cfg = rk45_spec.default_config(full_model.spec)
+    assert cfg.safety == pytest.approx(0.45)
+    assert cfg.max_factor == pytest.approx(4.25)
+    np.testing.assert_allclose(sim.stepper_config(), rk45_spec.pack_config(cfg))
+
+
+def test_sim_extra_string_defaults_feed_stepper_config():
+    """String-valued extras should also map into stepper configs (with enums)."""
+    model_toml = """
+[model]
+type = "ode"
+
+[states]
+x = 1.0
+
+[params]
+a = 1.0
+
+[equations.rhs]
+x = "-a*x"
+
+[sim]
+t0 = 0.0
+t_end = 0.25
+dt = 0.05
+stepper = "rk45"
+record = true
+method = "broyden1"
+"""
+    _, full_model = _make_sim(model_toml, jit=False)
+    bdf2_spec = get_stepper("bdf2")
+    cfg = bdf2_spec.default_config(full_model.spec)
+    assert cfg.method == "broyden1"
+    packed = bdf2_spec.pack_config(cfg)
+    # tol, max_iter, method (enum encoded)
+    assert packed[2] == pytest.approx(2.0)

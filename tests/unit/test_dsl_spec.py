@@ -61,3 +61,18 @@ def test_invalid_numeric_string_raises():
     n["params"]["a"] = "foo"
     with pytest.raises(ModelLoadError):
         parse_model_v2(n)
+
+
+def test_sim_unknown_keys_preserved_and_hash_changes():
+    n = minimal_doc()
+    n["sim"]["safety"] = 0.9
+    n_parsed = parse_model_v2(n)
+    spec = build_spec(n_parsed)
+    assert hasattr(spec.sim, "safety")
+    assert spec.sim.safety == pytest.approx(0.9)
+
+    n_alt = minimal_doc()
+    n_alt["sim"]["safety"] = 0.95
+    spec_alt = build_spec(parse_model_v2(n_alt))
+    assert spec_alt.sim.safety == pytest.approx(0.95)
+    assert compute_spec_hash(spec_alt) != compute_spec_hash(spec)

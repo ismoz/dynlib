@@ -1,9 +1,10 @@
 # src/dynlib/dsl/spec.py
 from __future__ import annotations
-from dataclasses import dataclass
-from typing import Tuple, Dict, Any
+from dataclasses import dataclass, field
+from typing import Tuple, Dict, Any, Mapping
 import json
 import hashlib
+from types import MappingProxyType
 
 __all__ = [
     "SimDefaults",
@@ -33,6 +34,24 @@ class SimDefaults:
     # Adaptive stepper tolerances (used by RK45, etc.)
     atol: float = 1e-8
     rtol: float = 1e-5
+    _stepper_defaults: Mapping[str, Any] = field(default_factory=dict, repr=False)
+
+    def __post_init__(self):
+        object.__setattr__(
+            self,
+            "_stepper_defaults",
+            MappingProxyType(dict(self._stepper_defaults)),
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        step_defaults = object.__getattribute__(self, "_stepper_defaults")
+        if name in step_defaults:
+            return step_defaults[name]
+        raise AttributeError(name)
+
+    def stepper_defaults(self) -> Mapping[str, Any]:
+        """Return a read-only view of extra stepper configuration defaults."""
+        return object.__getattribute__(self, "_stepper_defaults")
 
 
 @dataclass(frozen=True)
@@ -96,6 +115,11 @@ def _build_tag_index(events: Tuple[EventSpec, ...]) -> Dict[str, Tuple[str, ...]
     return {tag: tuple(names) for tag, names in index.items()}
 
 
+_SIM_KNOWN_KEYS = frozenset(
+    {"t0", "t_end", "dt", "stepper", "record", "atol", "rtol"}
+)
+
+
 def build_spec(normal: Dict[str, Any]) -> ModelSpec:
     # VALIDATE BEFORE PARSING
     from .astcheck import (
@@ -151,6 +175,9 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
     )
 
     sim_in = normal.get("sim", {})
+    sim_extras = {
+        key: value for key, value in sim_in.items() if key not in _SIM_KNOWN_KEYS
+    }
     sim = SimDefaults(
         t0=float(sim_in.get("t0", SimDefaults.t0)),
         t_end=float(sim_in.get("t_end", SimDefaults.t_end)),
@@ -159,6 +186,7 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
         record=bool(sim_in.get("record", SimDefaults.record)),
         atol=float(sim_in.get("atol", SimDefaults.atol)),
         rtol=float(sim_in.get("rtol", SimDefaults.rtol)),
+        _stepper_defaults=sim_extras,
     )
 
     presets = tuple(
@@ -255,7 +283,7 @@ def _json_canon(obj: Any) -> str:
                 "tags": list(o.tags),
             }
         if isinstance(o, SimDefaults):
-            return {
+            base = {
                 "t0": o.t0,
                 "t_end": o.t_end,
                 "dt": o.dt,
@@ -264,6 +292,10 @@ def _json_canon(obj: Any) -> str:
                 "atol": o.atol,
                 "rtol": o.rtol,
             }
+            stepper_defaults = dict(o.stepper_defaults())
+            if stepper_defaults:
+                base["stepper_defaults"] = stepper_defaults
+            return base
         if isinstance(o, tuple):
             return list(o)
         return o

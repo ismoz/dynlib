@@ -2,6 +2,22 @@
 
 ---
 
+## [2.28.1] – 2025-11-18
+### Added
+- Added support for extra stepper configuration defaults in the [sim] section of model files. Previously 
+  only hardcoded rtol/atol values were handled as [sim] stepper config values. Now unknown keys in [sim] 
+  are stored as stepper defaults and used when building stepper configurations. The precedence is still 
+  as in v2.28.0. [sim] stepper config values are not used if user overrides the stepper. Not all configs 
+  should be listed. The stepper defaults are applied for the ones not provided.
+
+### Changed
+- Updated `SimDefaults` class to handle extra stepper configuration keys dynamically.
+
+### Tests
+- Added tests for stepper config handling, including runtime overrides, model defaults, and extra sim keys.
+
+---
+
 ## [2.28.0] – 2025-11-18
 ### Added
 - Introduced `ConfigMixin` base class in `config_base.py` for automatic stepper configuration handling. 
