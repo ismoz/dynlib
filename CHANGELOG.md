@@ -2,6 +2,22 @@
 
 ---
 
+## [2.28.2] – 2025-11-18
+### Added
+- Added Van der Pol oscillator model and its example with jit-enabled `bdf2` stepper.
+- Added a warning when `max_steps` is hit by the runners.
+- Added `accuracy_demo.py` to examples for comparing errors of ode steppers against known models.
+
+### Changed
+- Renamed `bdf2_jit` -> `bdf2` and `bdf2` -> `bdf2_scipy` because jittable custom bdf implementation is 
+  way faster than minpack-based scipy solver and its accuracy is similar. I will treat jittable BDF2 
+  implementation as the main BDF stepper.
+
+### Tests
+- Added accuracy and contract tests for `bdf2_scipy`.
+
+---
+
 ## [2.28.1] – 2025-11-18
 ### Added
 - Added support for extra stepper configuration defaults in the [sim] section of model files. Previously 

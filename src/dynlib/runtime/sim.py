@@ -606,6 +606,13 @@ class Sim:
         )
         try:
             self._ensure_runner_done(recorded_result, phase="recorded run")
+            if not is_discrete and recorded_result.step_count_final >= max_steps:
+                warnings.warn(
+                    f"Simulation terminated after reaching max_steps ({max_steps}) steps. "
+                    f"The target end time T={target_T} may not have been reached.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
             if self._time_shift != 0.0:
                 self._rebase_times(recorded_result, self._time_shift)
             self._session_state = self._state_from_results(
