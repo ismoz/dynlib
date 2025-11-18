@@ -79,34 +79,25 @@ __all__ = [
 # Import guards from centralized module for pure Python mode
 # When JIT-compiled, guards are inlined in the rendered source
 from dynlib.compiler.guards import allfinite1d as _allfinite1d_py, allfinite_scalar as _allfinite_scalar_py
+from dynlib.runtime.softdeps import softdeps
 
-# For in-memory JIT compilation (when disk cache unavailable), we need
-# numba-compatible versions at module level
-try:
-    from numba import njit
+_SOFTDEPS = softdeps()
+_NUMBA_AVAILABLE = _SOFTDEPS.numba
+_NUMBA_VERSION = _SOFTDEPS.numba_version
+_LLVMLITE_VERSION = _SOFTDEPS.llvmlite_version
+
+if _NUMBA_AVAILABLE:
+    from numba import njit  # type: ignore
+
     # Pre-compile guards for in-memory JIT fallback
     allfinite1d = njit(inline='always')(_allfinite1d_py)
     allfinite_scalar = njit(inline='always')(_allfinite_scalar_py)
-except ImportError:
+    import numba  # type: ignore
+else:
     # Numba not available, use pure Python versions
     allfinite1d = _allfinite1d_py
     allfinite_scalar = _allfinite_scalar_py
-
-try:
-    import numba  # type: ignore
-    _NUMBA_AVAILABLE = True
-    _NUMBA_VERSION = getattr(numba, "__version__", "unknown")
-except Exception:
     numba = None  # type: ignore
-    _NUMBA_AVAILABLE = False
-    _NUMBA_VERSION = None
-
-try:
-    import llvmlite  # type: ignore
-    _LLVMLITE_VERSION = getattr(llvmlite, "__version__", "unknown")
-except Exception:
-    llvmlite = None  # type: ignore
-    _LLVMLITE_VERSION = None
 
 
 def _discover_dynlib_version() -> str:

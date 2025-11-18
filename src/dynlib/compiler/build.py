@@ -19,10 +19,13 @@ from dynlib.compiler.jit.cache import JITCache, CacheKey
 from dynlib.compiler.paths import resolve_uri, load_config, PathConfig, resolve_cache_root
 from dynlib.compiler.mods import apply_mods_v2, ModSpec
 from dynlib.compiler.guards import get_guards, configure_guards_disk_cache
+from dynlib.errors import ModelLoadError, StepperKindMismatchError
 from dynlib.runtime.workspace import (
     make_runtime_workspace,
     workspace_structsig,
 )
+from dynlib.runtime.softdeps import softdeps
+from dynlib.runtime.stepper_checks import check_stepper
 
 
 def _format_toml_parse_error(toml_content: str, error: Exception, source_desc: str = "inline model") -> str:
@@ -91,7 +94,7 @@ def _format_toml_parse_error(toml_content: str, error: Exception, source_desc: s
         context_lines.append("Hint: Check for typos or invalid TOML syntax")
     
     return "\n".join(context_lines)
-from dynlib.errors import ModelLoadError, StepperKindMismatchError
+
 
 __all__ = ["CompiledPieces", "build_callables", "FullModel", "build", "load_model_from_uri", "export_model_sources"]
 
@@ -665,6 +668,15 @@ def build(
             stepper_kind=stepper_spec.meta.kind,
             model_kind=spec.kind
         )
+
+    deps = softdeps()
+    check_stepper(
+        stepper_name=stepper_name,
+        jit=bool(jit),
+        dtype=dtype_np,
+        stepper_spec=stepper_spec,
+        deps=deps,
+    )
     
     lag_state_info_list = _compute_lag_state_info(spec)
     runtime_ws_template = make_runtime_workspace(

@@ -10,6 +10,7 @@ __all__ = [
     "PathTraversalError",
     "AmbiguousModelError",
     "StepperKindMismatchError",
+    "StepperJitCapabilityError",
 ]
 
 class DynlibError(Exception):
@@ -76,4 +77,15 @@ class StepperKindMismatchError(DynlibError):
         self.model_kind = model_kind
         msg = f"Stepper '{stepper_name}' (kind='{stepper_kind}') is incompatible with model kind '{model_kind}'\n"
         msg += f"Please choose a stepper that supports '{model_kind}' models."
+        super().__init__(msg)
+
+
+class StepperJitCapabilityError(DynlibError):
+    """Raised when build() requires jit but the stepper cannot be jitted."""
+    def __init__(self, stepper_name: str):
+        self.stepper_name = stepper_name
+        msg = (
+            f"Stepper '{stepper_name}' is not jit capable. "
+            "Please choose another stepper or disable jit."
+        )
         super().__init__(msg)

@@ -25,6 +25,7 @@ class StepperCaps:
     """
     dense_output: bool = False           # has continuous interpolation / dense output
     jacobian: JacobianPolicy = "none"    # how this impl uses external Jacobian
+    jit_capable: bool = True             # can be jitted
     # future:
     # mass_matrix: bool = False
     # fsal: bool = False

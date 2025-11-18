@@ -1,8 +1,11 @@
 # src/dynlib/compiler/jit/compile.py
 from __future__ import annotations
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Callable, Optional, Tuple
 import warnings
+
+from dynlib.runtime.softdeps import softdeps
 
 # JIT toggle applied *only here*.
 # If numba missing or jit=False, we return original Python callables.
@@ -17,12 +20,12 @@ class JittedCallable:
     cache_hit: bool
     component: Optional[str] = None
 
-try:
-    from numba import njit
-    _NUMBA_OK = True
-except Exception:
-    _NUMBA_OK = False
-    njit = None  # type: ignore
+
+@lru_cache(maxsize=1)
+def _get_njit():
+    from numba import njit  # type: ignore
+
+    return njit
 
 def jit_compile(fn: Callable, *, jit: bool = True, cache: bool = False) -> JittedCallable:
     """
@@ -46,7 +49,8 @@ def jit_compile(fn: Callable, *, jit: bool = True, cache: bool = False) -> Jitte
     if not jit:
         return JittedCallable(fn=fn, cache_digest=None, cache_hit=False, component=None)
     
-    if not _NUMBA_OK:
+    deps = softdeps()
+    if not deps.numba:
         # Numba not installed: graceful fallback with warning
         warnings.warn(
             "Numba not found; falling back to pure Python (slower). "
@@ -63,6 +67,7 @@ def jit_compile(fn: Callable, *, jit: bool = True, cache: bool = False) -> Jitte
     
     # Numba is installed; attempt compilation
     try:
+        njit = _get_njit()
         compiled = njit(cache=False)(fn)
         return JittedCallable(
             fn=compiled,

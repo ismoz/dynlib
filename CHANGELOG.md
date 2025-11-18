@@ -2,6 +2,26 @@
 
 ---
 
+## [2.27.2] – 2025-11-18
+### Added
+- Added `jit_capable` flag to `StepperCaps` to specify if a stepper supports JIT compilation.
+- Introduced `softdeps.py` module for centralized detection of optional dependencies like numba and 
+  scipy.
+- Added `stepper_checks.py` module to validate stepper capabilities and dependencies before building 
+  models.
+- New `StepperJitCapabilityError` exception raised when requesting JIT for incompatible steppers.
+
+### Changed
+- Updated `build()` function to perform stepper capability checks, ensuring compatibility with 
+  requested options.
+- Refactored dependency detection in `guards.py`, `jit/compile.py`, `runner.py`, and 
+  `runner_discrete.py` to use the centralized `softdeps` system.
+
+### Tests
+- Added `test_stepper_jit_capability.py` to test JIT capability validation and error handling.
+
+---
+
 ## [2.27.1] – 2025-11-17
 ### Changed
 - Improved BDF2_JIT stepper by adding checks for NaN/Inf values during calculations to exit early in 

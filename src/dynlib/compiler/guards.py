@@ -20,6 +20,8 @@ import warnings
 import textwrap
 import inspect
 
+from dynlib.runtime.softdeps import softdeps
+
 __all__ = [
     "allfinite1d",
     "allfinite_scalar",
@@ -124,11 +126,12 @@ def _consume_guards_cache_request() -> Optional[_GuardsCacheRequest]:
 # Guards factory with JIT toggle and disk cache
 # ============================================================================
 
-try:
-    from numba import njit
-    _NUMBA_AVAILABLE = True
-except ImportError:
-    _NUMBA_AVAILABLE = False
+_SOFTDEPS = softdeps()
+_NUMBA_AVAILABLE = _SOFTDEPS.numba
+
+if _NUMBA_AVAILABLE:
+    from numba import njit  # type: ignore
+else:
     njit = None  # type: ignore
 
 
