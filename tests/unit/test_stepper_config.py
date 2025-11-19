@@ -394,12 +394,12 @@ x = "-a*x"
 t0 = 0.0
 t_end = 0.25
 dt = 0.05
-stepper = "rk45"
+stepper = "bdf2_scipy"
 record = true
 method = "broyden1"
 """
-    _, full_model = _make_sim(model_toml, jit=False)
-    bdf2_spec = get_stepper("bdf2")
+    sim, full_model = _make_sim(model_toml, jit=False)
+    bdf2_spec = get_stepper("bdf2_scipy")
     cfg = bdf2_spec.default_config(full_model.spec)
     assert cfg.method == "broyden1"
     packed = bdf2_spec.pack_config(cfg)

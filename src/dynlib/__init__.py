@@ -5,13 +5,8 @@ from __future__ import annotations
 from dynlib.runtime.runner_api import (
     Status, OK, STEPFAIL, NAN_DETECTED, DONE, GROW_REC, GROW_EVT, USER_BREAK,
 )
-from .runtime.types import Kind, TimeCtrl, Scheme
 
-from .steppers.base import (
-    StepperMeta, StepperInfo, StepperSpec,
-)
-from .steppers.registry import register, get_stepper, registry
-
+from .steppers.registry import register, get_stepper, registry, select_steppers, list_steppers
 from .compiler.build import build
 from .runtime.sim import Sim
 
@@ -24,7 +19,7 @@ __all__ = [
     # Results
     "Results",
     # Stepper registry
-    "list_steppers", "get_stepper_info",
+    "list_steppers", "select_steppers", "get_stepper", "register", "registry",
 ]
 
 

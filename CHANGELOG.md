@@ -2,6 +2,19 @@
 
 ---
 
+## [2.28.5] – 2025-11-19
+### Added
+- Added `select_steppers()` function to filter steppers by metadata fields like kind, scheme, jit_capable, 
+  etc.
+- Added `list_steppers()` function to get a list of stepper names matching filter criteria.
+- Added `validation/` folder with `ode_steppers_dt_sweep.py` script for benchmarking ODE stepper accuracy 
+  across different time steps.
+
+### Tests
+- Fixed stepper name in `test_stepper_config.py` test to use a stepper with model config key.
+
+---
+
 ## [2.28.4] – 2025-11-19
 ### Added
 - Added `state()` and `param()` methods to `Sim` class for accessing individual state and parameter 

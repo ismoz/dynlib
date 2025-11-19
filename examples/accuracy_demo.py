@@ -1,7 +1,6 @@
 import numpy as np
 import warnings
-from dynlib import setup
-from dynlib.steppers import registry
+from dynlib import setup, list_steppers, get_stepper
 
 # Suppress RuntimeWarnings to avoid cluttering output with solver convergence messages
 warnings.simplefilter("ignore", RuntimeWarning)
@@ -57,13 +56,7 @@ T = 10  # total time
 dt = 1e-4  # time step
 N = int(T / dt)  # number of steps
 
-# Get unique ODE steppers (avoiding aliases)
-unique_steppers = {}
-for name, spec in registry().items():
-    if spec.meta.kind == "ode" and spec not in unique_steppers:
-        unique_steppers[spec] = name
-
-ode_steppers = unique_steppers
+ode_steppers = list_steppers(kind="ode")
 
 for model_info in models:
     model_name = model_info["name"]
@@ -76,7 +69,8 @@ for model_info in models:
     errors = {}
     failed_steppers = {}
     
-    for spec, name in ode_steppers.items():
+    for name in ode_steppers:
+        spec = get_stepper(name)
         try:        
             print(f"Running simulation with stepper: {name}")
             
