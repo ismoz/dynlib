@@ -2,6 +2,18 @@
 
 ---
 
+## [2.28.6] – 2025-11-19
+### Added
+- Added `bdf2a` stepper, an adaptive BDF2 method with variable step size for stiff ODEs.
+- Added `tr-bdf2a` stepper, an adaptive TR-BDF2 method combining trapezoidal rule and BDF2 for better 
+  stability. It is not optimized, I might optimize it in the next version if it is feasible.
+
+### Changed
+- Improved RK45 stepper performance by moving k1 computation outside the adaptive retry loop.
+- Renamed `StepperMeta` `stiff_ok` key to `stiff`.
+
+---
+
 ## [2.28.5] – 2025-11-19
 ### Added
 - Added `select_steppers()` function to filter steppers by metadata fields like kind, scheme, jit_capable, 

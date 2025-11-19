@@ -49,7 +49,7 @@ class MapSpec(ConfigMixin):
                 family="iter",
                 order=1,
                 embedded_order=None,
-                stiff_ok=False,
+                stiff=False,
                 aliases=("iter", "discrete"),
         )
         self.meta = meta

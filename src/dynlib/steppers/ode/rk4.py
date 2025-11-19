@@ -44,7 +44,7 @@ class RK4Spec(ConfigMixin):
                 family="runge-kutta",
                 order=4,
                 embedded_order=None,
-                stiff_ok=False,
+                stiff=False,
                 aliases=("rk4_classic", "classical_rk4"),
             )
         self.meta = meta

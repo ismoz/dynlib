@@ -48,7 +48,7 @@ class StepperMeta:
     family: str = ""
     order: int = 1
     embedded_order: int | None = None
-    stiff_ok: bool = False               # fundamental: intended for stiff use?
+    stiff: bool = False               # fundamental: intended for stiff use?
     aliases: tuple[str, ...] = ()
     caps: StepperCaps = field(default_factory=StepperCaps)
 

@@ -61,7 +61,7 @@ class RK45Spec(ConfigMixin):
                 family="runge-kutta",
                 order=5,
                 embedded_order=4,
-                stiff_ok=False,
+                stiff=False,
                 aliases=("dopri5", "dormand_prince"),
             )
         self.meta = meta
@@ -205,25 +205,24 @@ class RK45Spec(ConfigMixin):
                 max_tries = default_max_tries
                 min_step = default_min_step
             
+            if max_tries < 1:
+                max_tries = 1
+
+            # Stage 1: k1 = f(t, y) is independent of h.
+            # Compute it once outside the retry loop.
+            rhs(t, y_curr, k1, params, runtime_ws)
+            if not allfinite1d(k1):
+                # If f(t, y) itself is non-finite, reducing h won't help.
+                # Treat this as a hard failure.
+                err_est[0] = float("inf")
+                return STEPFAIL
+
             # Adaptive loop: keep trying until accept or fail
             h = dt
             error = float("inf")
-
-            if max_tries < 1:
-                max_tries = 1
             
             for attempt in range(max_tries):
-                # Stage 1: k1 = f(t, y)
-                rhs(t, y_curr, k1, params, runtime_ws)
-                if not allfinite1d(k1):
-                    error = float("inf")
-                    if h <= min_step:
-                        err_est[0] = error
-                        return STEPFAIL
-                    h = h * min_factor
-                    if h < min_step:
-                        h = min_step
-                    continue
+                # k1 already computed outside the loop for this (t, y_curr)
 
                 # Stage 2: k2 = f(t + c2*h, y + h*(a21*k1))
                 for i in range(n):

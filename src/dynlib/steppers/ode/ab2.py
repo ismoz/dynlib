@@ -48,7 +48,7 @@ class AB2Spec(ConfigMixin):
                 family="adams-bashforth",
                 order=2,
                 embedded_order=None,
-                stiff_ok=False,
+                stiff=False,
                 aliases=("adams_bashforth_2",),
             )
         self.meta = meta

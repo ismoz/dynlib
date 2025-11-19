@@ -201,7 +201,7 @@ family: str
 order: int
 embedded_order: int | None
 dense_output: bool
-stiff_ok: bool
+stiff: bool
 aliases: tuple[str, ...]
 ```
 

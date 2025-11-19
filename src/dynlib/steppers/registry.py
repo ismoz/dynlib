@@ -89,7 +89,7 @@ def select_steppers(
 
     Usage:
         select_steppers(kind="ode", scheme="implicit")
-        select_steppers(stiff_ok=True, jit_capable=True)
+        select_steppers(stiff=True, jit_capable=True)
         select_steppers(family="bdf", requires_scipy=True)
 
     Args:

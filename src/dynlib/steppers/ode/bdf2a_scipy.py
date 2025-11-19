@@ -77,7 +77,7 @@ class BDF2AdaptiveScipySpec(ConfigMixin):
                 family="bdf",
                 order=2,
                 embedded_order=1,  # BDF1 used as embedded method
-                stiff_ok=True,
+                stiff=True,
                 aliases=("bdf2_adaptive_scipy",),
                 caps=StepperCaps(
                     jacobian="internal",

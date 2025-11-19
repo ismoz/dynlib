@@ -59,7 +59,7 @@ class AB3Spec(ConfigMixin):
                 family="adams-bashforth",
                 order=3,
                 embedded_order=None,
-                stiff_ok=False,
+                stiff=False,
                 aliases=("adams_bashforth_3",),
             )
         self.meta = meta

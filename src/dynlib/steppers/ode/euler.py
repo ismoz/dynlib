@@ -41,7 +41,7 @@ class EulerSpec(ConfigMixin):
                 family="euler",
                 order=1,
                 embedded_order=None,
-                stiff_ok=False,
+                stiff=False,
                 aliases=("fwd_euler", "forward_euler"),
             )
         self.meta = meta

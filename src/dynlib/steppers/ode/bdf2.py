@@ -64,7 +64,7 @@ class BDF2JITSpec(ConfigMixin):
                 family="bdf",
                 order=2,
                 embedded_order=None,
-                stiff_ok=True,
+                stiff=True,
                 aliases=("bdf2_jit",),
                 caps=StepperCaps(
                     dense_output=False,

@@ -62,7 +62,7 @@ class BDF2ScipySpec(ConfigMixin):
                 family="bdf",
                 order=2,
                 embedded_order=None,
-                stiff_ok=True,
+                stiff=True,
                 aliases=("bdf2_root",),
                 caps=StepperCaps(
                     jacobian="internal",
