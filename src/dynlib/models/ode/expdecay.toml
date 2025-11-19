@@ -1,0 +1,15 @@
+# Simple exponential decay model: dx/dt = -a*x
+# Analytic solution: x(t) = x0 * exp(-a*t)
+
+[model]
+type = "ode"
+label = "Exponential Decay"
+
+[states]
+x = 1.0
+
+[params]
+a = 1.0
+
+[equations.rhs]
+x = "-a * x"

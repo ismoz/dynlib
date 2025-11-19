@@ -238,9 +238,40 @@ def runner(
             EVT_INDEX[m] = (i - 1) if i > 0 else -1
             m += 1
         
-        # 2. Clip dt to avoid overshooting t_end
+        # 2. Check for completion and handle endpoint clipping
+        remaining = t_end - t
+        
+        # If we've reached or passed t_end, we're done
+        if remaining <= 0.0:
+            i_out[0] = i
+            step_out[0] = step
+            t_out[0] = t
+            status_out[0] = DONE
+            hint_out[0] = m
+            return DONE
+        
+        # If we would overshoot, clip dt to exact endpoint
         if t + dt > t_end:
-            dt = t_end - t
+            dt = remaining
+            # If the clipped dt is too small relative to the original step,
+            # it suggests we're at the endpoint due to rounding - snap and exit
+            if dt < 0.5 * dt_init:
+                t = t_end
+                i_out[0] = i
+                step_out[0] = step
+                t_out[0] = t
+                status_out[0] = DONE
+                hint_out[0] = m
+                return DONE
+        
+        # Sanity check: if dt became too small in absolute terms, we're done
+        if dt < 1e-14:
+            i_out[0] = i
+            step_out[0] = step
+            t_out[0] = t
+            status_out[0] = DONE
+            hint_out[0] = m
+            return DONE
         
         # 3. Stepper attempt (fixed-step: single call; adaptive may loop internally)
         step_status = stepper(

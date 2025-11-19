@@ -34,7 +34,7 @@ u = u + d
 """
 '''
 
-T = 1.0e6
+T = 1000
 
 with Timer("build model"):
     model = build(DSL, stepper="euler", jit=False, dtype="float32")

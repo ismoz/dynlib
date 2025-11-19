@@ -19,12 +19,14 @@ from dynlib.runtime.runner_api import OK, STEPFAIL
 # Import guards for NaN/Inf detection
 # When jit=False, this makes allfinite1d available in the closure
 # When jit=True, the stepper source is rendered with guards inlined
-from dynlib.compiler.guards import allfinite1d, allfinite_scalar
+from dynlib.compiler.guards import allfinite1d, allfinite_scalar, register_guards_consumer
 
 if TYPE_CHECKING:
     from typing import Callable
 
 __all__ = ["RK45Spec"]
+
+register_guards_consumer(globals())
 
 
 class RK45Spec(ConfigMixin):

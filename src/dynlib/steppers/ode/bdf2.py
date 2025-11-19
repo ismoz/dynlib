@@ -6,7 +6,7 @@ import numpy as np
 
 from ..base import StepperMeta, StepperCaps
 from dynlib.runtime.runner_api import OK, STEPFAIL
-from dynlib.compiler.guards import allfinite1d
+from dynlib.compiler.guards import allfinite1d, register_guards_consumer
 from ..config_base import ConfigMixin
 
 if TYPE_CHECKING:
@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 
 
 __all__ = ["BDF2JITSpec"]
+
+register_guards_consumer(globals(), mapping={"allfinite1d": "allfinite1d"})
 
 
 class BDF2JITSpec(ConfigMixin):
@@ -342,13 +344,17 @@ class BDF2JITSpec(ConfigMixin):
             if not converged:
                 return STEPFAIL
 
-            # Accept step: y_prop <- y_guess
-            for i in range(n):
-                y_prop[i] = y_guess[i]
-
-            # Rotate history: y_nm1 <- current committed y_n (y_curr)
+            # Rotate history FIRST: y_nm1 <- current committed y_n (y_curr).
+            # This must happen before we write to y_prop, because y_curr and
+            # y_prop may alias (share the same underlying buffer) in the
+            # runtime. If we wrote y_prop first, y_curr would also contain
+            # y_{n+1}, and we'd lose y_n needed for the next BDF2 step.
             for i in range(n):
                 y_nm1[i] = y_curr[i]
+
+            # Accept step: y_prop <- y_guess (may alias y_curr)
+            for i in range(n):
+                y_prop[i] = y_guess[i]
 
             t_prop[0] = t_new
             dt_next[0] = dt

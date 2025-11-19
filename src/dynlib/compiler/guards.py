@@ -27,6 +27,7 @@ __all__ = [
     "allfinite_scalar",
     "get_guards",
     "configure_guards_disk_cache",
+    "register_guards_consumer",
     "_render_guards_inline_source",
 ]
 
@@ -67,6 +68,50 @@ def allfinite_scalar(val):
         for zero overhead in hot loops.
     """
     return not (math.isnan(val) or math.isinf(val))
+
+
+_current_allfinite1d = allfinite1d
+_current_allfinite_scalar = allfinite_scalar
+_guard_consumers: list[tuple[dict[str, object], dict[str, str]]] = []
+
+
+def register_guards_consumer(
+    namespace: dict[str, object],
+    *,
+    mapping: Optional[dict[str, str]] = None,
+) -> None:
+    """
+    Register a module namespace so guard updates propagate to existing steppers.
+
+    Args:
+        namespace: Module globals where guard names live.
+        mapping: Optional mapping from guard identifiers to namespace keys.
+                 Defaults to {"allfinite1d": "allfinite1d",
+                              "allfinite_scalar": "allfinite_scalar"}.
+    """
+    if mapping is None:
+        mapping = {
+            "allfinite1d": "allfinite1d",
+            "allfinite_scalar": "allfinite_scalar",
+        }
+    _guard_consumers.append((namespace, mapping))
+    _install_guard_consumers(_current_allfinite1d, _current_allfinite_scalar)
+
+
+def _install_guard_consumers(allfinite1d_fn, allfinite_scalar_fn) -> None:
+    """Update registered namespaces with the active guard functions."""
+    global _current_allfinite1d, _current_allfinite_scalar
+    _current_allfinite1d = allfinite1d_fn
+    _current_allfinite_scalar = allfinite_scalar_fn
+
+    for namespace, mapping in _guard_consumers:
+        target_1d = mapping.get("allfinite1d")
+        if target_1d and target_1d in namespace:
+            namespace[target_1d] = allfinite1d_fn
+
+        target_scalar = mapping.get("allfinite_scalar")
+        if target_scalar and target_scalar in namespace:
+            namespace[target_scalar] = allfinite_scalar_fn
 
 
 # ============================================================================
@@ -162,7 +207,9 @@ def get_guards(*, jit: bool = True, disk_cache: bool = True) -> tuple[Callable, 
         - Guards are cached per (spec_hash, stepper_name, dtype) tuple
     """
     if not jit:
-        return allfinite1d, allfinite_scalar
+        result = (allfinite1d, allfinite_scalar)
+        _install_guard_consumers(*result)
+        return result
     
     if not _NUMBA_AVAILABLE:
         warnings.warn(
@@ -171,12 +218,16 @@ def get_guards(*, jit: bool = True, disk_cache: bool = True) -> tuple[Callable, 
             RuntimeWarning,
             stacklevel=2,
         )
-        return allfinite1d, allfinite_scalar
+        result = (allfinite1d, allfinite_scalar)
+        _install_guard_consumers(*result)
+        return result
     
     # Check in-process cache first
     cache_key = f"guards:jit={jit}:disk={disk_cache}"
     if cache_key in _inproc_guards_cache:
-        return _inproc_guards_cache[cache_key]
+        result = _inproc_guards_cache[cache_key]
+        _install_guard_consumers(*result)
+        return result
     
     # Disk cache not implemented yet (guards are simple enough that
     # in-process cache + inline compilation is sufficient)
@@ -188,7 +239,7 @@ def get_guards(*, jit: bool = True, disk_cache: bool = True) -> tuple[Callable, 
     
     result = (allfinite1d_jit, allfinite_scalar_jit)
     _inproc_guards_cache[cache_key] = result
-    
+    _install_guard_consumers(*result)
     return result
 
 

@@ -30,7 +30,6 @@ except ImportError:  # pragma: no cover
 
 __all__ = ["Sim"]
 
-
 # ------------------------------- data records ---------------------------------
 
 WorkspaceSnapshot = Dict[str, Dict[str, object]]
@@ -324,6 +323,11 @@ class Sim:
             and callable(self.model.runner)
             and callable(self.model.stepper)
         )
+
+    @property
+    def stepper(self):
+        """Access the stepper specification object."""
+        return self._stepper_spec
 
     def run(
         self,
@@ -1045,6 +1049,47 @@ class Sim:
         """
         arr = self.param_vector(source=source, snapshot=snapshot, copy=False)
         return {name: float(arr[i]) for i, name in enumerate(self.model.spec.params)}
+
+    def state(self, name: str) -> float:
+        """
+        Return current session state value by name (scalar float).
+
+        Example:
+            >>> sim.run(T=100, record=False)
+            >>> v_final = sim.state("v")
+        """
+        names = list(self.model.spec.states)
+        idx = {n: i for i, n in enumerate(names)}
+        if name in idx:
+            return float(self._session_state.y_curr[idx[name]])
+
+        suggestion = _did_you_mean(name, names)
+        if suggestion:
+            raise KeyError(
+                f"Unknown state {name!r}. Did you mean {suggestion!r}? "
+                f"Valid states: {names}"
+            )
+        raise KeyError(f"Unknown state {name!r}. Valid states: {names}")
+
+    def param(self, name: str) -> float:
+        """
+        Return current session parameter value by name (scalar float).
+
+        Example:
+            >>> I = sim.param("I")
+        """
+        names = list(self.model.spec.params)
+        idx = {n: i for i, n in enumerate(names)}
+        if name in idx:
+            return float(self._session_state.params_curr[idx[name]])
+
+        suggestion = _did_you_mean(name, names)
+        if suggestion:
+            raise KeyError(
+                f"Unknown param {name!r}. Did you mean {suggestion!r}? "
+                f"Valid params: {names}"
+            )
+        raise KeyError(f"Unknown param {name!r}. Valid params: {names}")
 
     def can_resume(self) -> tuple[bool, Optional[str]]:
         """Return (bool, reason) describing whether resume() may be invoked safely."""

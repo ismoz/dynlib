@@ -705,6 +705,9 @@ def build(
         cache_root=cache_root_path,
         disk_cache=disk_cache,
     )
+
+    # Guards must be ready before JIT compilation so steppers see the updated symbols.
+    guards_tuple = get_guards(jit=jit, disk_cache=False)  # disk cache unnecessary (inline functions)
     
     stepper_cache_key = f"{pieces.spec_hash}:{stepper_name}:{jit}"
     stepper_entry = _stepper_cache.get(stepper_cache_key)
@@ -776,10 +779,6 @@ def build(
             disk_cache=disk_cache,
         )
 
-    # Get guards (NaN/Inf detection utilities)
-    # Guards follow the same JIT toggle as other components
-    guards_tuple = get_guards(jit=jit, disk_cache=False)  # disk_cache for guards not needed (inline functions)
-    
     def _all_compiled() -> bool:
         return all(
             _dispatcher_compiled(obj)

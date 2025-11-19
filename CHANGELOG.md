@@ -2,6 +2,30 @@
 
 ---
 
+## [2.28.4] – 2025-11-19
+### Added
+- Added `state()` and `param()` methods to `Sim` class for accessing individual state and parameter 
+  values by name.
+- Added `stepper` property to `Sim` class to access the stepper specification.
+- Added a simple exponential decay model (`expdecay.toml`) as a builtin example.
+
+### Changed
+- Moved guards configuration earlier in `build()` to ensure guards are ready before JIT compilation.
+- Updated `get_guards()` to install guard consumers automatically.
+
+### Fixed
+- `jit=True` and `disk_cache=False` combination was raising nopython errors for NaN/Inf guards (like 
+  allfinite1d). Added `register_guards_consumer` function in `guards.py` to allow guards to update 
+  existing stepper namespaces. In the future a proper numba inlineable functions registry would be 
+  better but this fix works right now.
+- Added endpoint clipping in the runner to handle cases where dt would overshoot `t_end`, ensuring 
+  accurate final time steps.
+- Registered guards consumers in RK45 and BDF2 steppers for proper NaN/Inf detection updates.
+- Reordered history rotation in BDF2 stepper to prevent aliasing issues between current and proposed 
+  states.
+
+---
+
 ## [2.28.3] – 2025-11-19
 ### Added
 - Added `bdf2a_scipy` stepper which is adaptive BDF2 solver based on scipy root solvers.
