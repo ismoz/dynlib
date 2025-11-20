@@ -2,6 +2,22 @@
 
 ---
 
+## [2.28.7] – 2025-11-20
+### Changed
+- Improved `bdf2a` stepper startup by using Richardson extrapolation for better accuracy on the first step. 
+- Optimized `tr-bdf2a` stepper by switching to modified Newton method with frozen Jacobian for faster 
+  convergence. Full explicit Backwards Euler stage can be further optimized by estimating the error instead 
+  of full implicit solve operation. However, for the sake of robustness, I skipped this optimization.
+
+### Fixed
+- Fixed wrong error estimation coefficients for `bdf2a` and `tr-bdf2a` steppers. Using error**0.5 was causing 
+  parity between numba and python results. Used math.sqrt(error) for exactly matching results.
+
+### Tests
+- Added accuracy and contract tests for `bdf2a` and `tr-bdf2a` steppers.
+
+---
+
 ## [2.28.6] – 2025-11-19
 ### Added
 - Added `bdf2a` stepper, an adaptive BDF2 method with variable step size for stiff ODEs.

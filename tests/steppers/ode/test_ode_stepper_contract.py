@@ -20,7 +20,7 @@ DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "models"
 DECAY_MODEL = str(DATA_DIR / "decay.toml")
 
 # bdf2_scipy is not jittable
-@pytest.mark.parametrize("stepper", ["euler", "rk4", "rk45", "ab2", "ab3", "bdf2"])
+@pytest.mark.parametrize("stepper", ["euler", "rk4", "rk45", "ab2", "ab3", "bdf2", "bdf2a", "tr-bdf2a"])
 def test_jit_on_off_parity(stepper: str):
     """
     Guardrail: JIT on/off must produce identical results for the same
@@ -122,3 +122,23 @@ def test_stepper_registry_and_meta():
     assert getattr(bdf2a_scipy.meta, "time_control", None) == "adaptive"
     # Jacobian capability: internal numeric J, no external Jacobian API
     assert bdf2a_scipy.meta.caps.jacobian == "internal"
+
+    bdf2a = get_stepper("bdf2a")
+    assert bdf2a.meta.name == "bdf2a"
+    # Second-order BDF
+    assert bdf2a.meta.order == 2
+    assert bdf2a.meta.embedded_order == 1
+    assert getattr(bdf2a.meta, "time_control", None) == "adaptive"
+    # Jacobian capability: internal numeric J, no external Jacobian API
+    assert bdf2a.meta.caps.jacobian == "internal"
+    assert bdf2a.meta.stiff is True
+
+    tr_bdf2a = get_stepper("tr-bdf2a")
+    assert tr_bdf2a.meta.name == "tr-bdf2a"
+    # Second-order BDF
+    assert tr_bdf2a.meta.order == 2
+    assert tr_bdf2a.meta.embedded_order == 1
+    assert getattr(tr_bdf2a.meta, "time_control", None) == "adaptive"
+    # Jacobian capability: internal numeric J, no external Jacobian API
+    assert tr_bdf2a.meta.caps.jacobian == "internal"
+    assert tr_bdf2a.meta.stiff is True

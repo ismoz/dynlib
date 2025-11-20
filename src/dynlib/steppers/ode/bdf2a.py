@@ -132,6 +132,10 @@ class BDF2AdaptiveJITSpec(ConfigMixin):
             J = ws.J
 
             step_idx = int(step_idx_arr[0])
+            # For BDF1 solves we use a configurable "previous state" y_back.
+            # Normally this is y_curr, but during the step-0 Richardson start
+            # it will point to an intermediate half-step state.
+            y_back = y_curr
             
             if stepper_config.size >= 10:
                 atol = stepper_config[0]
@@ -187,16 +191,16 @@ class BDF2AdaptiveJITSpec(ConfigMixin):
 
                     # Build Residual
                     if mode == 1:
-                        # BDF1: y - y_n - h*f = 0
+                        # BDF1: y - y_back - h*f = 0
                         for i in range(n):
-                            r_i = y_guess[i] - y_curr[i] - h_local * f_val[i]
+                            r_i = y_guess[i] - y_back[i] - h_local * f_val[i]
                             residual[i] = r_i
                             # ... tracking max_r/scale ...
                             abs_r = r_i if r_i >= 0.0 else -r_i
                             if abs_r > max_r: max_r = abs_r
                             abs_y = y_guess[i] if y_guess[i] >= 0.0 else -y_guess[i]
                             if abs_y > max_scale: max_scale = abs_y
-                            abs_curr = y_curr[i] if y_curr[i] >= 0.0 else -y_curr[i]
+                            abs_curr = y_back[i] if y_back[i] >= 0.0 else -y_back[i]
                             if abs_curr > max_scale: max_scale = abs_curr
 
                     else:
@@ -343,33 +347,139 @@ class BDF2AdaptiveJITSpec(ConfigMixin):
                 dummy_coeffs = (0.0, 0.0, 0.0)
 
                 if step_idx == 0:
-                    # BDF1 Startup
+                    # --- Adaptive BDF1 startup using Richardson (h vs 2×h/2) ---
+                    #
+                    # Coarse: one BE step of size h  from (t, y_curr) -> y_coarse
+                    # Fine:   two BE steps of size h/2 via an intermediate y_mid
+                    # Error ~ || y_fine - y_coarse ||_wrms
+
+                    # 1) Coarse BE step (step size = h)
                     rhs(t, y_curr, f_tmp, params, runtime_ws)
                     if not allfinite1d(f_tmp):
                         err_est[0] = float("inf")
                         return STEPFAIL
-                    
-                    # Explicit Euler Guess
+
                     for i in range(n):
                         y_guess[i] = y_curr[i] + h * f_tmp[i]
 
+                    y_back = y_curr
                     if not newton_solve(1, t_new, h, dummy_coeffs):
                         if h <= min_step:
                             err_est[0] = float("inf")
                             return STEPFAIL
                         h = h * min_factor
-                        if h < min_step: h = min_step
+                        if h < min_step:
+                            h = min_step
                         continue
 
-                    # Accept Step 0
-                    for i in range(n): y_nm1[i] = y_curr[i]
-                    for i in range(n): y_prop[i] = y_guess[i]
-                    t_prop[0] = t_new
-                    dt_next[0] = h
-                    err_est[0] = 0.0
-                    step_idx_arr[0] = 1
-                    dt_nm1_arr[0] = h  # Save dt for next step
-                    return OK
+                    # Store coarse solution in y_bdf2
+                    for i in range(n):
+                        y_bdf2[i] = y_guess[i]
+
+                    # 2) Fine BE solution via two half-steps (h/2)
+                    h_half = 0.5 * h
+                    t_half = t + h_half
+
+                    # First half-step: (t, y_curr) -> (t + h/2, y_mid)
+                    rhs(t, y_curr, f_tmp, params, runtime_ws)
+                    if not allfinite1d(f_tmp):
+                        err_est[0] = float("inf")
+                        return STEPFAIL
+
+                    for i in range(n):
+                        y_guess[i] = y_curr[i] + h_half * f_tmp[i]
+
+                    # y_back is still y_curr here
+                    if not newton_solve(1, t_half, h_half, dummy_coeffs):
+                        if h <= min_step:
+                            err_est[0] = float("inf")
+                            return STEPFAIL
+                        h = h * min_factor
+                        if h < min_step:
+                            h = min_step
+                        continue
+
+                    # Save y_mid in y_nm1 workspace
+                    for i in range(n):
+                        y_nm1[i] = y_guess[i]
+
+                    # Second half-step: (t + h/2, y_mid) -> (t + h, y_fine)
+                    rhs(t_half, y_nm1, f_tmp, params, runtime_ws)
+                    if not allfinite1d(f_tmp):
+                        err_est[0] = float("inf")
+                        return STEPFAIL
+
+                    for i in range(n):
+                        y_guess[i] = y_nm1[i] + h_half * f_tmp[i]
+
+                    # Now previous-state for BE is y_mid
+                    y_back = y_nm1
+                    if not newton_solve(1, t_new, h_half, dummy_coeffs):
+                        if h <= min_step:
+                            err_est[0] = float("inf")
+                            return STEPFAIL
+                        h = h * min_factor
+                        if h < min_step:
+                            h = min_step
+                        continue
+
+                    # y_guess now holds the fine solution y_fine.
+
+                    # 3) Error estimate: WRMS(y_fine - y_coarse)
+                    err_acc = 0.0
+                    for i in range(n):
+                        diff = y_guess[i] - y_bdf2[i]
+                        if diff < 0.0:
+                            diff = -diff
+
+                        y_scale = y_curr[i] if y_curr[i] >= 0.0 else -y_curr[i]
+                        y2 = y_guess[i] if y_guess[i] >= 0.0 else -y_guess[i]
+                        if y2 > y_scale:
+                            y_scale = y2
+
+                        scale_i = atol + rtol * y_scale
+                        ratio = diff / scale_i
+                        err_acc += ratio * ratio
+
+                    error = math.sqrt(err_acc / n)
+                    if not math.isfinite(error):
+                        error = float("inf")
+
+                    if error <= 1.0 or h <= min_step:
+                        # Accept startup step: use fine solution as y_1
+                        for i in range(n):
+                            y_nm1[i] = y_curr[i]   # history for BDF2
+                        for i in range(n):
+                            y_prop[i] = y_guess[i]  # fine solution y_fine
+
+                        t_prop[0] = t_new
+                        err_est[0] = error
+
+                        if error > 0.0:
+                            # Same order-2 vs order-1 logic as main BDF2 branch
+                            factor = safety * math.sqrt(1.0 / error)
+                            if factor < min_factor:
+                                factor = min_factor
+                            if factor > max_factor:
+                                factor = max_factor
+                            dt_next[0] = h * factor
+                        else:
+                            dt_next[0] = h * max_factor
+
+                        step_idx_arr[0] = 1
+                        dt_nm1_arr[0] = h  # Save dt for next (BDF2) step
+                        return OK
+
+                    # Reject startup step, shrink h and retry
+                    factor = safety * math.sqrt(1.0 / error)
+                    if factor < min_factor:
+                        factor = min_factor
+                    h = h * factor
+                    if h < min_step:
+                        dt_next[0] = h
+                        err_est[0] = error
+                        return STEPFAIL
+                    continue
 
                 # --- BDF2 Main Step (Variable) ---
                 
@@ -418,9 +528,11 @@ class BDF2AdaptiveJITSpec(ConfigMixin):
                     y_bdf2[i] = y_guess[i]
                 
                 # 3. Error Estimate: Solve BDF1 on same step
-                # Use BDF2 result as warm start
-                for i in range(n): y_guess[i] = y_bdf2[i]
-                
+                # Use BDF2 result as warm start; previous state is y_curr
+                for i in range(n):
+                    y_guess[i] = y_bdf2[i]
+                y_back = y_curr
+
                 if not newton_solve(1, t_new, h, dummy_coeffs):
                     if h <= min_step:
                         err_est[0] = float("inf")
@@ -455,7 +567,7 @@ class BDF2AdaptiveJITSpec(ConfigMixin):
                     err_est[0] = error
                     
                     if error > 0.0:
-                        factor = safety * (1.0 / error) ** (1.0 / 3.0)
+                        factor = safety * math.sqrt(1.0 / error)
                         if factor < min_factor: factor = min_factor
                         if factor > max_factor: factor = max_factor
                         dt_next[0] = h * factor
@@ -467,7 +579,7 @@ class BDF2AdaptiveJITSpec(ConfigMixin):
                     return OK
                 
                 # Reject
-                factor = safety * (1.0 / error) ** 0.5
+                factor = safety * math.sqrt(1.0 / error)
                 if factor < min_factor: factor = min_factor
                 h = h * factor
                 if h < min_step:

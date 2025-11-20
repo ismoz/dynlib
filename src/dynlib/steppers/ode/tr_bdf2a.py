@@ -85,8 +85,11 @@ class TRBDF2AdaptiveJITSpec(ConfigMixin):
         # Residual vector (also reused to store Newton correction)
         residual: np.ndarray
 
-        # Dense Jacobian matrix
+        # Dense Jacobian matrix (frozen FD Jacobian for Modified Newton)
         J: np.ndarray
+
+        # Work matrix for LU factorization (destroyed each solve)
+        J_work: np.ndarray
 
     def __init__(self, meta: StepperMeta | None = None):
         if meta is None:
@@ -131,6 +134,7 @@ class TRBDF2AdaptiveJITSpec(ConfigMixin):
             f_tmp=vec(),
             residual=vec(),
             J=np.zeros((n_state, n_state), dtype=dtype),
+            J_work=np.zeros((n_state, n_state), dtype=dtype),
         )
 
     def emit(self, rhs_fn: Callable, model_spec=None) -> Callable:
@@ -178,7 +182,10 @@ class TRBDF2AdaptiveJITSpec(ConfigMixin):
             f_val = ws.f_val
             f_tmp = ws.f_tmp
             residual = ws.residual
-            J = ws.J
+            # J_base: frozen FD Jacobian (Modified Newton)
+            # J: work matrix for LU factorization
+            J_base = ws.J
+            J = ws.J_work
 
             # Just for potential diagnostics; not required by the scheme
             step_idx = int(step_idx_arr[0])
@@ -220,14 +227,60 @@ class TRBDF2AdaptiveJITSpec(ConfigMixin):
             #   1 -> TR-BDF2 final stage (y_{n+1})
             #   2 -> Backward Euler (embedded, y_{n+1}^{BE})
             def newton_solve(mode, t_local, h_local, c1, c2):
-                # c1, c2 carry scalar coefficients:
-                #   mode 0: c1 = theta_tr
-                #   mode 1: c1 = gamma2, c2 = gamma3
-                #   mode 2: unused; equivalent to Backward Euler
+                """
+                Modified Newton:
+                - Build FD Jacobian once per solve into J_base.
+                - Reuse that frozen Jacobian for all iterations, only recomputing
+                  the residual and refactoring a work copy J each time.
 
+                c1, c2 carry scalar coefficients:
+                  mode 0: c1 = theta_tr
+                  mode 1: c1 = gamma2, c2 = gamma3
+                  mode 2: Backward Euler (c1, c2 unused)
+                """
+
+                # --- Build finite-difference Jacobian once at initial guess ---
+                rhs(t_local, y_guess, f_val, params, runtime_ws)
+                if not allfinite1d(f_val):
+                    return False
+
+                for j in range(n):
+                    orig_val = y_guess[j]
+                    abs_base = orig_val if orig_val >= 0.0 else -orig_val
+                    scale = abs_base if abs_base > 1.0 else 1.0
+                    eps = jac_eps * scale
+
+                    y_guess[j] = orig_val + eps
+                    rhs(t_local, y_guess, f_tmp, params, runtime_ws)
+                    y_guess[j] = orig_val  # restore
+
+                    if not allfinite1d(f_tmp):
+                        return False
+
+                    inv_eps = 1.0 / eps
+
+                    if mode == 0:
+                        # J = I - θ h df/dy
+                        theta_loc = c1
+                        factor_fd = theta_loc * h_local
+                    elif mode == 1:
+                        # J = I - γ2 h df/dy
+                        gamma2_loc = c1
+                        factor_fd = gamma2_loc * h_local
+                    else:
+                        # Backward Euler: J = I - h df/dy
+                        factor_fd = h_local
+
+                    for i in range(n):
+                        df_ij = (f_tmp[i] - f_val[i]) * inv_eps
+                        if i == j:
+                            J_base[i, j] = 1.0 - factor_fd * df_ij
+                        else:
+                            J_base[i, j] = -factor_fd * df_ij
+
+                # --- Newton iteration with frozen Jacobian J_base ---
                 for _it in range(newton_max_iter):
                     rhs(t_local, y_guess, f_val, params, runtime_ws)
-
                     if not allfinite1d(f_val):
                         return False
 
@@ -246,7 +299,6 @@ class TRBDF2AdaptiveJITSpec(ConfigMixin):
                             r_i = y_guess[i] - theta_loc * h_local * f_val[i] - base_i
                             residual[i] = r_i
 
-                            # track max_r and scale (y_guess, y_curr, f_n)
                             abs_r = r_i if r_i >= 0.0 else -r_i
                             if abs_r > max_r:
                                 max_r = abs_r
@@ -311,40 +363,10 @@ class TRBDF2AdaptiveJITSpec(ConfigMixin):
                     if not allfinite1d(residual):
                         return False
 
-                    # Build Jacobian via finite difference
-                    for j in range(n):
-                        orig_val = y_guess[j]
-                        abs_base = orig_val if orig_val >= 0.0 else -orig_val
-                        scale = abs_base if abs_base > 1.0 else 1.0
-                        eps = jac_eps * scale
-
-                        y_guess[j] = orig_val + eps
-                        rhs(t_local, y_guess, f_tmp, params, runtime_ws)
-                        y_guess[j] = orig_val  # restore
-
-                        if not allfinite1d(f_tmp):
-                            return False
-
-                        inv_eps = 1.0 / eps
-
-                        if mode == 0:
-                            # J = I - θ h df/dy
-                            theta_loc = c1
-                            factor = theta_loc * h_local
-                        elif mode == 1:
-                            # J = I - γ2 h df/dy
-                            gamma2_loc = c1
-                            factor = gamma2_loc * h_local
-                        else:
-                            # Backward Euler: J = I - h df/dy
-                            factor = h_local
-
-                        for i in range(n):
-                            df_ij = (f_tmp[i] - f_val[i]) * inv_eps
-                            if i == j:
-                                J[i, j] = 1.0 - factor * df_ij
-                            else:
-                                J[i, j] = -factor * df_ij
+                    # Copy frozen Jacobian into work matrix
+                    for i in range(n):
+                        for j in range(n):
+                            J[i, j] = J_base[i, j]
 
                     # Solve J * delta = -residual via Gaussian elimination
                     for i in range(n):
@@ -530,7 +552,9 @@ class TRBDF2AdaptiveJITSpec(ConfigMixin):
 
                     # Step-size update, same pattern as bdf2a
                     if error > 0.0:
-                        factor = safety * (1.0 / error) ** (1.0 / 3.0)
+                        # Order-2 main method with order-1 embedded:
+                        # local error ~ O(h^2) => exponent 1 / (1 + 1) = 1/2
+                        factor = safety * math.sqrt(1.0 / error)
                         if factor < min_factor:
                             factor = min_factor
                         if factor > max_factor:
@@ -543,7 +567,7 @@ class TRBDF2AdaptiveJITSpec(ConfigMixin):
                     return OK
 
                 # Reject step, shrink h and retry
-                factor = safety * (1.0 / error) ** 0.5
+                factor = safety * math.sqrt(1.0 / error)
                 if factor < min_factor:
                     factor = min_factor
                 h = h * factor
