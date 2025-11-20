@@ -2,6 +2,16 @@
 
 ---
 
+## [2.29.3] – 2025-11-20
+### Added
+- Added documentation for DSL model file template in `docs/dsl_model_template.md`.
+- Added several builtin models for ODE and MAP types:
+  - ODE models: `exp_if` (Exponential Integrate-and-Fire), `fitzhugh_nagumo`, `hodgkin_huxley`, `leaky_if` 
+    (Leaky Integrate-and-Fire), `quadratic_if`, `resonate_if`.
+  - MAP models: `henon`, `ikeda`, `logistic`, `lozi`, `sine`, `standard`.
+
+---
+
 ## [2.29.2] – 2025-11-20
 ### Added
 - Added `choose_default_stepper()` function to automatically select appropriate steppers based on model type

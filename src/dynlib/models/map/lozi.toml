@@ -1,0 +1,19 @@
+[model]
+type = "map"
+label = "Lozi Map"
+dtype = "float64"
+
+[states]
+x = 0.0
+y = 0.0
+
+[params]
+a = 1.7
+b = 0.5
+
+[equations.rhs]
+x = "1.0 - a * abs(x) + b * y"
+y = "x"
+
+[meta]
+title = "Lozi Map (piecewise-linear 2D map)"

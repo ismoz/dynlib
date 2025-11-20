@@ -1,0 +1,38 @@
+# Resonate integrate and fire (Izhikevich's book)
+# Threshold y=1 line reset (0,1)
+# dx/dt = b*x-w*y+I
+# dy/dt = b*y+w*x
+# Complex expression:
+# dz/dt = (b+iw)*z+I
+# If I>0 y increases until y=1, then it is reset
+# Reset is considered a spike (even though there is no spike)
+# After reset orbit focus into origin
+
+[model]
+type = "ode"
+label = "Resonate Integrate-and-Fire Neuron Model"
+
+[states]
+x = 0.0  
+y = 0.0 
+
+[params]
+I = 0.0
+b = -0.05
+w = 0.25
+y_th = 1.0
+x_reset = 0.0
+y_reset = 1.0
+
+[equations]
+expr = """
+dx = b*x-w*y+I
+dy = b*y+w*x
+"""
+
+[events.reset]
+cond = "y >= y_th"
+action = """
+x=x_reset
+y=y_reset
+"""

@@ -1,0 +1,74 @@
+[model]
+type = "ode"
+label = "Hodgkin-Huxley Neuron (activation-function form)"
+dtype = "float64"
+
+[states]
+# Resting equilibrium for I = 0 (from old resting_ic())
+V = -65.0
+n = 0.31
+m = 0.06
+h = 0.61
+
+[params]
+# Membrane / channels
+C   = 1.0
+EK  = -77.0
+ENa = 55.0
+EL  = -54.0
+gK  = 36.0
+gNa = 120.0
+gL  = 0.3
+I   = 0.0
+
+# Na activation (m)
+Vmid_m  = -40.0
+k_m     = 9.0
+Vmax_m  = -38.0
+sigma_m = 30.0
+Camp_m  = 0.46
+Cbase_m = 0.04
+
+# Na inactivation (h)
+Vmid_h  = -62.0
+k_h     = -7.0
+Vmax_h  = -67.0
+sigma_h = 20.0
+Camp_h  = 7.4
+Cbase_h = 1.2
+
+# K activation (n)
+Vmid_n  = -53.0
+k_n     = 15.0
+Vmax_n  = -79.0
+sigma_n = 50.0
+Camp_n  = 4.7
+Cbase_n = 1.1
+
+[functions.boltzmann]
+args = ["Vmid", "k", "V"]
+expr = "1.0 / (1.0 + exp((Vmid - V) / k))"
+
+[functions.gaussian]
+args = ["Vmax", "sigma", "Camp", "Cbase", "V"]
+expr = "Cbase + Camp * exp(-((Vmax - V)**2) / (sigma**2))"
+
+[aux]
+# Steady-state activation / inactivation
+m_inf = "boltzmann(Vmid_m, k_m, V)"
+h_inf = "boltzmann(Vmid_h, k_h, V)"
+n_inf = "boltzmann(Vmid_n, k_n, V)"
+
+# Time constants
+tau_m = "gaussian(Vmax_m, sigma_m, Camp_m, Cbase_m, V)"
+tau_h = "gaussian(Vmax_h, sigma_h, Camp_h, Cbase_h, V)"
+tau_n = "gaussian(Vmax_n, sigma_n, Camp_n, Cbase_n, V)"
+
+[equations.rhs]
+V = "(I - gK*n**4*(V - EK) - gNa*m**3*h*(V - ENa) - gL*(V - EL)) / C"
+n = "(n_inf - n) / tau_n"
+m = "(m_inf - m) / tau_m"
+h = "(h_inf - h) / tau_h"
+
+[meta]
+title = "Classic Hodgkin-Huxley Neuron (Izhikevich-style gating functions)"

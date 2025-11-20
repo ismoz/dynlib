@@ -1,0 +1,20 @@
+[model]
+type = "ode"
+label = "Leaky Integrate-and-Fire Neuron Model"
+
+[states]
+v = -65.0  # Membrane potential in mV
+
+[params]
+tau = 10.0       # Membrane time constant in ms
+v_rest = -65.0   # Resting potential in mV
+v_th = -50.0     # Spike threshold in mV
+v_reset = -65.0  # Reset potential after spike in mV
+I = 0.0          # Input current in nA
+
+[equations.rhs]
+v = "(v_rest - v + I) / tau"
+
+[events.reset]
+cond = "v >= v_th"
+action = "v = v_reset"

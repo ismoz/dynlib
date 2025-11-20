@@ -1,0 +1,24 @@
+[model]
+type = "ode"
+label = "FitzHugh-Nagumo Neuron"
+dtype = "float64"
+
+[states]
+# Resting equilibrium for I = 0 with a = b = 0.7, R = 0.1, tau = 12.5
+# (computed from the original calc_equilibrium)
+V = -1.74
+w = -1.48
+
+[params]
+a   = 0.7
+b   = 0.7
+R   = 0.1
+I   = 0.0
+tau = 12.5
+
+[equations.rhs]
+V = "V - V**3/3 - w + R*I"
+w = "(V + a - b*w) / tau"
+
+[meta]
+title = "FitzHugh-Nagumo Model (2D reduction of Hodgkin-Huxley)"

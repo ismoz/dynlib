@@ -11,7 +11,7 @@ b = 0.2
 c = -65.0
 d = 8.0
 I = 10.0
-vth = 30.0
+v_th = 30.0
 
 [equations]
 expr = """
@@ -20,7 +20,7 @@ du = a * (b * v - u)
 """
 
 [events.reset]
-cond = "v >= vth"
+cond = "v >= v_th"
 phase = "post"
 action = """
 v = c

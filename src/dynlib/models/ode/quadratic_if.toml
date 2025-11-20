@@ -1,0 +1,22 @@
+[model]
+type = "ode"
+label = "Quadratic Integrate-and-Fire Neuron Model"
+
+[states]
+v = -65.0 
+
+[params]
+tau = 15.0
+v_rest = -65.0   
+v_th = 5.0     
+v_reset = -70.0  
+I = 0.0
+vt = -50.0
+R = 10.0 # for lower currents   
+
+[equations.rhs]
+v = "((v-v_rest)*(v-vt)+R*I) / tau"
+
+[events.reset]
+cond = "v >= v_th"
+action = "v = v_reset"

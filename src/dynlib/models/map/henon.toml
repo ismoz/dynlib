@@ -1,0 +1,19 @@
+[model]
+type = "map"
+label = "Henon Map"
+dtype = "float64"
+
+[states]
+x = 0.0
+y = 0.0
+
+[params]
+a = 1.4
+b = 0.3
+
+[equations.rhs]
+x = "1.0 - a * x**2 + y"
+y = "b * x"
+
+[meta]
+title = "Henon Map (chaotic 2D map)"

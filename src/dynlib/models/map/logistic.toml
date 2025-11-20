@@ -1,0 +1,12 @@
+[model]
+type="map"
+label="Logistic Map"
+
+[states]
+x=0.1
+
+[params]
+r=4.0
+
+[equations.rhs]
+x = "r * x * (1 - x)"

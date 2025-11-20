@@ -1,0 +1,17 @@
+[model]
+type = "map"
+label = "Sine Map"
+dtype = "float64"
+
+[states]
+x = 0.5
+
+[params]
+r  = 0.9
+pi = 3.141592653589793
+
+[equations.rhs]
+x = "r * sin(pi * x)"
+
+[meta]
+title = "Sine Map (1D chaotic map)"

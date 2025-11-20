@@ -1,0 +1,22 @@
+[model]
+type = "ode"
+label = "Exponential Integrate-and-Fire Neuron Model"
+
+[states]
+v = -70.0
+
+[params]
+tau = 15.0       
+v_rest = -72.0   
+v_th = -45.0     
+v_reset = -75.0 
+vt = -55.0
+D = 2.0
+I = 0.0          
+
+[equations.rhs]
+v = "(-(v-v_rest)+D*exp((v-vt)/D)+I)/tau"
+
+[events.reset]
+cond = "v >= v_th"
+action = "v = v_reset"
