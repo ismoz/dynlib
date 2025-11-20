@@ -17,6 +17,7 @@ r=4.0
 x = "r * x * (1 - x)"
 '''
 
+# stepper="map" is default and can be omitted for map models
 sim = setup(model, stepper="map", jit=True, disk_cache=True)
 sim.run(N=192, transient=40)
 sim.run(resume=True, N=400)

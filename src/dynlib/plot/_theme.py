@@ -112,7 +112,7 @@ _PRESETS: Dict[str, ThemeSpec] = {
             "line_w": 1.4,
             "axis_w": 1.4,
             "marker_size": 3.0,
-            "fontsize_label": 11.0,
+            "fontsize_label": 12.0,
             "fontsize_title": 12.0,
             "fontsize_tick": 10.0,
             "fontsize_legend": 10.0,

@@ -2,6 +2,19 @@
 
 ---
 
+## [2.29.2] – 2025-11-20
+### Added
+- Added `choose_default_stepper()` function to automatically select appropriate steppers based on model type
+  if DSL model spec and user does not provide one. The hard-coded defaults are `map` -> `map` and `ode` -> `rk4`.
+- Added theme usage examples in collatz.py, detect_transition.py, and logistic_map.py to demonstrate theme 
+  presets.
+
+### Changed
+- Improved plotting primitives with enhanced docstrings and better parameter handling.
+- Standardized arguments of plotting functions.
+
+---
+
 ## [2.29.1] – 2025-11-20
 ### Added
 - Added plotting theme system using `ThemeSpec` dataclass with inheritance support for better theme management 

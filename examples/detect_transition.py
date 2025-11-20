@@ -1,5 +1,6 @@
 from dynlib import setup
-from dynlib.plot import series, export
+from dynlib.plot import series, export, theme
+
 
 """
 This example demonstrate lagging mechanism to detect trasition 
@@ -42,10 +43,13 @@ sim.run(T=50.0, transient=10.0)
 res = sim.results()
 ev = res.event("detect")
 
+theme.use("paper")
+
 series.plot(x=res.t,
             y=res["x"],
             vlines=ev.t,
             xlabel='Time',
+            xlabel_fs=11, # Theme override
             ylabel='x',
             title='Lorenz system: x variable with transition detection')
 

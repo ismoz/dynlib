@@ -1,5 +1,5 @@
 from dynlib import setup
-from dynlib.plot import series, export
+from dynlib.plot import series, export, theme
 import numpy as np
 from numpy.testing import assert_array_equal
 
@@ -33,6 +33,8 @@ expected = np.array([
 sim = setup(model, stepper="map")
 sim.run(N=len(expected)-1)
 res = sim.results()
+
+theme.use("paper")
 
 series.plot(x=res.step, y=res["n"], xlabel="iteration", ylabel="n", ylabel_rot=0, title="Collatz Conjecture")
 print("1-4-2-1 cycle: ", res["n"][-6:])

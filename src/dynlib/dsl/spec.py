@@ -5,6 +5,7 @@ from typing import Tuple, Dict, Any, Mapping
 import json
 import hashlib
 from types import MappingProxyType
+from dynlib.errors import ModelLoadError
 
 __all__ = [
     "SimDefaults",
@@ -13,6 +14,7 @@ __all__ = [
     "ModelSpec",
     "build_spec",
     "compute_spec_hash",
+    "choose_default_stepper",
 ]
 
 
@@ -89,6 +91,15 @@ class ModelSpec:
 
 
 # ---- builders ----------------------------------------------------------------
+
+def choose_default_stepper(kind: str) -> str:
+    """Return the default stepper name for the given model kind."""
+    if kind == "ode":
+        return "rk4"
+    if kind == "map":
+        return "map"
+    raise ModelLoadError(f"Unknown model kind for default stepper: {kind!r}")
+
 
 def _canon_dtype(dtype: str) -> str:
     # Keep as-is but normalize common aliases
@@ -179,11 +190,14 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
     sim_extras = {
         key: value for key, value in sim_in.items() if key not in _SIM_KNOWN_KEYS
     }
+    stepper_value = sim_in.get("stepper")
+    if stepper_value is None:
+        stepper_value = choose_default_stepper(kind)
     sim = SimDefaults(
         t0=float(sim_in.get("t0", SimDefaults.t0)),
         t_end=float(sim_in.get("t_end", SimDefaults.t_end)),
         dt=float(sim_in.get("dt", SimDefaults.dt)),
-        stepper=str(sim_in.get("stepper", SimDefaults.stepper)),
+        stepper=str(stepper_value),
         record=bool(sim_in.get("record", SimDefaults.record)),
         atol=float(sim_in.get("atol", SimDefaults.atol)),
         rtol=float(sim_in.get("rtol", SimDefaults.rtol)),

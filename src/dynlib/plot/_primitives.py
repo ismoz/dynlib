@@ -612,6 +612,7 @@ class _SeriesPlot:
         vlines_color: str | None = None,
         vlines_kwargs: Mapping[str, Any] | None = None,
         bands: list[tuple[float, float] | tuple[float, float, str]] | None = None,
+        legend: bool = True,
         xlabel_rot: float | None = None,
         ylabel_rot: float | None = None,
         ax=None,
@@ -624,7 +625,48 @@ class _SeriesPlot:
         xtick_fs: float | None = None,
         ytick_fs: float | None = None,
     ) -> plt.Axes:
-        """Plot a series (x vs y). Array-only API."""
+        """
+        Plot a single series as y versus x.
+        
+        The fundamental time-series plotting primitive. Supports continuous
+        and discrete system visualization.
+        
+        Args:
+            x: Time or independent variable array
+            y: Values array
+            label: Legend label for the series
+            style: Style preset name or custom dict (e.g., 'continuous', 'discrete', 'mixed')
+            color: Line/marker color
+            lw: Line width
+            ls: Line style ('-', '--', '-.', ':')
+            marker: Marker style ('o', 's', '^', etc.)
+            ms: Marker size
+            alpha: Transparency (0-1)
+            xlim: X-axis limits as (min, max)
+            ylim: Y-axis limits as (min, max)
+            xlabel: X-axis label
+            ylabel: Y-axis label
+            title: Plot title
+            vlines: Vertical lines at specified x values or (x, label) tuples
+            vlines_color: Color for vertical lines
+            vlines_kwargs: Additional kwargs for vertical lines
+            bands: Shaded regions as (start, end) or (start, end, color) tuples
+            legend: Whether to show legend if label is provided
+            xlabel_rot: X-axis label rotation angle
+            ylabel_rot: Y-axis label rotation angle
+            ax: Existing axes to plot on
+            xpad: X-axis label padding
+            ypad: Y-axis label padding
+            titlepad: Title padding
+            xlabel_fs: X-axis label font size
+            ylabel_fs: Y-axis label font size
+            title_fs: Title font size
+            xtick_fs: X-axis tick label font size
+            ytick_fs: Y-axis tick label font size
+            
+        Returns:
+            Matplotlib axes object
+        """
         x_vals = _resolve_time(x)
         y_vals = _resolve_value(y)
         plot_ax = _get_ax(ax)
@@ -632,7 +674,7 @@ class _SeriesPlot:
         style_args = _resolve_style(style, color=color, lw=lw, ls=ls, marker=marker, ms=ms, alpha=alpha)
         plot_ax.plot(x_vals, y_vals, label=label, **style_args)
 
-        if label:
+        if label and legend:
             plot_ax.legend()
         _apply_limits(plot_ax, xlim=xlim, ylim=ylim)
         _apply_labels(
@@ -660,6 +702,7 @@ class _SeriesPlot:
         x,
         y,
         label: str | None = None,
+        style: str | dict[str, Any] | None = None,
         color: str | None = None,
         lw: float | None = None,
         marker: str | None = None,
@@ -674,6 +717,7 @@ class _SeriesPlot:
         vlines_color: str | None = None,
         vlines_kwargs: Mapping[str, Any] | None = None,
         bands: list[tuple[float, float] | tuple[float, float, str]] | None = None,
+        legend: bool = True,
         xlabel_rot: float | None = None,
         ylabel_rot: float | None = None,
         ax=None,
@@ -686,12 +730,51 @@ class _SeriesPlot:
         xtick_fs: float | None = None,
         ytick_fs: float | None = None,
     ) -> plt.Axes:
-        """Stem plot (array-only)."""
+        """
+        Stem plot showing discrete data points with vertical lines to baseline.
+        
+        Particularly useful for discrete-time systems and impulse responses.
+        
+        Args:
+            x: Time or independent variable array
+            y: Values array
+            label: Legend label for the series
+            style: Style preset name or custom dict (e.g., 'discrete', 'map')
+            color: Color for stems and markers
+            lw: Line width for stems
+            marker: Marker style ('o', 's', '^', etc.)
+            ms: Marker size
+            alpha: Transparency (0-1)
+            xlim: X-axis limits as (min, max)
+            ylim: Y-axis limits as (min, max)
+            xlabel: X-axis label
+            ylabel: Y-axis label
+            title: Plot title
+            vlines: Vertical lines at specified x values or (x, label) tuples
+            vlines_color: Color for vertical lines
+            vlines_kwargs: Additional kwargs for vertical lines
+            bands: Shaded regions as (start, end) or (start, end, color) tuples
+            legend: Whether to show legend if label is provided
+            xlabel_rot: X-axis label rotation angle
+            ylabel_rot: Y-axis label rotation angle
+            ax: Existing axes to plot on
+            xpad: X-axis label padding
+            ypad: Y-axis label padding
+            titlepad: Title padding
+            xlabel_fs: X-axis label font size
+            ylabel_fs: Y-axis label font size
+            title_fs: Title font size
+            xtick_fs: X-axis tick label font size
+            ytick_fs: Y-axis tick label font size
+            
+        Returns:
+            Matplotlib axes object
+        """
         x_vals = _resolve_time(x)
         y_vals = _resolve_value(y)
         plot_ax = _get_ax(ax)
 
-        style_args = _style_kwargs(color=color, lw=lw, ls=None, marker=marker, ms=ms, alpha=alpha)
+        style_args = _resolve_style(style, color=color, lw=lw, ls=None, marker=marker, ms=ms, alpha=alpha)
         markerline, stemlines, baseline = plot_ax.stem(  # noqa: F841
             x_vals, y_vals, linefmt="-", markerfmt="o", basefmt=" "
         )
@@ -711,7 +794,7 @@ class _SeriesPlot:
                 markerline.set_alpha(style_args["alpha"])
                 stemlines.set_alpha(style_args["alpha"])
 
-        if label:
+        if label and legend:
             plot_ax.legend()
         _apply_limits(plot_ax, xlim=xlim, ylim=ylim)
         _apply_labels(
@@ -738,6 +821,7 @@ class _SeriesPlot:
         x,
         y,
         label: str | None = None,
+        style: str | dict[str, Any] | None = None,
         color: str | None = None,
         lw: float | None = None,
         ls: str | None = None,
@@ -749,6 +833,11 @@ class _SeriesPlot:
         xlabel: str | None = None,
         ylabel: str | None = None,
         title: str | None = None,
+        vlines: list[float | tuple[float, str]] | None = None,
+        vlines_color: str | None = None,
+        vlines_kwargs: Mapping[str, Any] | None = None,
+        bands: list[tuple[float, float] | tuple[float, float, str]] | None = None,
+        legend: bool = True,
         xlabel_rot: float | None = None,
         ylabel_rot: float | None = None,
         ax=None,
@@ -761,15 +850,55 @@ class _SeriesPlot:
         xtick_fs: float | None = None,
         ytick_fs: float | None = None,
     ) -> plt.Axes:
-        """Step plot (array-only). Values are held until next point."""
+        """
+        Step plot where values are held constant until the next point.
+        
+        Useful for discrete-time signals or piecewise-constant functions.
+        
+        Args:
+            x: Time or independent variable array
+            y: Values array
+            label: Legend label for the series
+            style: Style preset name or custom dict (e.g., 'continuous', 'discrete')
+            color: Line/marker color
+            lw: Line width
+            ls: Line style ('-', '--', '-.', ':')
+            marker: Marker style ('o', 's', '^', etc.)
+            ms: Marker size
+            alpha: Transparency (0-1)
+            xlim: X-axis limits as (min, max)
+            ylim: Y-axis limits as (min, max)
+            xlabel: X-axis label
+            ylabel: Y-axis label
+            title: Plot title
+            vlines: Vertical lines at specified x values or (x, label) tuples
+            vlines_color: Color for vertical lines
+            vlines_kwargs: Additional kwargs for vertical lines
+            bands: Shaded regions as (start, end) or (start, end, color) tuples
+            legend: Whether to show legend if label is provided
+            xlabel_rot: X-axis label rotation angle
+            ylabel_rot: Y-axis label rotation angle
+            ax: Existing axes to plot on
+            xpad: X-axis label padding
+            ypad: Y-axis label padding
+            titlepad: Title padding
+            xlabel_fs: X-axis label font size
+            ylabel_fs: Y-axis label font size
+            title_fs: Title font size
+            xtick_fs: X-axis tick label font size
+            ytick_fs: Y-axis tick label font size
+            
+        Returns:
+            Matplotlib axes object
+        """
         x_vals = _resolve_time(x)
         y_vals = _resolve_value(y)
         plot_ax = _get_ax(ax)
 
-        style_args = _style_kwargs(color=color, lw=lw, ls=ls, marker=marker, ms=ms, alpha=alpha)
+        style_args = _resolve_style(style, color=color, lw=lw, ls=ls, marker=marker, ms=ms, alpha=alpha)
         plot_ax.step(x_vals, y_vals, where="post", label=label, **style_args)
 
-        if label:
+        if label and legend:
             plot_ax.legend()
         _apply_limits(plot_ax, xlim=xlim, ylim=ylim)
         _apply_labels(
@@ -777,6 +906,16 @@ class _SeriesPlot:
             xpad=xpad, ypad=ypad, titlepad=titlepad,
             xlabel_fs=xlabel_fs, ylabel_fs=ylabel_fs, title_fs=title_fs,
         )
+        
+        merged_vlines_kwargs: Mapping[str, Any] | None
+        if vlines_color is not None:
+            base_vl_kw = {} if vlines_kwargs is None else dict(vlines_kwargs)
+            base_vl_kw["color"] = vlines_color
+            merged_vlines_kwargs = base_vl_kw
+        else:
+            merged_vlines_kwargs = vlines_kwargs
+
+        _apply_time_decor(plot_ax, vlines, bands, merged_vlines_kwargs)
         _apply_tick_rotation(plot_ax, xlabel_rot=xlabel_rot, ylabel_rot=ylabel_rot, theme=_theme)
         _apply_tick_fontsizes(plot_ax, xtick_fs=xtick_fs, ytick_fs=ytick_fs)
         return plot_ax
@@ -792,6 +931,10 @@ class _SeriesPlot:
         xlabel: str | None = None,
         ylabel: str | None = None,
         title: str | None = None,
+        vlines: list[float | tuple[float, str]] | None = None,
+        vlines_color: str | None = None,
+        vlines_kwargs: Mapping[str, Any] | None = None,
+        bands: list[tuple[float, float] | tuple[float, float, str]] | None = None,
         legend: bool = True,
         xlabel_rot: float | None = None,
         ylabel_rot: float | None = None,
@@ -805,7 +948,41 @@ class _SeriesPlot:
         xtick_fs: float | None = None,
         ytick_fs: float | None = None,
     ) -> plt.Axes:
-        """Plot multiple named series against x. Array-only."""
+        """
+        Plot multiple named series against a common x-axis.
+        
+        Useful for comparing multiple state variables or different trajectories.
+        
+        Args:
+            x: Time or independent variable array (shared by all series)
+            series: Either a dict {name: values} or list of (name, values) or
+                   (name, values, style_dict) tuples
+            styles: Optional dict mapping series names to style dicts
+            xlim: X-axis limits as (min, max)
+            ylim: Y-axis limits as (min, max)
+            xlabel: X-axis label
+            ylabel: Y-axis label
+            title: Plot title
+            vlines: Vertical lines at specified x values or (x, label) tuples
+            vlines_color: Color for vertical lines
+            vlines_kwargs: Additional kwargs for vertical lines
+            bands: Shaded regions as (start, end) or (start, end, color) tuples
+            legend: Whether to show legend
+            xlabel_rot: X-axis label rotation angle
+            ylabel_rot: Y-axis label rotation angle
+            ax: Existing axes to plot on
+            xpad: X-axis label padding
+            ypad: Y-axis label padding
+            titlepad: Title padding
+            xlabel_fs: X-axis label font size
+            ylabel_fs: Y-axis label font size
+            title_fs: Title font size
+            xtick_fs: X-axis tick label font size
+            ytick_fs: Y-axis tick label font size
+            
+        Returns:
+            Matplotlib axes object
+        """
         x_vals = _resolve_time(x)
         plot_ax = _get_ax(ax)
         base_styles = styles or {}
@@ -826,6 +1003,16 @@ class _SeriesPlot:
             xpad=xpad, ypad=ypad, titlepad=titlepad,
             xlabel_fs=xlabel_fs, ylabel_fs=ylabel_fs, title_fs=title_fs,
         )
+        
+        merged_vlines_kwargs: Mapping[str, Any] | None
+        if vlines_color is not None:
+            base_vl_kw = {} if vlines_kwargs is None else dict(vlines_kwargs)
+            base_vl_kw["color"] = vlines_color
+            merged_vlines_kwargs = base_vl_kw
+        else:
+            merged_vlines_kwargs = vlines_kwargs
+
+        _apply_time_decor(plot_ax, vlines, bands, merged_vlines_kwargs)
         _apply_tick_rotation(plot_ax, xlabel_rot=xlabel_rot, ylabel_rot=ylabel_rot, theme=_theme)
         _apply_tick_fontsizes(plot_ax, xtick_fs=xtick_fs, ytick_fs=ytick_fs)
         return plot_ax
@@ -837,6 +1024,7 @@ class _PhasePlot:
         *,
         x,
         y,
+        label: str | None = None,
         style: str | dict[str, Any] | None = "continuous",
         color: str | None = None,
         lw: float | None = None,
@@ -851,6 +1039,7 @@ class _PhasePlot:
         title: str | None = None,
         ax=None,
         equil: list[tuple[float, float]] | None = None,
+        legend: bool = True,
         xlabel_rot: float | None = None,
         ylabel_rot: float | None = None,
         xpad: float | None = None,
@@ -862,15 +1051,55 @@ class _PhasePlot:
         xtick_fs: float | None = None,
         ytick_fs: float | None = None,
     ) -> plt.Axes:
-        """Plot 2D trajectory through phase space (y vs x). Array-only."""
+        """
+        Plot 2D trajectory through phase space (y versus x).
+        
+        Useful for visualizing system dynamics in state space, showing
+        trajectories, limit cycles, and equilibrium points.
+        
+        Args:
+            x: First state variable array
+            y: Second state variable array
+            label: Legend label for the trajectory
+            style: Style preset name or custom dict (e.g., 'continuous', 'discrete')
+            color: Line/marker color
+            lw: Line width
+            ls: Line style ('-', '--', '-.', ':')
+            marker: Marker style ('o', 's', '^', etc.)
+            ms: Marker size
+            alpha: Transparency (0-1)
+            xlim: X-axis limits as (min, max)
+            ylim: Y-axis limits as (min, max)
+            xlabel: X-axis label
+            ylabel: Y-axis label
+            title: Plot title
+            ax: Existing axes to plot on
+            equil: List of equilibrium points as (x, y) tuples to mark
+            legend: Whether to show legend if label is provided
+            xlabel_rot: X-axis label rotation angle
+            ylabel_rot: Y-axis label rotation angle
+            xpad: X-axis label padding
+            ypad: Y-axis label padding
+            titlepad: Title padding
+            xlabel_fs: X-axis label font size
+            ylabel_fs: Y-axis label font size
+            title_fs: Title font size
+            xtick_fs: X-axis tick label font size
+            ytick_fs: Y-axis tick label font size
+            
+        Returns:
+            Matplotlib axes object
+        """
         x_vals = _resolve_value(x)
         y_vals = _resolve_value(y)
         plot_ax = _get_ax(ax)
         style_args = _resolve_style(style, color=color, lw=lw, ls=ls, marker=marker, ms=ms, alpha=alpha)
-        plot_ax.plot(x_vals, y_vals, **style_args)
+        plot_ax.plot(x_vals, y_vals, label=label, **style_args)
         if equil:
             for ex, ey in equil:
                 plot_ax.plot(ex, ey, marker="o", linestyle="None")
+        if label and legend:
+            plot_ax.legend()
         _apply_limits(plot_ax, xlim=xlim, ylim=ylim)
         _apply_labels(
             plot_ax, xlabel=xlabel, ylabel=ylabel, title=title,
@@ -887,6 +1116,7 @@ class _PhasePlot:
         x,
         y,
         z,
+        label: str | None = None,
         style: str | dict[str, Any] | None = "continuous",
         color: str | None = None,
         lw: float | None = None,
@@ -900,22 +1130,67 @@ class _PhasePlot:
         labels: tuple[str | None, str | None, str | None] | None = None,
         title: str | None = None,
         ax=None,
+        legend: bool = True,
         xpad: float | None = None,
         ypad: float | None = None,
         zpad: float | None = None,
-        title_y: float | None = None,
+        titlepad: float | None = None,
         xlabel_fs: float | None = None,
         ylabel_fs: float | None = None,
         zlabel_fs: float | None = None,
         title_fs: float | None = None,
+        xtick_fs: float | None = None,
+        ytick_fs: float | None = None,
+        ztick_fs: float | None = None,
     ):
-        """Plot a 3D trajectory (x, y, z). Array-only."""
+        """
+        Plot 3D trajectory through phase space.
+        
+        Useful for visualizing dynamics of 3D systems like Lorenz attractor,
+        Rössler system, or other chaotic systems.
+        
+        Args:
+            x: First state variable array
+            y: Second state variable array
+            z: Third state variable array
+            label: Legend label for the trajectory
+            style: Style preset name or custom dict (e.g., 'continuous', 'discrete')
+            color: Line/marker color
+            lw: Line width
+            ls: Line style ('-', '--', '-.', ':')
+            marker: Marker style ('o', 's', '^', etc.)
+            ms: Marker size
+            alpha: Transparency (0-1)
+            xlim: X-axis limits as (min, max)
+            ylim: Y-axis limits as (min, max)
+            zlim: Z-axis limits as (min, max)
+            labels: Tuple of (xlabel, ylabel, zlabel) for axis labels
+            title: Plot title
+            ax: Existing 3D axes to plot on
+            legend: Whether to show legend if label is provided
+            xpad: X-axis label padding
+            ypad: Y-axis label padding
+            zpad: Z-axis label padding
+            titlepad: Title padding (vertical position adjustment)
+            xlabel_fs: X-axis label font size
+            ylabel_fs: Y-axis label font size
+            zlabel_fs: Z-axis label font size
+            title_fs: Title font size
+            xtick_fs: X-axis tick label font size
+            ytick_fs: Y-axis tick label font size
+            ztick_fs: Z-axis tick label font size
+            
+        Returns:
+            Matplotlib 3D axes object
+        """
         x_vals = _resolve_value(x)
         y_vals = _resolve_value(y)
         z_vals = _resolve_value(z)
         plot_ax = _get_ax(ax, projection="3d")
         style_args = _resolve_style(style, color=color, lw=lw, ls=ls, marker=marker, ms=ms, alpha=alpha)
-        plot_ax.plot3D(x_vals, y_vals, z_vals, **style_args)
+        plot_ax.plot3D(x_vals, y_vals, z_vals, label=label, **style_args)
+        if label and legend:
+            plot_ax.legend()
         _apply_limits(plot_ax, xlim=xlim, ylim=ylim, zlim=zlim)
         if labels:
             xlabel, ylabel, zlabel = labels
@@ -938,8 +1213,20 @@ class _PhasePlot:
                     fontsize=float(zlabel_fs) if zlabel_fs is not None else None,
                 )
         if title:
-            title_y_pos = float(title_y) if title_y is not None else 1.02
+            title_y_pos = float(titlepad) if titlepad is not None else 1.02
             plot_ax.set_title(title, y=title_y_pos, fontsize=float(title_fs) if title_fs is not None else None)
+        
+        # Apply tick font sizes for 3D plot
+        if xtick_fs is not None:
+            for tick in plot_ax.get_xticklabels():
+                tick.set_fontsize(float(xtick_fs))
+        if ytick_fs is not None:
+            for tick in plot_ax.get_yticklabels():
+                tick.set_fontsize(float(ytick_fs))
+        if ztick_fs is not None:
+            for tick in plot_ax.get_zticklabels():
+                tick.set_fontsize(float(ztick_fs))
+        
         return plot_ax
 
     def return_map(
@@ -947,6 +1234,7 @@ class _PhasePlot:
         *,
         x,
         step: int = 1,
+        label: str | None = None,
         style: str | dict[str, Any] | None = "map",
         color: str | None = None,
         lw: float | None = None,
@@ -960,6 +1248,8 @@ class _PhasePlot:
         ylabel: str | None = None,
         title: str | None = None,
         ax=None,
+        equil: list[float] | None = None,
+        legend: bool = True,
         xlabel_rot: float | None = None,
         ylabel_rot: float | None = None,
         xpad: float | None = None,
@@ -971,7 +1261,45 @@ class _PhasePlot:
         xtick_fs: float | None = None,
         ytick_fs: float | None = None,
     ) -> plt.Axes:
-        """Plot return map: x[n] vs x[n+step]. Array-only."""
+        """
+        Plot return map showing x[n+step] versus x[n].
+        
+        Useful for analyzing discrete maps, finding fixed points, and
+        detecting periodic orbits. Fixed points appear on the identity line.
+        
+        Args:
+            x: Time series array
+            step: Step size for the return map (default=1 for first return)
+            label: Legend label for the series
+            style: Style preset name or custom dict (default='map' for discrete)
+            color: Line/marker color
+            lw: Line width
+            ls: Line style ('-', '--', '-.', ':')
+            marker: Marker style ('o', 's', '^', etc.)
+            ms: Marker size
+            alpha: Transparency (0-1)
+            xlim: X-axis limits as (min, max)
+            ylim: Y-axis limits as (min, max)
+            xlabel: X-axis label (default: '$x[n]$')
+            ylabel: Y-axis label (default: '$x[n+1]$' or '$x[n+step]$')
+            title: Plot title
+            ax: Existing axes to plot on
+            equil: List of fixed point values to mark on identity line
+            legend: Whether to show legend if label is provided
+            xlabel_rot: X-axis label rotation angle
+            ylabel_rot: Y-axis label rotation angle
+            xpad: X-axis label padding
+            ypad: Y-axis label padding
+            titlepad: Title padding
+            xlabel_fs: X-axis label font size
+            ylabel_fs: Y-axis label font size
+            title_fs: Title font size
+            xtick_fs: X-axis tick label font size
+            ytick_fs: Y-axis tick label font size
+            
+        Returns:
+            Matplotlib axes object
+        """
         if step < 1:
             raise ValueError(f"step must be >= 1, got {step}")
 
@@ -984,7 +1312,14 @@ class _PhasePlot:
 
         plot_ax = _get_ax(ax)
         style_args = _resolve_style(style, color=color, lw=lw, ls=ls, marker=marker, ms=ms, alpha=alpha)
-        plot_ax.plot(x_n, x_n_lag, **style_args)
+        plot_ax.plot(x_n, x_n_lag, label=label, **style_args)
+        
+        if equil:
+            for eq_val in equil:
+                plot_ax.plot(eq_val, eq_val, marker="o", linestyle="None", color="red", markersize=8, zorder=10)
+
+        if label and legend:
+            plot_ax.legend()
 
         _apply_limits(plot_ax, xlim=xlim, ylim=ylim)
 
@@ -1011,6 +1346,7 @@ class _AnalysisPlot:
         *,
         bins: int = 50,
         density: bool = False,
+        label: str | None = None,
         color: str | None = None,
         alpha: float | None = None,
         xlim: tuple[float | None, float | None] | None = None,
@@ -1018,6 +1354,7 @@ class _AnalysisPlot:
         xlabel: str | None = None,
         ylabel: str | None = None,
         title: str | None = None,
+        legend: bool = True,
         xlabel_rot: float | None = None,
         ylabel_rot: float | None = None,
         ax=None,
@@ -1030,7 +1367,40 @@ class _AnalysisPlot:
         xtick_fs: float | None = None,
         ytick_fs: float | None = None,
     ) -> plt.Axes:
-        """Histogram of data values. Array-only."""
+        """
+        Histogram of data values showing distribution.
+        
+        Useful for analyzing stationary distributions, invariant measures,
+        and statistical properties of dynamical systems.
+        
+        Args:
+            y: Data array to histogram
+            bins: Number of histogram bins
+            density: If True, normalize to form probability density
+            label: Legend label for the histogram
+            color: Bar color
+            alpha: Transparency (0-1)
+            xlim: X-axis limits as (min, max)
+            ylim: Y-axis limits as (min, max)
+            xlabel: X-axis label
+            ylabel: Y-axis label (default: 'Density' if density=True, else 'Count')
+            title: Plot title
+            legend: Whether to show legend if label is provided
+            xlabel_rot: X-axis label rotation angle
+            ylabel_rot: Y-axis label rotation angle
+            ax: Existing axes to plot on
+            xpad: X-axis label padding
+            ypad: Y-axis label padding
+            titlepad: Title padding
+            xlabel_fs: X-axis label font size
+            ylabel_fs: Y-axis label font size
+            title_fs: Title font size
+            xtick_fs: X-axis tick label font size
+            ytick_fs: Y-axis tick label font size
+            
+        Returns:
+            Matplotlib axes object
+        """
         data = _resolve_value(y)
         plot_ax = _get_ax(ax)
         hist_kwargs: dict[str, Any] = {"bins": bins, "density": density}
@@ -1038,7 +1408,13 @@ class _AnalysisPlot:
             hist_kwargs["color"] = color
         if alpha is not None:
             hist_kwargs["alpha"] = alpha
+        if label is not None:
+            hist_kwargs["label"] = label
         plot_ax.hist(data, **hist_kwargs)
+        
+        if label and legend:
+            plot_ax.legend()
+        
         _apply_limits(plot_ax, xlim=xlim, ylim=ylim)
         _apply_labels(
             plot_ax, xlabel=xlabel, ylabel=ylabel, title=title,
@@ -1077,6 +1453,9 @@ class _AnalysisPlot:
         xlabel: str | None = "x",
         ylabel: str | None = "f(x)",
         title: str | None = None,
+        legend: bool = True,
+        xlabel_rot: float | None = None,
+        ylabel_rot: float | None = None,
         xpad: float | None = None,
         ypad: float | None = None,
         titlepad: float | None = None,
@@ -1086,7 +1465,51 @@ class _AnalysisPlot:
         xtick_fs: float | None = None,
         ytick_fs: float | None = None,
     ) -> plt.Axes:
-        """Cobweb plot for 1-D discrete map analysis."""
+        """
+        Cobweb plot for analyzing 1D discrete map dynamics.
+        
+        Visualizes iteration trajectories by drawing vertical and horizontal
+        lines between the function curve and identity line. Useful for finding
+        fixed points, periodic orbits, and analyzing stability.
+        
+        Args:
+            f: Map function (callable or Model) to iterate
+            x0: Initial value
+            steps: Number of iterations to plot
+            t0: Initial time (for time-dependent maps)
+            dt: Time step (for time-dependent maps)
+            state: State variable name or index (for multi-dimensional models)
+            fixed: Dict of fixed parameter/state values
+            r: Parameter value (for maps with 'r' parameter)
+            xlim: X-axis limits as (min, max) (auto-computed if None)
+            ylim: Y-axis limits as (min, max) (defaults to xlim if None)
+            ax: Existing axes to plot on
+            color: Color for function curve
+            lw: Line width for function curve
+            ls: Line style for function curve
+            alpha: Transparency for function curve
+            identity_color: Color for identity line (y=x)
+            stair_color: Color for iteration staircase
+            stair_lw: Line width for staircase
+            stair_ls: Line style for staircase
+            xlabel: X-axis label
+            ylabel: Y-axis label
+            title: Plot title
+            legend: Whether to show legend
+            xlabel_rot: X-axis label rotation angle
+            ylabel_rot: Y-axis label rotation angle
+            xpad: X-axis label padding
+            ypad: Y-axis label padding
+            titlepad: Title padding
+            xlabel_fs: X-axis label font size
+            ylabel_fs: Y-axis label font size
+            title_fs: Title font size
+            xtick_fs: X-axis tick label font size
+            ytick_fs: Y-axis tick label font size
+            
+        Returns:
+            Matplotlib axes object
+        """
         g = _resolve_unary_map_k(f, state=state, fixed=fixed, r=r, t0=t0, dt=dt)
 
         # orbit
@@ -1161,13 +1584,15 @@ class _AnalysisPlot:
             plot_ax.plot([start, end], [end, end], **stair_kw)
 
         _apply_limits(plot_ax, xlim=xlim_resolved, ylim=ylim_resolved)
-        plot_ax.legend()
+        if legend:
+            plot_ax.legend()
 
         _apply_labels(
             plot_ax, xlabel=xlabel, ylabel=ylabel, title=title,
             xpad=xpad, ypad=ypad, titlepad=titlepad,
             xlabel_fs=xlabel_fs, ylabel_fs=ylabel_fs, title_fs=title_fs,
         )
+        _apply_tick_rotation(plot_ax, xlabel_rot=xlabel_rot, ylabel_rot=ylabel_rot, theme=_theme)
         _apply_tick_fontsizes(plot_ax, xtick_fs=xtick_fs, ytick_fs=ytick_fs)
         return plot_ax
 
@@ -1179,6 +1604,7 @@ class _UtilsPlot:
         Z,
         *,
         extent=None,
+        label: str | None = None,
         alpha: float | None = None,
         xlim: tuple[float | None, float | None] | None = None,
         ylim: tuple[float | None, float | None] | None = None,
@@ -1186,6 +1612,7 @@ class _UtilsPlot:
         ylabel: str | None = None,
         title: str | None = None,
         colorbar: bool = False,
+        legend: bool = False,
         xlabel_rot: float | None = None,
         ylabel_rot: float | None = None,
         ax=None,
@@ -1198,13 +1625,51 @@ class _UtilsPlot:
         xtick_fs: float | None = None,
         ytick_fs: float | None = None,
     ) -> plt.Axes:
-        """Display 2D array as an image/heatmap."""
+        """
+        Display 2D array as an image or heatmap.
+        
+        Useful for bifurcation diagrams, Poincaré sections, basin boundaries,
+        Lyapunov exponent maps, and other 2D visualizations.
+        
+        Args:
+            Z: 2D data array to display
+            extent: Axis extent as [left, right, bottom, top] for scaling
+            label: Legend label (rarely used for images)
+            alpha: Transparency (0-1)
+            xlim: X-axis limits as (min, max)
+            ylim: Y-axis limits as (min, max)
+            xlabel: X-axis label
+            ylabel: Y-axis label
+            title: Plot title
+            colorbar: Whether to show colorbar
+            legend: Whether to show legend if label is provided
+            xlabel_rot: X-axis label rotation angle
+            ylabel_rot: Y-axis label rotation angle
+            ax: Existing axes to plot on
+            xpad: X-axis label padding
+            ypad: Y-axis label padding
+            titlepad: Title padding
+            xlabel_fs: X-axis label font size
+            ylabel_fs: Y-axis label font size
+            title_fs: Title font size
+            xtick_fs: X-axis tick label font size
+            ytick_fs: Y-axis tick label font size
+            
+        Returns:
+            Matplotlib axes object (with _last_colorbar attribute if colorbar=True)
+        """
         data = _ensure_array(Z)
         plot_ax = _get_ax(ax)
         im_kwargs: dict[str, Any] = {"aspect": "auto", "extent": extent, "origin": "lower"}
         if alpha is not None:
             im_kwargs["alpha"] = alpha
+        if label is not None:
+            im_kwargs["label"] = label
         im = plot_ax.imshow(data, **im_kwargs)
+        
+        if label and legend:
+            plot_ax.legend()
+        
         _apply_limits(plot_ax, xlim=xlim, ylim=ylim)
         _apply_labels(
             plot_ax, xlabel=xlabel, ylabel=ylabel, title=title,

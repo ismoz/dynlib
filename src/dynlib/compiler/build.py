@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import tomllib
 
-from dynlib.dsl.spec import ModelSpec, compute_spec_hash, build_spec
+from dynlib.dsl.spec import ModelSpec, compute_spec_hash, build_spec, choose_default_stepper
 from dynlib.dsl.parser import parse_model_v2
 from dynlib.steppers.registry import get_stepper
 from dynlib.compiler.codegen.emitter import emit_rhs_and_events, CompiledCallables
@@ -651,7 +651,7 @@ def build(
     # Use spec's default stepper if not specified
     stepper_name = stepper
     if stepper_name is None:
-        stepper_name = spec.sim.stepper
+        stepper_name = spec.sim.stepper or choose_default_stepper(spec.kind)
     
     # Use spec's dtype if not specified
     dtype_str = dtype if dtype is not None else spec.dtype
