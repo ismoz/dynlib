@@ -16,6 +16,7 @@ from dynlib.runtime.workspace import (
     snapshot_workspace,
     restore_workspace,
 )
+from dynlib.runtime.initial_step import WRMSConfig, choose_initial_dt_wrms
 
 __all__ = ["run_with_wrapper"]
 
@@ -33,7 +34,7 @@ def run_with_wrapper(
     # sim config
     t0: float,
     t_end: float,
-    dt_init: float,
+    dt_init: float | None,
     max_steps: int,
     record: bool,
     record_interval: int,
@@ -51,6 +52,8 @@ def run_with_wrapper(
     target_steps: Optional[int] = None,
     lag_state_info: Tuple[Tuple[int, int, int, int], ...] | None = None,
     make_stepper_workspace: Callable[[], object] | None = None,
+    wrms_cfg: WRMSConfig | None = None,
+    adaptive: bool = False,
 ) -> Results:
     """
     Orchestrates runner calls while managing workspaces and growth/re-entry.
@@ -146,9 +149,35 @@ def run_with_wrapper(
     # Recording at t0 is part of the **runner** discipline; wrapper just passes flags
     rec_every = int(record_interval) if record else 0  # runner may treat 0 as "no record except explicit"
 
+    # Determine initial dt based on stepping mode.
+    if discrete:
+        if dt_init is None:
+            raise ValueError("Discrete steppers require dt to be specified.")
+        dt_curr = float(dt_init)
+    elif not adaptive:
+        if dt_init is None:
+            raise ValueError("Fixed-step steppers require dt to be specified.")
+        dt_curr = float(dt_init)
+    else:
+        if wrms_cfg is not None:
+            dt_curr = choose_initial_dt_wrms(
+                rhs=rhs,
+                runtime_ws=runtime_ws,
+                t0=float(t0),
+                y0=y_curr,
+                params=params,
+                t_end=float(t_end),
+                cfg=wrms_cfg,
+            )
+        elif dt_init is not None:
+            dt_curr = float(dt_init)
+        else:
+            dt_curr = abs(float(t_end) - float(t0)) * 1e-3
+            if dt_curr == 0.0:
+                dt_curr = 1e-6
+
     # Track the committed (t, dt) so re-entries resume from the correct point.
     t_curr = float(t0)
-    dt_curr = float(dt_init)
 
     # Attempt/re-entry loop
     while True:

@@ -3,7 +3,7 @@ from dynlib.plot import series, export, fig
 
 
 sim = setup("builtin://ode/izhikevich", 
-            stepper="euler", 
+            stepper="rk4", 
             jit=False, 
             dtype="float32")
 

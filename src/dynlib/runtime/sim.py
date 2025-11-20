@@ -1,6 +1,7 @@
 # src/dynlib/runtime/sim.py
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import fnmatch
@@ -19,6 +20,7 @@ from .wrapper import run_with_wrapper
 from .results import Results
 from .results_api import ResultsView
 from .runner_api import Status
+from .initial_step import WRMSConfig, make_wrms_config_from_stepper
 from dynlib.steppers.registry import get_stepper
 import tomllib
 
@@ -515,7 +517,11 @@ class Sim:
                 )
 
         prev_cfg = getattr(self._session_state, "stepper_cfg", None)
-        stepper_config = self._build_stepper_config(stepper_kwargs, prev_cfg)
+        stepper_config, stepper_config_values = self._build_stepper_config(
+            stepper_kwargs,
+            prev_cfg,
+            return_values=True,
+        )
         self._sync_initial_snapshot_config(stepper_config)
         n_state = self._n_state
         max_steps_internal = int(max_steps if target_N is None else target_N)
@@ -525,6 +531,17 @@ class Sim:
         step_offset_initial = seed.step_count
         run_seed = seed
         record_target_T = target_T + self._time_shift
+        stepper_meta = self._stepper_spec.meta
+        adaptive = getattr(stepper_meta, "time_control", "fixed") == "adaptive"
+        wrms_cfg: WRMSConfig | None = None
+        if adaptive and not resume:
+            config_source = stepper_config_values or {}
+            max_dt_hint = float(dt) if dt is not None else None
+            wrms_cfg = make_wrms_config_from_stepper(
+                stepper_meta,
+                config_source,
+                max_dt=max_dt_hint,
+            )
         def _remaining_steps(recorded_completed: int) -> int:
             remaining = target_N - recorded_completed
             if remaining <= 0:
@@ -567,6 +584,8 @@ class Sim:
                 cap_rec=cap_rec,
                 cap_evt=cap_evt,
                 stepper_config=stepper_config,
+                adaptive=adaptive,
+                wrms_cfg=wrms_cfg,
             )
             self._ensure_runner_done(warm_result, phase="transient warm-up")
             self._session_state = self._state_from_results(
@@ -607,6 +626,8 @@ class Sim:
             cap_rec=cap_rec,
             cap_evt=cap_evt,
             stepper_config=stepper_config,
+            adaptive=adaptive,
+            wrms_cfg=wrms_cfg,
         )
         try:
             self._ensure_runner_done(recorded_result, phase="recorded run")
@@ -2019,6 +2040,8 @@ class Sim:
         cap_rec: int,
         cap_evt: int,
         stepper_config: np.ndarray,
+        adaptive: bool,
+        wrms_cfg: WRMSConfig | None,
     ) -> Results:
         return run_with_wrapper(
             runner=self.model.runner,
@@ -2045,6 +2068,8 @@ class Sim:
             target_steps=target_steps,
             lag_state_info=getattr(self.model, "lag_state_info", None),
             make_stepper_workspace=getattr(self.model, "make_stepper_workspace", None),
+            wrms_cfg=wrms_cfg,
+            adaptive=adaptive,
         )
 
     def _ensure_runner_done(self, result: Results, *, phase: str) -> None:
@@ -2295,7 +2320,13 @@ class Sim:
         summary["preview"] = preview
         return summary
 
-    def _build_stepper_config(self, kwargs: dict, prev_config: Optional[np.ndarray]) -> np.ndarray:
+    def _build_stepper_config(
+        self,
+        kwargs: dict,
+        prev_config: Optional[np.ndarray],
+        *,
+        return_values: bool = False,
+    ) -> np.ndarray | tuple[np.ndarray, Optional[Dict[str, float]]]:
         """
         Build stepper config array from run() kwargs, session defaults, and prior runs.
         
@@ -2305,6 +2336,12 @@ class Sim:
         stepper_spec = self._stepper_spec
         default_config = stepper_spec.default_config(self.model.spec)
 
+        def _finalize(cfg: np.ndarray, values: Optional[Dict[str, float]]) -> np.ndarray | tuple[np.ndarray, Optional[Dict[str, float]]]:
+            cfg_array = np.array(cfg, dtype=np.float64, copy=True)
+            if return_values:
+                return cfg_array, values
+            return cfg_array
+
         if default_config is None:
             if kwargs:
                 warnings.warn(
@@ -2313,14 +2350,17 @@ class Sim:
                     RuntimeWarning,
                     stacklevel=3,
                 )
-            return np.array([], dtype=np.float64)
+            empty = np.array([], dtype=np.float64)
+            return _finalize(empty, None)
 
         if not kwargs:
             if prev_config is not None and prev_config.size:
-                return np.array(prev_config, dtype=np.float64, copy=True)
-            return np.array(self._default_stepper_cfg, dtype=np.float64, copy=True)
-
-        import dataclasses
+                cfg = np.array(prev_config, dtype=np.float64, copy=True)
+                values = self._config_values_from_array(cfg)
+                return _finalize(cfg, values)
+            cfg = np.array(self._default_stepper_cfg, dtype=np.float64, copy=True)
+            values = self._config_values_from_array(cfg)
+            return _finalize(cfg, values)
 
         valid_fields = {f.name for f in dataclasses.fields(default_config)}
         config_updates = {k: v for k, v in kwargs.items() if k in valid_fields}
@@ -2350,12 +2390,25 @@ class Sim:
                 raise ValueError(f"Invalid stepper config: {e}") from None
 
         final_config = (
-            dataclasses.replace(default_config, **config_updates) if config_updates else default_config
+            dataclasses.replace(default_config, **config_updates)
+            if config_updates
+            else dataclasses.replace(default_config)
         )
         new_config = stepper_spec.pack_config(final_config)
         if prev_config is not None and prev_config.size and not np.array_equal(prev_config, new_config):
             self._log_stepper_overrides(prev_config, new_config, config_updates)
-        return new_config
+        values = dataclasses.asdict(final_config)
+        return _finalize(new_config, values)
+
+    def _config_values_from_array(self, cfg: np.ndarray) -> Dict[str, float]:
+        values: Dict[str, float] = {}
+        if cfg.size == 0:
+            return values
+        names = self._stepper_config_names
+        limit = min(len(names), int(cfg.size))
+        for idx in range(limit):
+            values[names[idx]] = float(cfg[idx])
+        return values
 
 
 # ------------------------------- misc helpers ---------------------------------

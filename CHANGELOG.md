@@ -2,6 +2,22 @@
 
 ---
 
+## [2.28.8] – 2025-11-20
+### Added
+- Added automatic initial step size selection for adaptive ODE steppers using Hairer/Shampine-style WRMS 
+  norm heuristics. Now dt arg for adaptive ode steppers is just a suggestion and max step bound. Stepper 
+  tol, atol, meta.order values are accessed automatically during heuristics. Placed the algorithm into 
+  `initial_step.py` module. Heuristics are disabled if `resume=True`. 
+
+### Changed
+- Updated simulation wrapper to choose initial dt based on stepper type and configuration.
+- Modified Sim class to support WRMS config for adaptive steppers.
+
+### Tests
+- Added tests for new initial step size selection heuristic feature.
+
+---
+
 ## [2.28.7] – 2025-11-20
 ### Changed
 - Improved `bdf2a` stepper startup by using Richardson extrapolation for better accuracy on the first step. 

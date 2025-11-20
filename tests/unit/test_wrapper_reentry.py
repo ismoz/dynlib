@@ -4,6 +4,7 @@ import pytest
 
 from dynlib.runtime.runner_api import DONE, GROW_EVT, GROW_REC, STEPFAIL
 from dynlib.runtime.wrapper import run_with_wrapper
+from dynlib.runtime.initial_step import WRMSConfig
 
 # ---- Fake callables -----------------------------------------------------------
 def _rhs(t, y_vec, dy_out, params, runtime_ws):  # pragma: no cover
@@ -130,3 +131,62 @@ def test_wrapper_warns_and_sets_status_on_failure():
     assert not res.ok
     assert res.n == 0
     assert res.m == 0
+
+
+class _RecordingRunner:
+    def __init__(self):
+        self.dt_arg = None
+
+    def __call__(self, *args):
+        # dt is the third scalar argument (t0, t_end, dt_init, ...)
+        self.dt_arg = float(args[2])
+        user_break_flag = args[-10]
+        status_out = args[-9]
+        hint_out = args[-8]
+        i_out = args[-7]
+        step_out = args[-6]
+        t_out = args[-5]
+
+        user_break_flag[0] = 0
+        status_out[0] = DONE
+        hint_out[0] = 0
+        i_out[0] = 0
+        step_out[0] = 0
+        t_out[0] = float(args[0])
+        return DONE
+
+
+def _rhs_wrms(t, y_vec, dy_out, params, runtime_ws):  # pragma: no cover - simple helper
+    dy_out[:] = 1.0
+
+
+def test_wrapper_uses_wrms_dt_when_available():
+    ic = np.array([0.0, 0.0], dtype=np.float64)
+    params = np.array([0.0], dtype=np.float64)
+    runner = _RecordingRunner()
+    cfg = WRMSConfig(atol=1e-6, rtol=1e-3, order=1, safety=1.0, min_dt=0.05, max_dt=0.05)
+
+    res = run_with_wrapper(
+        runner=runner,
+        stepper=_stepper,
+        rhs=_rhs_wrms,
+        events_pre=_events_pre,
+        events_post=_events_post,
+        dtype=np.float64,
+        n_state=2,
+        t0=0.0,
+        t_end=1.0,
+        dt_init=None,
+        max_steps=1,
+        record=False,
+        record_interval=1,
+        ic=ic,
+        params=params,
+        cap_rec=1,
+        cap_evt=1,
+        wrms_cfg=cfg,
+        adaptive=True,
+    )
+
+    assert res.status == DONE
+    assert pytest.approx(runner.dt_arg) == 0.05
