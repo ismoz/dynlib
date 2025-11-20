@@ -2,6 +2,18 @@
 
 ---
 
+## [2.29.0] – 2025-11-20
+### Added
+- Added `dynlib` CLI entry point with `model validate`, `steppers list`, and `cache` management 
+  subcommands for model validation, registry inspection, and JIT cache cleanup. The CLI entry point is
+  placed into `src/dynlib/cli.py`.
+
+### Tests
+- Added unit tests covering the new CLI flows (model validation success/failure, stepper filters, cache 
+  listing/clearing).
+
+---
+
 ## [2.28.9] – 2025-11-20
 ### Added
 - Added validation script for adaptive ODE steppers tolerance sweep.
