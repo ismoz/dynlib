@@ -2,6 +2,17 @@
 
 ---
 
+## [2.28.9] – 2025-11-20
+### Added
+- Added validation script for adaptive ODE steppers tolerance sweep.
+- Added RK2 (explicit midpoint) stepper for fixed-step ODE simulations.
+- Added SDIRK2 (Alexander) stepper, a JIT-compatible implicit method for stiff ODEs.
+
+### Tests
+- Added basic accuracy and contract tests for RK2 and SDIRK2 steppers.
+
+---
+
 ## [2.28.8] – 2025-11-20
 ### Added
 - Added automatic initial step size selection for adaptive ODE steppers using Hairer/Shampine-style WRMS 

@@ -1,9 +1,9 @@
-# tests/steppers/ode/test_rk4_basic.py
+# tests/steppers/ode/test_rk2_midpoint_basic.py
 """
-Integration tests: RK4 stepper using end-user API.
+Integration tests: RK2 (explicit midpoint) stepper using end-user API.
 
 Tests verify:
-- RK4 fixed-step provides 4th-order accuracy on dx/dt = -a*x
+- RK2 fixed-step provides 2nd-order accuracy on dx/dt = -a*x
 - Order-of-convergence scaling when halving dt
 """
 from __future__ import annotations
@@ -13,16 +13,15 @@ import pytest
 
 from dynlib import setup
 
-# tests/steppers/ode/test_rk4_basic.py
 DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "models"
 DECAY_MODEL = str(DATA_DIR / "decay.toml")
 
 
-def test_rk4_decay_accuracy():
+def test_rk2_decay_accuracy():
     """
-    RK4 on dx/dt = -x should be very accurate with dt=0.1 over T=2.0.
+    RK2 on dx/dt = -x should be reasonably accurate with dt=0.1 over T=2.0.
     """
-    sim = setup(DECAY_MODEL, stepper="rk4", jit=True)
+    sim = setup(DECAY_MODEL, stepper="rk2", jit=True)
 
     T = 2.0
     dt = 0.1
@@ -37,21 +36,22 @@ def test_rk4_decay_accuracy():
     x_analytic = np.exp(-t_final)
     rel_error = abs(x_final - x_analytic) / x_analytic
 
-    # RK4: expect very small error
-    assert rel_error < 1e-5, f"RK4 error too large: {rel_error}"
+    # RK2 (midpoint) is 2nd-order: expect small but not RK4-level error
+    # This bound should be comfortably satisfied while still catching regressions.
+    assert rel_error < 5e-3, f"RK2 error too large: {rel_error}"
 
 
-def test_rk4_order_convergence():
+def test_rk2_order_convergence():
     """
-    Check 4th-order convergence:
+    Check 2nd-order convergence:
 
-    Error(dt=0.2) / Error(dt=0.1) ~ 2^4 = 16 (roughly).
+    Error(dt=0.2) / Error(dt=0.1) ~ 2^2 = 4 (roughly).
     """
     T = 2.0
     x_analytic = np.exp(-T)
 
     # Coarse dt = 0.2
-    sim_coarse = setup(DECAY_MODEL, stepper="rk4", jit=True)
+    sim_coarse = setup(DECAY_MODEL, stepper="rk2", jit=True)
     sim_coarse.run(T=T, dt=0.2, record=True)
     res_coarse = sim_coarse.raw_results()
     idx_c = int(np.argmin(np.abs(res_coarse.T_view - T)))
@@ -59,7 +59,7 @@ def test_rk4_order_convergence():
     err_c = abs(x_c - x_analytic)
 
     # Fine dt = 0.1
-    sim_fine = setup(DECAY_MODEL, stepper="rk4", jit=True)
+    sim_fine = setup(DECAY_MODEL, stepper="rk2", jit=True)
     sim_fine.run(T=T, dt=0.1, record=True)
     res_fine = sim_fine.raw_results()
     idx_f = int(np.argmin(np.abs(res_fine.T_view - T)))
@@ -68,26 +68,26 @@ def test_rk4_order_convergence():
 
     if err_f > 1e-14:  # avoid ratio blow-up
         ratio = err_c / err_f
-        # Be generous with bounds; we just want "≈ 16"
-        assert 10.0 < ratio < 25.0, f"Expected ~16x improvement, got {ratio}"
+        # Be generous with bounds; we just want "≈ 4"
+        assert 2.5 < ratio < 6.0, f"Expected ~4x improvement, got {ratio}"
 
 
-def test_rk4_vs_euler_terminal_error():
+def test_rk2_vs_euler_terminal_error():
     """
-    For the same fixed dt, RK4 should be much more accurate than Euler
+    For the same fixed dt, RK2 should be notably more accurate than Euler
     at T=2.0 on dx/dt = -x.
     """
     T = 2.0
     dt = 0.1
     x_analytic = np.exp(-T)
 
-    # RK4
-    sim_rk4 = setup(DECAY_MODEL, stepper="rk4", jit=True)
-    sim_rk4.run(T=T, dt=dt, record=True)
-    res_rk4 = sim_rk4.raw_results()
-    idx_rk4 = int(np.argmin(np.abs(res_rk4.T_view - T)))
-    x_rk4 = res_rk4.Y_view[0, idx_rk4]
-    err_rk4 = abs(x_rk4 - x_analytic)
+    # RK2
+    sim_rk2 = setup(DECAY_MODEL, stepper="rk2", jit=True)
+    sim_rk2.run(T=T, dt=dt, record=True)
+    res_rk2 = sim_rk2.raw_results()
+    idx_rk2 = int(np.argmin(np.abs(res_rk2.T_view - T)))
+    x_rk2 = res_rk2.Y_view[0, idx_rk2]
+    err_rk2 = abs(x_rk2 - x_analytic)
 
     # Euler
     sim_euler = setup(DECAY_MODEL, stepper="euler", jit=True)
@@ -97,12 +97,10 @@ def test_rk4_vs_euler_terminal_error():
     x_eu = res_eul.Y_view[0, idx_eu]
     err_eu = abs(x_eu - x_analytic)
 
-    # RK4 should beat Euler by a big factor.
+    # RK2 should beat Euler by a comfortable factor.
     if err_eu > 1e-12:  # avoid noisy ratios
-        ratio = err_eu / err_rk4
-        # Global errors: Euler ~ O(dt), RK4 ~ O(dt^4), so ratio should be large.
-        # Be generous to avoid flakiness.
-        assert ratio > 10.0, (
-            f"RK4 not significantly better than Euler: "
-            f"ratio={ratio}, rk4={err_rk4}, euler={err_eu}"
+        ratio = err_eu / err_rk2
+        assert ratio > 5.0, (
+            f"RK2 not significantly better than Euler: "
+            f"ratio={ratio}, rk2={err_rk2}, euler={err_eu}"
         )

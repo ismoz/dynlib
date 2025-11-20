@@ -20,7 +20,7 @@ DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "models"
 DECAY_MODEL = str(DATA_DIR / "decay.toml")
 
 # bdf2_scipy is not jittable
-@pytest.mark.parametrize("stepper", ["euler", "rk4", "rk45", "ab2", "ab3", "bdf2", "bdf2a", "tr-bdf2a"])
+@pytest.mark.parametrize("stepper", ["euler", "rk2", "rk4", "rk45", "ab2", "ab3", "bdf2", "sdirk2", "bdf2a", "tr-bdf2a"])
 def test_jit_on_off_parity(stepper: str):
     """
     Guardrail: JIT on/off must produce identical results for the same
@@ -74,6 +74,11 @@ def test_stepper_registry_and_meta():
     assert euler.meta.order == 1
     assert getattr(euler.meta, "time_control", None) == "fixed"
 
+    rk2 = get_stepper("rk2")
+    assert rk2.meta.name == "rk2"
+    assert rk2.meta.order == 2
+    assert getattr(rk2.meta, "time_control", None) == "fixed"
+
     rk4 = get_stepper("rk4")
     assert rk4.meta.name == "rk4"
     assert rk4.meta.order == 4
@@ -105,6 +110,14 @@ def test_stepper_registry_and_meta():
     assert getattr(bdf2_jit.meta, "time_control", None) == "fixed"
     # Jacobian capability: internal numeric J, no external Jacobian API
     assert bdf2_jit.meta.caps.jacobian == "internal"
+
+    sdirk = get_stepper("sdirk2")
+    assert sdirk.meta.name == "sdirk2"
+    # Second-order BDF
+    assert sdirk.meta.order == 2
+    assert getattr(sdirk.meta, "time_control", None) == "fixed"
+    # Jacobian capability: internal numeric J, no external Jacobian API
+    assert sdirk.meta.caps.jacobian == "internal"
 
     bdf2_scipy = get_stepper("bdf2_scipy")
     assert bdf2_scipy.meta.name == "bdf2_scipy"

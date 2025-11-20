@@ -1,6 +1,6 @@
 from dynlib import setup
 from dynlib.plot import series, export, fig, phase
-
+from dynlib.utils import Timer
 
 stepper = "tr-bdf2a"
 mu = 1000.0
@@ -12,7 +12,8 @@ sim = setup("builtin://ode/vanderpol",
 
 sim.assign(mu=mu)
 sim.config(dt=5e-4, max_steps=6_500_000)
-sim.run(T=3000.0)
+with Timer("run simulation"):
+    sim.run(T=3000.0)
 res = sim.results()
 
 series.plot(x=res.t, y=res["x"],
