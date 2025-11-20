@@ -35,6 +35,12 @@ __pycache__/
 # CSV files
 *.csv
 
+# Figures
+*.png
+*.jpg
+*.jpeg
+*.svg
+
 # C extensions
 *.so
 

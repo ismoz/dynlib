@@ -29,6 +29,10 @@ def savefig(
     if target.suffix:
         target = target.with_suffix("")
 
+    # If constrained layout is used, don't apply tight bbox_inches to avoid clipping
+    if fig.get_constrained_layout() and bbox_inches == "tight":
+        bbox_inches = None
+
     # normalize fmts: lower, dedupe while preserving order
     seen: set[str] = set()
     norm_fmts: list[str] = []

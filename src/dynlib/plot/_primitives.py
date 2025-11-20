@@ -19,21 +19,22 @@ from ._fig import _resolve_figsize
 
 STYLE_PRESETS: dict[str, dict[str, Any]] = {
     # For continuous systems (flows/ODEs)
-    "continuous": {"linestyle": "-", "marker": "", "markersize": 0},
-    "cont": {"linestyle": "-", "marker": "", "markersize": 0},
-    "flow": {"linestyle": "-", "marker": "", "markersize": 0},
+    # Note: Only visual pattern (line/marker presence), not sizes/widths (those come from theme)
+    "continuous": {"linestyle": "-", "marker": ""},
+    "cont": {"linestyle": "-", "marker": ""},
+    "flow": {"linestyle": "-", "marker": ""},
 
     # For discrete systems (maps)
-    "discrete": {"linestyle": "", "marker": "o", "markersize": 4},
-    "map": {"linestyle": "", "marker": "o", "markersize": 4},
+    "discrete": {"linestyle": "", "marker": "o"},
+    "map": {"linestyle": "", "marker": "o"},
 
     # Mixed styles
-    "mixed": {"linestyle": "-", "marker": "o", "markersize": 4},
-    "connected": {"linestyle": "-", "marker": "o", "markersize": 4},
+    "mixed": {"linestyle": "-", "marker": "o"},
+    "connected": {"linestyle": "-", "marker": "o"},
 
     # Other useful presets
-    "scatter": {"linestyle": "", "marker": "o", "markersize": 6},
-    "line": {"linestyle": "-", "marker": "", "markersize": 0},
+    "scatter": {"linestyle": "", "marker": "o"},
+    "line": {"linestyle": "-", "marker": ""},
 }
 
 
@@ -334,23 +335,20 @@ def _apply_labels(
     title_fs: float | None = None,
 ) -> None:
     if xlabel is not None:
-        ax.set_xlabel(
-            xlabel,
-            labelpad=float(xpad) if xpad is not None else None,
-            fontsize=float(xlabel_fs) if xlabel_fs is not None else None,
-        )
+        kwargs = {"labelpad": float(xpad)} if xpad is not None else {}
+        if xlabel_fs is not None:
+            kwargs["fontsize"] = float(xlabel_fs)
+        ax.set_xlabel(xlabel, **kwargs)
     if ylabel is not None:
-        ax.set_ylabel(
-            ylabel,
-            labelpad=float(ypad) if ypad is not None else None,
-            fontsize=float(ylabel_fs) if ylabel_fs is not None else None,
-        )
+        kwargs = {"labelpad": float(ypad)} if ypad is not None else {}
+        if ylabel_fs is not None:
+            kwargs["fontsize"] = float(ylabel_fs)
+        ax.set_ylabel(ylabel, **kwargs)
     if title is not None:
-        ax.set_title(
-            title,
-            pad=float(titlepad) if titlepad is not None else None,
-            fontsize=float(title_fs) if title_fs is not None else None,
-        )
+        kwargs = {"pad": float(titlepad)} if titlepad is not None else {}
+        if title_fs is not None:
+            kwargs["fontsize"] = float(title_fs)
+        ax.set_title(title, **kwargs)
     _apply_ticks(ax)
     _apply_margins(ax)
 
@@ -438,10 +436,19 @@ def _resolve_style(
 ) -> dict[str, Any]:
     """
     Resolve style from preset name or custom dict, with explicit overrides.
-    Priority: explicit args > dict > preset > theme defaults
+    
+    Priority hierarchy (highest to lowest):
+      1. Explicit function arguments (color=, lw=, ls=, marker=, ms=, alpha=)
+      2. Style dict values (if style is a dict)
+      3. Style preset values (if style is a preset name like "continuous")
+      4. Theme defaults (line_w, marker_size, etc.)
+    
+    Note: Style presets define visual PATTERNS (line/marker presence),
+          while themes define rendering PROPERTIES (sizes, widths, colors).
     """
     result: dict[str, Any] = {}
 
+    # Apply style preset or dict (visual pattern)
     if isinstance(style, str):
         if style in STYLE_PRESETS:
             result.update(STYLE_PRESETS[style])
@@ -452,6 +459,7 @@ def _resolve_style(
     elif isinstance(style, dict):
         result.update(style)
 
+    # Apply explicit overrides (highest priority)
     if color is not None:
         result["color"] = color
     if lw is not None:
@@ -465,6 +473,7 @@ def _resolve_style(
     if alpha is not None:
         result["alpha"] = alpha
 
+    # Fill in missing values from theme (lowest priority)
     if "linewidth" not in result:
         result["linewidth"] = float(_theme.get("line_w"))
     if "marker" not in result:

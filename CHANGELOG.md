@@ -2,6 +2,18 @@
 
 ---
 
+## [2.29.1] – 2025-11-20
+### Added
+- Added plotting theme system using `ThemeSpec` dataclass with inheritance support for better theme management 
+  and customization.
+- Added `themes_demo.py` example to demonstrate all available theme presets with sample plots.
+
+### Changed
+- Enhanced savefig function to properly handle constrained layout without clipping.
+- Improved style resolution with clear priority hierarchy separating visual patterns from rendering properties.
+
+---
+
 ## [2.29.0] – 2025-11-20
 ### Added
 - Added `dynlib` CLI entry point with `model validate`, `steppers list`, and `cache` management 
