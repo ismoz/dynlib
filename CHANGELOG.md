@@ -2,6 +2,20 @@
 
 ---
 
+## [2.29.4] – 2025-11-21
+### Added
+- Added validation to prevent auxiliary variables from using reserved names like `t` to avoid conflicts 
+  with runtime symbols. `_AUX_RESERVED_NAMES` list can be expanded to restrict aux names in the future.
+
+### Changed
+- Renamed auxiliary variable in Ikeda map model from `t` to `theta` for clarity and to avoid reserved 
+  name conflict.
+
+### Tests
+- Added a test for reserved auxiliary name validation.
+
+---
+
 ## [2.29.3] – 2025-11-20
 ### Added
 - Added documentation for DSL model file template in `docs/dsl_model_template.md`.

@@ -56,6 +56,13 @@ def test_numeric_strings_for_states_and_params():
     assert spec.param_vals == (2.0,)
 
 
+def test_aux_name_reserved():
+    n = minimal_doc()
+    n["aux"] = {"t": "x + 1"}
+    with pytest.raises(ModelLoadError, match=r"reserved"):
+        build_spec(parse_model_v2(n))
+
+
 def test_invalid_numeric_string_raises():
     n = minimal_doc()
     n["params"]["a"] = "foo"

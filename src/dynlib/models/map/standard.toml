@@ -1,6 +1,6 @@
 [model]
 type = "map"
-label = "Standard Map (no wrap)"
+label = "Standard Map"
 dtype = "float64"
 
 [states]
@@ -13,8 +13,8 @@ pi = 3.141592653589793
 # TODO: Support pi / e constants
 
 [equations.rhs]
-p     = "p + K * sin(theta)"
-theta = "theta + p + K * sin(theta)"
+p     = "((p + K * sin(theta)) + pi) % (2*pi) - pi"
+theta = "(theta + p + K * sin(theta)) % (2*pi)"
 
 [meta]
 title = "Standard Map (Chirikov–Taylor, unwrapped)"

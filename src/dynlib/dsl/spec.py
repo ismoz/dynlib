@@ -141,6 +141,7 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
         validate_functions_signature,
         validate_no_duplicate_equation_targets,
         validate_presets,
+        validate_aux_names,
         collect_lag_requests,
         detect_equation_lag_usage,
     )
@@ -151,6 +152,7 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
     validate_functions_signature(normal)
     validate_no_duplicate_equation_targets(normal)
     validate_presets(normal)
+    validate_aux_names(normal)
     
     # Collect lag requests from all expressions
     lag_requests = collect_lag_requests(normal)

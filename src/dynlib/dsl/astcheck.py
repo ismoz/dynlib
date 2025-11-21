@@ -15,6 +15,7 @@ __all__ = [
     "validate_functions_signature",
     "validate_no_duplicate_equation_targets",
     "validate_presets",
+    "validate_aux_names",
 ]
 
 #NOTE: emitter.py and schema.py also perform the same regex matching;
@@ -35,6 +36,9 @@ _LAG_CALL = re.compile(r'lag_([A-Za-z_]\w*)\s*\(\s*(\d*)\s*\)')
 _MACRO_LAG_CALL = re.compile(
     r'\b(cross_up|cross_down|cross_either|changed|enters_interval|leaves_interval|increasing|decreasing)\s*\(\s*([A-Za-z_]\w*)'
 )
+
+# Aux identifiers that are reserved for runtime/time symbols and must not be shadowed
+_AUX_RESERVED_NAMES = frozenset({"t"})
 
 
 def collect_names(normal: Dict[str, Any]) -> Dict[str, Set[str]]:
@@ -297,6 +301,17 @@ def validate_event_tags(normal: Dict[str, Any]) -> None:
                     f"Tags must start with a letter or underscore and contain only "
                     f"letters, digits, underscores, and hyphens."
                 )
+
+def validate_aux_names(normal: Dict[str, Any]) -> None:
+    """Reject aux identifiers that shadow reserved runtime symbols (e.g., time 't')."""
+    aux_names = set((normal.get("aux") or {}).keys())
+    bad = aux_names & _AUX_RESERVED_NAMES
+    if bad:
+        bad_list = ", ".join(sorted(bad))
+        reserved_list = ", ".join(sorted(_AUX_RESERVED_NAMES))
+        raise ModelLoadError(
+            f"[aux] name(s) {bad_list} are reserved (reserved: {reserved_list})"
+        )
 
 
 def validate_functions_signature(normal: Dict[str, Any]) -> None:
