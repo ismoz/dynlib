@@ -234,7 +234,7 @@ def build_callables(
     disk_cache: bool = True,
 ) -> CompiledPieces:
     """
-    produce (rhs, events_pre, events_post) with optional JIT.
+    produce (rhs, events_pre, events_post, update_aux) with optional JIT.
     Also caches the stepper if jit=True to avoid recompilation.
     """
     # Guards are configured in build() and passed to runner via FullModel
@@ -375,6 +375,9 @@ def _warmup_jit_runner(
     dtype_np = np.dtype(dtype)
     n_state = len(spec.states)
     n_aux = len(spec.aux or {})
+    max_log_width = 0
+    for evt in spec.events:
+        max_log_width = max(max_log_width, len(getattr(evt, "log", ()) or ()))
     
     # Allocate minimal workspaces and buffers for warmup
     runtime_ws = make_runtime_workspace(
@@ -392,8 +395,13 @@ def _warmup_jit_runner(
         dtype=dtype_np,
         cap_rec=2,      # Minimal capacity
         cap_evt=1,
-        max_log_width=1,
+        max_log_width=max(1, max_log_width),
     )
+    n_rec_states = min(1, n_state) if n_state > 0 else 0
+    n_rec_aux = min(1, n_aux) if n_aux > 0 else 0
+    state_rec_indices = np.arange(n_rec_states, dtype=np.int32)
+    aux_rec_indices = np.arange(n_rec_aux, dtype=np.int32)
+    aux_rec = np.zeros((n_rec_aux, rec.cap_rec), dtype=dtype_np) if n_rec_aux else np.zeros((0, rec.cap_rec), dtype=dtype_np)
     
     # Create minimal arrays for warmup call
     y_curr = np.array(list(spec.state_ic), dtype=dtype_np)
@@ -432,13 +440,14 @@ def _warmup_jit_runner(
             stepper_ws,
             stepper_config,
             y_prop, t_prop, dt_next, err_est,
-            rec.T, rec.Y, rec.STEP, rec.FLAGS,
+            rec.T, rec.Y, aux_rec, rec.STEP, rec.FLAGS,
             ev.EVT_CODE, ev.EVT_INDEX, ev.EVT_LOG_DATA,
             evt_log_scratch,
             np.int64(0), np.int64(0), int(rec.cap_rec), int(ev.cap_evt),
             user_break_flag, status_out, hint_out,
             i_out, step_out, t_out,
             stepper, rhs, events_pre, events_post, update_aux,
+            state_rec_indices, aux_rec_indices, n_rec_states, n_rec_aux,
         )
     except Exception:
         # Warmup failure is not critical - the JIT will compile on first real call
@@ -809,7 +818,14 @@ def build(
     def _all_compiled() -> bool:
         return all(
             _dispatcher_compiled(obj)
-            for obj in (runner_fn, stepper_fn, pieces.rhs, pieces.events_pre, pieces.events_post)
+            for obj in (
+                runner_fn,
+                stepper_fn,
+                pieces.rhs,
+                pieces.events_pre,
+                pieces.events_post,
+                pieces.update_aux,
+            )
         )
 
     if jit and not _all_compiled():

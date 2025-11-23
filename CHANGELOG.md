@@ -2,6 +2,16 @@
 
 ---
 
+## [2.30.1] – 2025-11-23
+### Changed
+- Warm-up now matches the new runner ABI and quadruplet callables so JIT compilation is triggered during 
+  build again.
+- `_warmup_jit_runner` now allocates AUX/selective-recording buffers, computes event log width, and passes 
+  `state_rec_indices`, `aux_rec_indices`, and counts to the runner along with the AUX buffer.
+- `_all_compiled` checks `update_aux` too, preventing skips when only the aux updater lacks signatures.
+
+---
+
 ## [2.30.0] – 2025-11-23
 ### Added
 - Added `update_aux` callable to compute auxiliary variables from current state values. This function is 
