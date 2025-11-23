@@ -2,6 +2,21 @@
 
 ---
 
+## [2.29.5] – 2025-11-23
+### Added
+- Added support for `sum()` and `prod()` generator comprehensions in DSL expressions. These allow summing or 
+  multiplying over ranges with optional conditions, like `sum(i*i for i in range(10))` or 
+  `prod((i+1) for i in range(1, 5) if i % 2 == 0)`. They are compiled into efficient for-loops and work in 
+  equations, aux variables, events, and functions.
+- Updated documentation in `docs/dsl_macros_and_functions.md` with a new "Generator Comprehensions" section 
+  explaining the syntax and examples.
+
+### Tests
+- Added comprehensive tests in `tests/unit/test_sum_generator_lowering.py` to verify the functionality works 
+  correctly with both JIT and non-JIT compilation.
+
+---
+
 ## [2.29.4] – 2025-11-21
 ### Added
 - Added validation to prevent auxiliary variables from using reserved names like `t` to avoid conflicts 

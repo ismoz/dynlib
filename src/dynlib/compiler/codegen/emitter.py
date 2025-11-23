@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import re
 
 from dynlib.dsl.spec import ModelSpec, EventSpec
-from .rewrite import NameMaps, compile_scalar_expr, sanitize_expr, lower_expr_node
+from .rewrite import NameMaps, compile_scalar_expr, sanitize_expr, lower_expr_node, lower_expr_with_preamble
 
 __all__ = ["emit_rhs_and_events", "CompiledCallables"]
 
@@ -61,11 +61,12 @@ def _compile_rhs(spec: ModelSpec, nmap: NameMaps):
     if spec.equations_rhs:
         for sname, expr in spec.equations_rhs.items():
             idx = nmap.state_to_ix[sname]
-            node = lower_expr_node(expr, nmap, aux_defs=_aux_defs(spec), fn_defs=nmap.functions)
+            preamble, node = lower_expr_with_preamble(expr, nmap, aux_defs=_aux_defs(spec), fn_defs=nmap.functions)
             assign = ast.Assign(
                 targets=[ast.Subscript(value=ast.Name(id="dy_out", ctx=ast.Load()), slice=ast.Constant(value=idx), ctx=ast.Store())],
                 value=node,
             )
+            body.extend(preamble)
             body.append(assign)
     
     # Case 2: Block form
@@ -119,11 +120,12 @@ def _compile_rhs(spec: ModelSpec, nmap: NameMaps):
                     )
             
             idx = nmap.state_to_ix[sname]
-            node = lower_expr_node(rhs, nmap, aux_defs=_aux_defs(spec), fn_defs=nmap.functions)
+            preamble, node = lower_expr_with_preamble(rhs, nmap, aux_defs=_aux_defs(spec), fn_defs=nmap.functions)
             assign = ast.Assign(
                 targets=[ast.Subscript(value=ast.Name(id="dy_out", ctx=ast.Load()), slice=ast.Constant(value=idx), ctx=ast.Store())],
                 value=node,
             )
+            body.extend(preamble)
             body.append(assign)
     
     mod = ast.Module(
@@ -212,9 +214,10 @@ def _compile_action_block_ast(block_lines: List[Tuple[str, str]], spec: ModelSpe
     stmts: List[ast.stmt] = []
     for lhs, rhs_expr in block_lines:
         kind, ix, _ = _legal_lhs(lhs, spec)
-        rhs_node = lower_expr_node(rhs_expr, nmap, aux_defs=_aux_defs(spec), fn_defs=nmap.functions)
+        preamble, rhs_node = lower_expr_with_preamble(rhs_expr, nmap, aux_defs=_aux_defs(spec), fn_defs=nmap.functions)
         target = ast.Subscript(value=ast.Name(id="y_vec" if kind == "state" else "params", ctx=ast.Load()),
                                slice=ast.Constant(value=ix), ctx=ast.Store())
+        stmts.extend(preamble)
         stmts.append(ast.Assign(targets=[target], value=rhs_node))
     return stmts
 
@@ -245,7 +248,7 @@ def _emit_events_function(spec: ModelSpec, phase: str, nmap: NameMaps):
         if ev.phase not in ("both", phase):
             continue
         
-        cond_node = lower_expr_node(ev.cond or "1", nmap, aux_defs=_aux_defs(spec), fn_defs=nmap.functions)
+        cond_preamble, cond_node = lower_expr_with_preamble(ev.cond or "1", nmap, aux_defs=_aux_defs(spec), fn_defs=nmap.functions)
         
         # collect actions (keyed or block)
         actions: List[Tuple[str, str]] = []
@@ -267,7 +270,7 @@ def _emit_events_function(spec: ModelSpec, phase: str, nmap: NameMaps):
             for log_idx, log_signal in enumerate(ev.log):
                 # Parse log signal: "x", "param:a", "aux:E", etc.
                 log_expr = _parse_log_signal(log_signal, nmap, spec)
-                log_node = lower_expr_node(log_expr, nmap, aux_defs=_aux_defs(spec), fn_defs=nmap.functions)
+                log_preamble, log_node = lower_expr_with_preamble(log_expr, nmap, aux_defs=_aux_defs(spec), fn_defs=nmap.functions)
                 
                 # evt_log_scratch[log_idx] = <value>
                 assign = ast.Assign(
@@ -278,6 +281,7 @@ def _emit_events_function(spec: ModelSpec, phase: str, nmap: NameMaps):
                     )],
                     value=log_node,
                 )
+                act_stmts.extend(log_preamble)
                 act_stmts.append(assign)
         
         # Return (event_code, log_width)
@@ -288,6 +292,7 @@ def _emit_events_function(spec: ModelSpec, phase: str, nmap: NameMaps):
         
         event_code_counter += 1
         
+        body.extend(cond_preamble)
         body.append(ast.If(test=cond_node, body=act_stmts or [ast.Pass()], orelse=[]))
     
     # Default return (-1, 0) - no event fired

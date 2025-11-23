@@ -60,6 +60,20 @@ Scalar macros are special functions that perform common mathematical operations:
 - `clip(x, min, max)` - Clamp x to the range [min, max]
 - `approx(x, y, tol)` - Check if |x - y| <= tol (returns boolean)
 
+## Generator Comprehensions
+
+The DSL supports generator comprehensions for efficient sum and product operations over ranges:
+
+- `sum(expr for var in range(start, stop[, step]) [if condition])` - Sum of expressions over a range
+- `prod(expr for var in range(start, stop[, step]) [if condition])` - Product of expressions over a range
+
+These constructs are compiled into optimized for-loops. Only `range()` is supported as the iterator, and only a single generator is allowed. Conditional filters with `if` are supported.
+
+Examples:
+- `sum(i*i for i in range(10))` - Sum of squares from 0 to 9 (0+1+4+...+81)
+- `prod((i+1) for i in range(1, 5))` - Product 2×3×4×5 = 120
+- `sum(x[i] for i in range(N) if i % 2 == 0)` - Sum of even-indexed elements (assuming x is an array)
+
 ## Event Macros
 
 Event macros are used in event conditions to detect state changes and transitions. These macros automatically use lagged state values for comparison:
@@ -107,7 +121,7 @@ These functions can then be called in equations, aux variables, and events like 
 - Time (`t`)
 - Aux variables (by name)
 - User-defined functions
-- All built-in math functions and scalar macros
+- All built-in math functions, scalar macros, and generator comprehensions
 - Lag notation (if applicable)
 
 ### Available in Aux Variables
@@ -119,7 +133,7 @@ These functions can then be called in equations, aux variables, and events like 
 - Time (`t`)
 - Aux variables (by name)
 - User-defined functions
-- All built-in math functions and scalar macros
+- All built-in math functions, scalar macros, and generator comprehensions
 - Event macros
 - Lag notation (if applicable)
 
@@ -127,7 +141,7 @@ These functions can then be called in equations, aux variables, and events like 
 - Function arguments
 - Time (`t`) - if the function is called in a context where time is available
 - Other user-defined functions (no recursion allowed)
-- All built-in math functions and scalar macros
+- All built-in math functions, scalar macros, and generator comprehensions
 - Lag notation (if applicable and function is called in appropriate context)
 
 ## Notes

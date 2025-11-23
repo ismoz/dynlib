@@ -7,7 +7,13 @@ import re
 
 from dynlib.errors import ModelLoadError
 
-__all__ = ["sanitize_expr", "compile_scalar_expr", "lower_expr_node", "NameMaps"]
+__all__ = [
+    "sanitize_expr",
+    "compile_scalar_expr",
+    "lower_expr_node",
+    "lower_expr_with_preamble",
+    "NameMaps",
+]
 
 _POW = re.compile(r"\^")
 
@@ -538,6 +544,80 @@ class _ArgReplacer(ast.NodeTransformer):
             return ast.copy_location(self.subs[node.id], node)
         return node
 
+
+class _SumGenLowerer(ast.NodeTransformer):
+    """
+    Lower sum/prod(generator) into a for-loop preamble and a temp variable.
+    
+    Recognized pattern:
+        sum(<elt> for <target> in range(...) [if cond1 [if cond2 ...]])
+        prod(<elt> for <target> in range(...) [if cond1 [if cond2 ...]])
+    
+    Returns a Name node referring to a generated temp (e.g. _sum0) and
+    accumulates preamble statements on self.preamble.
+    """
+    def __init__(self):
+        self.preamble: List[ast.stmt] = []
+        self._counter = 0
+
+    def visit_Call(self, node: ast.Call):
+        node = self.generic_visit(node)
+        if not (isinstance(node.func, ast.Name) and node.func.id in {"sum", "prod"}):
+            return node
+        func_name = node.func.id
+        if node.keywords:
+            raise ModelLoadError(f"{func_name}(...) with keyword arguments is not supported in the DSL")
+        if len(node.args) != 1:
+            return node
+        gen = node.args[0]
+        if not isinstance(gen, ast.GeneratorExp):
+            return node
+        if len(gen.generators) != 1:
+            raise ModelLoadError(f"Only a single generator is supported inside {func_name}(...)")
+        comp = gen.generators[0]
+        if not isinstance(comp.target, ast.Name):
+            raise ModelLoadError(f"{func_name}(generator) requires a simple loop variable (e.g. 'for i in ...')")
+        loop_var = comp.target.id
+        iter_call = comp.iter
+        if not (
+            isinstance(iter_call, ast.Call)
+            and isinstance(iter_call.func, ast.Name)
+            and iter_call.func.id == "range"
+        ):
+            raise ModelLoadError(f"{func_name}(generator) is only supported for ranges: {func_name}(expr for i in range(...))")
+
+        temp_name = f"_{func_name}{self._counter}"
+        self._counter += 1
+
+        init = ast.Assign(
+            targets=[ast.Name(id=temp_name, ctx=ast.Store())],
+            value=ast.Constant(value=0.0 if func_name == "sum" else 1.0),
+        )
+
+        aug_op = ast.Add() if func_name == "sum" else ast.Mult()
+        aug = ast.AugAssign(
+            target=ast.Name(id=temp_name, ctx=ast.Store()),
+            op=aug_op,
+            value=gen.elt,
+        )
+
+        loop_body: List[ast.stmt]
+        if comp.ifs:
+            test = comp.ifs[0] if len(comp.ifs) == 1 else ast.BoolOp(op=ast.And(), values=comp.ifs)
+            loop_body = [ast.If(test=test, body=[aug], orelse=[])]
+        else:
+            loop_body = [aug]
+
+        loop = ast.For(
+            target=ast.Name(id=loop_var, ctx=ast.Store()),
+            iter=iter_call,
+            body=loop_body,
+            orelse=[],
+        )
+
+        self.preamble.extend([init, loop])
+        return ast.copy_location(ast.Name(id=temp_name, ctx=ast.Load()), node)
+
 def _parse_expr(expr: str) -> ast.AST:
     return ast.parse(sanitize_expr(expr), mode="eval").body
 
@@ -558,6 +638,30 @@ def lower_expr_node(
     ast.fix_missing_locations(lowered)
     return lowered
 
+def lower_expr_with_preamble(
+    expr: str,
+    nmap: NameMaps,
+    *,
+    aux_defs: Dict[str, str] | None = None,
+    fn_defs: Dict[str, Tuple[Tuple[str, ...], str]] | None = None,
+    runtime_arg: str = "runtime_ws",
+) -> Tuple[List[ast.stmt], ast.AST]:
+    """
+    Lower an expression and return (preamble, expr_node), where preamble contains any
+    statements needed to evaluate constructs that are not Numba-friendly as-is
+    (currently sum(generator) comprehensions).
+    """
+    lowered = lower_expr_node(
+        expr,
+        nmap,
+        aux_defs=aux_defs,
+        fn_defs=fn_defs,
+        runtime_arg=runtime_arg,
+    )
+    sg = _SumGenLowerer()
+    rewritten = sg.visit(lowered)
+    return sg.preamble, rewritten
+
 def compile_scalar_expr(
     expr: str,
     nmap: NameMaps,
@@ -568,7 +672,7 @@ def compile_scalar_expr(
     """
     Return a pure-numeric callable: f(t, y_vec, params, runtime_ws) -> float.
     """
-    lowered = lower_expr_node(expr, nmap, aux_defs=aux_defs, fn_defs=fn_defs)
+    preamble, lowered = lower_expr_with_preamble(expr, nmap, aux_defs=aux_defs, fn_defs=fn_defs)
     mod = ast.Module(
         body=[
             ast.Import(names=[ast.alias(name="math", asname=None)]),
@@ -580,7 +684,7 @@ def compile_scalar_expr(
                     ast.arg(arg="params"),
                     ast.arg(arg="runtime_ws"),
                 ], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]),
-                body=[ast.Return(value=lowered)],
+                body=[*preamble, ast.Return(value=lowered)],
                 decorator_list=[],
             ),
         ],
