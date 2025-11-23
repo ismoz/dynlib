@@ -2,6 +2,20 @@
 
 ---
 
+## [2.30.3] – 2025-11-24
+### Added
+- DSL builtin constants `pi` and `e` are now inlined as numeric literals across equations, aux/functions,
+  events, and initial value expressions. These identifiers are reserved and cast to the model dtype at
+  codegen time to avoid runtime lookups or dtype mismatches.
+- Added cross-section identifier guard in `src/dynlib/dsl/astcheck.py` and wired it into build_spec so models 
+  now error when a name is reused across states/params/aux/functions (e.g., param V vs aux V).
+
+### Tests
+- Added semantic validation coverage in `tests/unit/test_semantic_validation.py` to ensure these conflicts 
+  raise a clear `ModelLoadError`.
+
+---
+
 ## [2.30.2] – 2025-11-23
 ### Changed
 - Runners now refresh auxiliary variable values before recording initial conditions to ensure aux data is 

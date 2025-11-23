@@ -5,6 +5,7 @@ from typing import Callable, Dict, Tuple, List
 import ast
 import re
 
+from dynlib.dsl.constants import BUILTIN_CONSTS
 from dynlib.errors import ModelLoadError
 
 __all__ = [
@@ -32,6 +33,8 @@ class NameMaps:
     aux_names: Tuple[str, ...]
     # function table: name -> (argnames, expr_str)
     functions: Dict[str, Tuple[Tuple[str, ...], str]]
+    # builtin constants (already cast to target dtype if needed)
+    constants: Dict[str, float]
     # lag map: state_name -> (buffer_len, ring_offset, head_index)
     lag_map: Dict[str, Tuple[int, int, int]] = None
 
@@ -100,12 +103,14 @@ class _NameLowerer(ast.NodeTransformer):
         nmap: NameMaps,
         aux_defs: Dict[str, ast.AST],
         fn_defs: Dict[str, Tuple[Tuple[str, ...], ast.AST]],
+        constants: Dict[str, float] | None = None,
         runtime_arg: str = "runtime_ws",
     ):
         super().__init__()
         self.nmap = nmap
         self.aux_defs = aux_defs
         self.fn_defs = fn_defs
+        self.constants = constants or BUILTIN_CONSTS
         self.runtime_arg = runtime_arg
 
     def visit_Name(self, node: ast.Name):
@@ -126,6 +131,9 @@ class _NameLowerer(ast.NodeTransformer):
         # Keep time symbol 't' as a plain name (it is a formal arg to the emitted functions)
         if node.id == "t":
             return node
+        # Inline builtin constants as literals
+        if node.id in self.constants:
+            return ast.copy_location(ast.Constant(value=self.constants[node.id]), node)
         # Inline aux by substituting its expression AST
         if node.id in self.aux_defs:
             cloned = self._clone(self.aux_defs[node.id])
@@ -634,7 +642,13 @@ def lower_expr_node(
     fn_defs = fn_defs or {}
     aux_ast = {k: _parse_expr(v) for k, v in aux_defs.items()}
     fn_ast  = {k: (args, _parse_expr(v)) for k, (args, v) in fn_defs.items()}
-    lowered = _NameLowerer(nmap, aux_ast, fn_ast, runtime_arg=runtime_arg).visit(_parse_expr(expr))
+    lowered = _NameLowerer(
+        nmap,
+        aux_ast,
+        fn_ast,
+        constants=nmap.constants,
+        runtime_arg=runtime_arg,
+    ).visit(_parse_expr(expr))
     ast.fix_missing_locations(lowered)
     return lowered
 

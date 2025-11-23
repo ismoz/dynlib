@@ -4,6 +4,7 @@ from typing import Dict, Any, Set, List
 import re
 
 from dynlib.errors import ModelLoadError
+from .constants import RESERVED_IDENTIFIERS, RUNTIME_RESERVED_NAMES
 
 __all__ = [
     "collect_names",
@@ -16,6 +17,8 @@ __all__ = [
     "validate_no_duplicate_equation_targets",
     "validate_presets",
     "validate_aux_names",
+    "validate_identifier_uniqueness",
+    "validate_reserved_identifiers",
 ]
 
 #NOTE: emitter.py and schema.py also perform the same regex matching;
@@ -38,7 +41,7 @@ _MACRO_LAG_CALL = re.compile(
 )
 
 # Aux identifiers that are reserved for runtime/time symbols and must not be shadowed
-_AUX_RESERVED_NAMES = frozenset({"t"})
+_AUX_RESERVED_NAMES = RUNTIME_RESERVED_NAMES
 
 
 def collect_names(normal: Dict[str, Any]) -> Dict[str, Set[str]]:
@@ -302,15 +305,54 @@ def validate_event_tags(normal: Dict[str, Any]) -> None:
                     f"letters, digits, underscores, and hyphens."
                 )
 
-def validate_aux_names(normal: Dict[str, Any]) -> None:
-    """Reject aux identifiers that shadow reserved runtime symbols (e.g., time 't')."""
-    aux_names = set((normal.get("aux") or {}).keys())
-    bad = aux_names & _AUX_RESERVED_NAMES
+
+def _validate_reserved_names(pool: Set[str], section: str) -> None:
+    """
+    Raise if any identifiers in `pool` shadow reserved runtime symbols or builtin constants.
+    """
+    bad = pool & RESERVED_IDENTIFIERS
     if bad:
         bad_list = ", ".join(sorted(bad))
-        reserved_list = ", ".join(sorted(_AUX_RESERVED_NAMES))
+        reserved_list = ", ".join(sorted(RESERVED_IDENTIFIERS))
         raise ModelLoadError(
-            f"[aux] name(s) {bad_list} are reserved (reserved: {reserved_list})"
+            f"{section} name(s) {bad_list} are reserved (reserved: {reserved_list})"
+        )
+
+def validate_aux_names(normal: Dict[str, Any]) -> None:
+    """Reject aux identifiers that shadow reserved runtime symbols or builtin constants."""
+    aux_names = set((normal.get("aux") or {}).keys())
+    _validate_reserved_names(aux_names, "[aux]")
+
+
+def validate_reserved_identifiers(normal: Dict[str, Any]) -> None:
+    """Reject reserved names across states/params/aux/functions."""
+    names = collect_names(normal)
+    _validate_reserved_names(names["states"], "[states]")
+    _validate_reserved_names(names["params"], "[params]")
+    _validate_reserved_names(names["aux"], "[aux]")
+    _validate_reserved_names(names["functions"], "[functions]")
+
+
+def validate_identifier_uniqueness(normal: Dict[str, Any]) -> None:
+    """Ensure identifiers are not reused across states/params/aux/functions."""
+    names = collect_names(normal)
+    section_order = ("states", "params", "aux", "functions")
+
+    owners: Dict[str, Set[str]] = {}
+    for section in section_order:
+        for name in names[section]:
+            owners.setdefault(name, set()).add(section)
+
+    conflicts = {
+        name: [sec for sec in section_order if sec in seen]
+        for name, seen in owners.items()
+        if len(seen) > 1
+    }
+    if conflicts:
+        detail = "; ".join(f"{name} ({', '.join(sections)})" for name, sections in sorted(conflicts.items()))
+        raise ModelLoadError(
+            "Identifiers must be unique across states/params/aux/functions; "
+            f"conflicts: {detail}"
         )
 
 

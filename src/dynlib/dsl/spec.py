@@ -142,10 +142,14 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
         validate_no_duplicate_equation_targets,
         validate_presets,
         validate_aux_names,
+        validate_identifier_uniqueness,
+        validate_reserved_identifiers,
         collect_lag_requests,
         detect_equation_lag_usage,
     )
     
+    validate_reserved_identifiers(normal)
+    validate_identifier_uniqueness(normal)
     validate_expr_acyclic(normal)
     validate_event_legality(normal)
     validate_event_tags(normal)

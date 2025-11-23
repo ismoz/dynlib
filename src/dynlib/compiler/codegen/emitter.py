@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import re
 
 from dynlib.dsl.spec import ModelSpec, EventSpec
+from dynlib.dsl.constants import cast_constants
 from .rewrite import NameMaps, compile_scalar_expr, sanitize_expr, lower_expr_node, lower_expr_with_preamble
 
 __all__ = ["emit_rhs_and_events", "CompiledCallables"]
@@ -37,7 +38,15 @@ def _build_name_maps(spec: ModelSpec) -> NameMaps:
     s2i, p2i = _state_param_maps(spec)
     aux_names = tuple((spec.aux or {}).keys())
     funcs = _functions_table(spec)
-    return NameMaps(s2i, p2i, aux_names, functions=funcs, lag_map=spec.lag_map)
+    consts = cast_constants(spec.dtype)
+    return NameMaps(
+        s2i,
+        p2i,
+        aux_names,
+        functions=funcs,
+        constants=consts,
+        lag_map=spec.lag_map,
+    )
 
 def _aux_defs(spec: ModelSpec) -> Dict[str, str]:
     return dict(spec.aux or {})

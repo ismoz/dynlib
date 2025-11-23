@@ -1,9 +1,13 @@
 # tests/unit/test_dsl_spec.py
+import math
+
+import numpy as np
 import pytest
 
 from dynlib.errors import ModelLoadError
 from dynlib.dsl.parser import parse_model_v2
 from dynlib.dsl.spec import build_spec, compute_spec_hash
+from dynlib.compiler.codegen.emitter import emit_rhs_and_events
 
 def minimal_doc():
     return {
@@ -58,7 +62,7 @@ def test_numeric_strings_for_states_and_params():
 
 def test_aux_name_reserved():
     n = minimal_doc()
-    n["aux"] = {"t": "x + 1"}
+    n["aux"] = {"t": "x + 1", "pi": "1"}
     with pytest.raises(ModelLoadError, match=r"reserved"):
         build_spec(parse_model_v2(n))
 
@@ -83,3 +87,51 @@ def test_sim_unknown_keys_preserved_and_hash_changes():
     spec_alt = build_spec(parse_model_v2(n_alt))
     assert spec_alt.sim.safety == pytest.approx(0.95)
     assert compute_spec_hash(spec_alt) != compute_spec_hash(spec)
+
+
+def test_builtin_constants_in_numeric_strings_and_dtype_cast():
+    n = minimal_doc()
+    n["model"]["dtype"] = "float32"
+    n["states"]["x"] = "2*pi"
+    n["params"]["a"] = "e/2"
+    parsed = parse_model_v2(n)
+    spec = build_spec(parsed)
+
+    expected_state = np.dtype("float32").type(2 * math.pi).item()
+    expected_param = np.dtype("float32").type(math.e / 2).item()
+    assert spec.state_ic[0] == pytest.approx(expected_state, rel=1e-6)
+    assert spec.param_vals[0] == pytest.approx(expected_param, rel=1e-6)
+
+
+def test_reserved_constants_not_allowed_as_identifiers():
+    n = minimal_doc()
+    n["states"] = {"x": 1.0, "u": 0.0, "pi": 0.0}
+    with pytest.raises(ModelLoadError, match="reserved"):
+        build_spec(parse_model_v2(n))
+
+    n = minimal_doc()
+    n["params"] = {"a": 1.0, "pi": 1.0}
+    with pytest.raises(ModelLoadError, match="reserved"):
+        build_spec(parse_model_v2(n))
+
+    n = minimal_doc()
+    n["functions"] = {"pi": {"args": ["x"], "expr": "x"}}
+    with pytest.raises(ModelLoadError, match="reserved"):
+        build_spec(parse_model_v2(n))
+
+
+def test_builtin_constants_are_inlined_in_codegen():
+    n = minimal_doc()
+    n["equations"]["rhs"]["x"] = "pi * x + e"
+    n["aux"]["extra"] = "2 * pi"
+    n["events"] = {
+        "tick": {"phase": "post", "cond": "x > pi", "action.x": "e"}
+    }
+    parsed = parse_model_v2(n)
+    spec = build_spec(parsed)
+    compiled = emit_rhs_and_events(spec)
+
+    for src in (compiled.rhs_source, compiled.update_aux_source, compiled.events_post_source):
+        assert "pi" not in src
+    assert "3.1415" in compiled.rhs_source
+    assert "2.71828" in compiled.rhs_source

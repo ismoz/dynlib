@@ -5,6 +5,7 @@ import ast
 
 from dynlib.errors import ModelLoadError
 from .schema import validate_tables, validate_name_collisions
+from .constants import BUILTIN_CONSTS
 
 __all__ = [
     "parse_model_v2",
@@ -52,6 +53,13 @@ def _eval_node(node: ast.AST, context: str) -> float | int:
                 f"{context} must evaluate to a number, got {type(val).__name__}"
             )
         return val
+    if isinstance(node, ast.Name):
+        if node.id in BUILTIN_CONSTS:
+            return BUILTIN_CONSTS[node.id]
+        raise ModelLoadError(
+            f"{context} contains unknown identifier '{node.id}'. "
+            f"Only builtin constants are allowed ({', '.join(sorted(BUILTIN_CONSTS))})."
+        )
     if isinstance(node, ast.UnaryOp):
         op = _UNARY_OPS.get(type(node.op))
         if op is None:

@@ -1,0 +1,47 @@
+[model]
+type="ode"
+label="Flux Controlled Memristor"
+
+[states]
+phi=0.0
+
+[params]
+V=0.0
+a=0.08
+b=0.01
+c=0.83
+d=1.8
+N=0
+
+[functions.W]
+args=["phi"]
+expr="a+b*tanh(phi)**2"
+
+[aux]
+I = "W(phi)*V"
+
+[equations.rhs]
+phi="c*V-d*fun(phi,N)"
+
+[mods.odd.add.functions]
+fun = {args = ["phi","N"], expr="""
+phi if N==0 else phi-sum(sign(phi+(2*i-1))+sign(phi-(2*i-1)) for i in range(1,N+1))
+"""}
+
+[mods.even.add.functions]
+fun = {args = ["phi","M"], expr = """
+phi-sign(phi) if M==0 else phi-sign(phi)-sum(sign(phi+2*i)+sign(phi-2*i) for i in range(1,M+1))
+"""}
+
+[mods.sine_drive.add.params]
+freq=1000.0
+Vmax=4.0
+
+[mods.sine_drive.remove.params]
+names = ["V"]
+
+[mods.sine_drive.add.aux]
+V = "Vmax*sin(2*pi*freq*t)"
+
+[sim]
+dt=0.001

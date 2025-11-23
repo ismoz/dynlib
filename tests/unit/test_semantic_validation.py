@@ -17,6 +17,29 @@ def _parse_toml(toml_str: str):
     return build_spec(normal)
 
 
+def test_identifier_conflicts_across_sections_rejected():
+    """Names must not be reused across params/aux/states/functions."""
+    toml_str = """
+    [model]
+    type = "ode"
+    
+    [states]
+    phi = 0.0
+    
+    [params]
+    V = 0.0
+    
+    [equations.rhs]
+    phi = "V"
+    
+    [aux]
+    V = "2*phi"
+    """
+
+    with pytest.raises(ModelLoadError, match=r"V \(params, aux\)"):
+        _parse_toml(toml_str)
+
+
 def test_cyclic_aux_detected():
     """Cyclic aux dependencies should fail at build time."""
     toml_str = """
