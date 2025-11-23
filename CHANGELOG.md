@@ -2,6 +2,21 @@
 
 ---
 
+## [2.29.6] – 2025-11-23
+### Added
+- Added support for adding and removing parameters via mods. Now `add.params` can be used to add new 
+  parameters and `remove.params` to remove existing ones.
+- Added validation to prevent unsupported targets in mod operations. Now clear error messages are shown 
+  when trying to use invalid targets like `add.states` or `remove.states`.
+- Added comprehensive documentation for mods in `docs/mods.md`, explaining all verb operations, supported 
+  targets, error handling, and best practices.
+
+### Tests
+- Added tests for parameter modification via mods, including adding/removing parameters and validation of 
+  unsupported targets.
+
+---
+
 ## [2.29.5] – 2025-11-23
 ### Added
 - Added support for `sum()` and `prod()` generator comprehensions in DSL expressions. These allow summing or 

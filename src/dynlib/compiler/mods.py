@@ -33,6 +33,15 @@ def _apply_remove(normal: Dict[str, Any], payload: Dict[str, Any]) -> None:
     if not payload:
         return
     
+    # Validate supported targets
+    allowed_targets = {"events", "params", "aux", "functions"}
+    for target in payload.keys():
+        if target not in allowed_targets:
+            raise ModelLoadError(
+                f"remove.{target}: unsupported target. "
+                f"Supported targets: {', '.join(sorted(allowed_targets))}"
+            )
+    
     # remove.events
     names = payload.get("events", {}).get("names", [])
     if names:
@@ -45,6 +54,15 @@ def _apply_remove(normal: Dict[str, Any], payload: Dict[str, Any]) -> None:
             if ev["name"] not in names:
                 keep.append(ev)
         normal["events"] = keep
+    
+    # remove.params
+    remove_params = payload.get("params", {}).get("names", [])
+    if remove_params:
+        existing_params = set(normal.get("params", {}).keys())
+        for k in remove_params:
+            if k not in existing_params:
+                raise ModelLoadError(f"remove.params.{k}: param does not exist")
+            del normal["params"][k]
     
     # remove.aux
     remove_aux = payload.get("aux", {}).get("names", [])
@@ -118,6 +136,15 @@ def _apply_replace(normal: Dict[str, Any], payload: Dict[str, Any]) -> None:
     if not payload:
         return
     
+    # Validate supported targets
+    allowed_targets = {"events", "aux", "functions"}
+    for target in payload.keys():
+        if target not in allowed_targets:
+            raise ModelLoadError(
+                f"replace.{target}: unsupported target. "
+                f"Supported targets: {', '.join(sorted(allowed_targets))}"
+            )
+    
     # replace.events
     repl = payload.get("events", {})
     if repl:
@@ -150,6 +177,15 @@ def _apply_add(normal: Dict[str, Any], payload: Dict[str, Any]) -> None:
     if not payload:
         return
     
+    # Validate supported targets
+    allowed_targets = {"events", "params", "aux", "functions"}
+    for target in payload.keys():
+        if target not in allowed_targets:
+            raise ModelLoadError(
+                f"add.{target}: unsupported target. "
+                f"Supported targets: {', '.join(sorted(allowed_targets))}"
+            )
+    
     # add.events
     add = payload.get("events", {})
     if add:
@@ -158,6 +194,15 @@ def _apply_add(normal: Dict[str, Any], payload: Dict[str, Any]) -> None:
             if name in existing:
                 raise ModelLoadError(f"add.events.{name}: event already exists")
             normal.setdefault("events", []).append(_normalize_event(name, body))
+    
+    # add.params
+    add_params = payload.get("params", {})
+    if add_params:
+        existing_params = set(normal.get("params", {}).keys())
+        for k, v in add_params.items():
+            if k in existing_params:
+                raise ModelLoadError(f"add.params.{k}: param already exists")
+            normal.setdefault("params", {})[k] = v
     
     # add.aux
     add_aux = payload.get("aux", {})
@@ -186,7 +231,10 @@ def _apply_set(normal: Dict[str, Any], payload: Dict[str, Any]) -> None:
     allowed_targets = {"states", "params", "aux", "functions"}
     for target in payload.keys():
         if target not in allowed_targets:
-            raise ModelLoadError(f"set.{target}: unsupported target")
+            raise ModelLoadError(
+                f"set.{target}: unsupported target. "
+                f"Supported targets: {', '.join(sorted(allowed_targets))}"
+            )
     # set.states
     s = payload.get("states")
     if isinstance(s, dict):

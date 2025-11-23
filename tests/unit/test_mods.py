@@ -95,3 +95,103 @@ def test_mods_group_single_exclusive_preserves_order():
 
     names = [e["name"] for e in out["events"]]
     assert "p" in names and "e1" in names
+
+
+def test_mods_add_params():
+    """Test adding new parameters via mods."""
+    normal = base_normal()
+    mod = ModSpec(name="add_params", add={"params": {"c": 3.0, "d": 4.0}})
+    out = apply_mods_v2(normal, [mod])
+    
+    assert "c" in out["params"]
+    assert "d" in out["params"]
+    assert out["params"]["c"] == 3.0
+    assert out["params"]["d"] == 4.0
+    # Original params still exist
+    assert out["params"]["a"] == 1.0
+    assert out["params"]["b"] == 2.0
+
+
+def test_mods_add_duplicate_param_raises():
+    """Test that adding an existing param raises an error."""
+    normal = base_normal()
+    mod = ModSpec(name="bad", add={"params": {"a": 99.0}})
+    
+    with pytest.raises(ModelLoadError, match="add.params.a: param already exists"):
+        apply_mods_v2(normal, [mod])
+
+
+def test_mods_remove_params():
+    """Test removing parameters via mods."""
+    normal = base_normal()
+    mod = ModSpec(name="remove_param", remove={"params": {"names": ["b"]}})
+    out = apply_mods_v2(normal, [mod])
+    
+    assert "b" not in out["params"]
+    # Other params still exist
+    assert "a" in out["params"]
+    assert out["params"]["a"] == 1.0
+
+
+def test_mods_remove_nonexistent_param_raises():
+    """Test that removing a non-existent param raises an error."""
+    normal = base_normal()
+    mod = ModSpec(name="bad", remove={"params": {"names": ["nonexistent"]}})
+    
+    with pytest.raises(ModelLoadError, match="remove.params.nonexistent: param does not exist"):
+        apply_mods_v2(normal, [mod])
+
+
+def test_mods_remove_then_add_param():
+    """Test removing a param and adding a new one in sequence."""
+    normal = base_normal()
+    mods = [
+        ModSpec(name="remove", remove={"params": {"names": ["a"]}}),
+        ModSpec(name="add", add={"params": {"c": 3.0}}),
+    ]
+    out = apply_mods_v2(normal, mods)
+    
+    assert "a" not in out["params"]
+    assert "c" in out["params"]
+    assert out["params"]["c"] == 3.0
+    assert "b" in out["params"]  # Untouched param
+
+
+def test_mods_add_unsupported_target_raises():
+    """Test that trying to add an unsupported target raises a clear error."""
+    normal = base_normal()
+    
+    # Try to add states (not supported)
+    mod = ModSpec(name="bad", add={"states": {"new_state": 1.0}})
+    with pytest.raises(ModelLoadError, match=r"add\.states: unsupported target\. Supported targets:"):
+        apply_mods_v2(normal, [mod])
+
+
+def test_mods_remove_unsupported_target_raises():
+    """Test that trying to remove an unsupported target raises a clear error."""
+    normal = base_normal()
+    
+    # Try to remove states (not supported)
+    mod = ModSpec(name="bad", remove={"states": {"names": ["x"]}})
+    with pytest.raises(ModelLoadError, match=r"remove\.states: unsupported target\. Supported targets:"):
+        apply_mods_v2(normal, [mod])
+
+
+def test_mods_replace_unsupported_target_raises():
+    """Test that trying to replace an unsupported target raises a clear error."""
+    normal = base_normal()
+    
+    # Try to replace params (not supported)
+    mod = ModSpec(name="bad", replace={"params": {"a": 99.0}})
+    with pytest.raises(ModelLoadError, match=r"replace\.params: unsupported target\. Supported targets:"):
+        apply_mods_v2(normal, [mod])
+
+
+def test_mods_set_unsupported_target_raises():
+    """Test that trying to set an unsupported target raises a clear error."""
+    normal = base_normal()
+    
+    # Try to set an invalid target
+    mod = ModSpec(name="bad", set={"invalid_target": {"x": 1.0}})
+    with pytest.raises(ModelLoadError, match=r"set\.invalid_target: unsupported target\. Supported targets:"):
+        apply_mods_v2(normal, [mod])
