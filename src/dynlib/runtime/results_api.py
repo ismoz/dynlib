@@ -70,9 +70,16 @@ class ResultsView:
         self._raw = raw
         self._spec = spec
 
-        # State names in canonical order
-        self._state_names: Tuple[str, ...] = tuple(spec.states)
+        # State names in recorded order (fall back to spec if missing)
+        recorded_states = tuple(raw.state_names) if getattr(raw, "state_names", None) is not None else tuple(spec.states)
+        self._state_names: Tuple[str, ...] = recorded_states
         self._state_index: Dict[str, int] = {name: i for i, name in enumerate(self._state_names)}
+
+        # Aux names in recorded order (fall back to spec if missing)
+        aux_from_spec = tuple(spec.aux.keys()) if getattr(spec, "aux", None) else tuple()
+        self._aux_names: Tuple[str, ...] = (
+            tuple(raw.aux_names) if getattr(raw, "aux_names", None) is not None else aux_from_spec
+        )
 
         # Event name <-> code mapping.
         # If not provided, assume codes follow declaration order (0..E-1).
@@ -114,6 +121,10 @@ class ResultsView:
     @property
     def state_names(self) -> Tuple[str, ...]:
         return self._state_names
+
+    @property
+    def aux_names(self) -> Tuple[str, ...]:
+        return self._aux_names
 
     def __getitem__(self, key: Union[str, Sequence[str]]) -> np.ndarray:
         """Access recorded state or aux variable series by name.

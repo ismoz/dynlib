@@ -156,6 +156,10 @@ def runner_discrete(
     # On first call, hint_out[0] is 0; on re-entry after GROW_EVT, it contains the saved m
     m = int(hint_out[0])     # event log cursor (resume from hint)
     
+    # Refresh aux values before any potential recording at t0
+    if runtime_ws.aux_values.shape[0] > 0:
+        update_aux(t, y_curr, params, runtime_ws.aux_values, runtime_ws)
+
     # Recording at t0 (if record_interval > 0)
     if record_interval > 0 and step == 0:
         # Record initial condition

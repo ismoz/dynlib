@@ -2,6 +2,14 @@
 
 ---
 
+## [2.30.2] – 2025-11-23
+### Changed
+- Runners now refresh auxiliary variable values before recording initial conditions to ensure aux data is 
+  available at the start for recording.
+- Results API now properly handles variable names from recorded data instead of listing all available states. 
+
+---
+
 ## [2.30.1] – 2025-11-23
 ### Changed
 - Warm-up now matches the new runner ABI and quadruplet callables so JIT compilation is triggered during 
