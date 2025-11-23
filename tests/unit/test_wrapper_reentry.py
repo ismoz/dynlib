@@ -19,6 +19,10 @@ def _events_post(t, y_vec, params, evt_log_scratch, runtime_ws):  # pragma: no c
     return -1, 0
 
 
+def _update_aux(t, y_vec, params, aux_out, runtime_ws):  # pragma: no cover
+    pass
+
+
 def _stepper(t, dt, y_curr, rhs, params, runtime_ws, ws, cfg, y_prop, t_prop, dt_next, err_est):  # pragma: no cover
     return 0
 
@@ -35,19 +39,16 @@ class _RunnerScript:
     def __call__(self, *args):
         self.calls += 1
         # Unpack outs (last group before function symbols)
-        # ... args[?] layout mirrors wrapper call order; we read by position:
-        # [ ... rec.T, rec.Y, rec.STEP, rec.FLAGS,
-        #   ev.EVT_CODE, ev.EVT_INDEX, ev.EVT_LOG_DATA, evt_log_scratch,
-        #   i_start, step_start, cap_rec, cap_evt,
-        #   user_break_flag, status_out, hint_out, i_out, step_out, t_out, ...]
-        # Last 4 args are (stepper, rhs, events_pre, events_post)
-        # Outs just before them: t_out, step_out, i_out, hint_out, status_out, user_break_flag
-        user_break_flag = args[-10]
-        status_out      = args[-9]
-        hint_out        = args[-8]
-        i_out           = args[-7]
-        step_out        = args[-6]
-        t_out           = args[-5]
+        # After adding 5 new args (AUX + 4 metadata), offsets shifted by 5
+        # Last 9 args are: stepper, rhs, events_pre, events_post, update_aux, 
+        #                  state_rec_indices, aux_rec_indices, n_rec_states, n_rec_aux
+        # So outs are 9 positions before end of non-function args
+        user_break_flag = args[-16]
+        status_out      = args[-15]
+        hint_out        = args[-14]
+        i_out           = args[-13]
+        step_out        = args[-12]
+        t_out           = args[-11]
 
         if self.calls == 1:
             i_out[0] = 1
@@ -79,9 +80,14 @@ def test_wrapper_reentry_calls_and_cursors():
     res = run_with_wrapper(
         runner=fake_runner,
         stepper=_stepper, rhs=_rhs, events_pre=_events_pre, events_post=_events_post,
-        dtype=np.float64, n_state=1,
+        update_aux=_update_aux,
+        dtype=np.float64, n_state=1, n_aux=0,
         t0=0.0, t_end=1.0, dt_init=0.1, max_steps=100,
         record=True, record_interval=1,
+        state_record_indices=np.array([0], dtype=np.int32),
+        aux_record_indices=np.array([], dtype=np.int32),
+        state_names=["x"],
+        aux_names=[],
         ic=ic, params=params,
         cap_rec=1, cap_evt=1,
     )
@@ -97,12 +103,12 @@ def test_wrapper_reentry_calls_and_cursors():
 
 class _FailingRunner:
     def __call__(self, *args):
-        user_break_flag = args[-10]
-        status_out = args[-9]
-        hint_out = args[-8]
-        i_out = args[-7]
-        step_out = args[-6]
-        t_out = args[-5]
+        user_break_flag = args[-16]
+        status_out = args[-15]
+        hint_out = args[-14]
+        i_out = args[-13]
+        step_out = args[-12]
+        t_out = args[-11]
 
         i_out[0] = 0
         step_out[0] = 0
@@ -120,9 +126,14 @@ def test_wrapper_warns_and_sets_status_on_failure():
         res = run_with_wrapper(
             runner=_FailingRunner(),
             stepper=_stepper, rhs=_rhs, events_pre=_events_pre, events_post=_events_post,
-            dtype=np.float64, n_state=1,
+            update_aux=_update_aux,
+            dtype=np.float64, n_state=1, n_aux=0,
             t0=0.0, t_end=1.0, dt_init=0.1, max_steps=10,
             record=True, record_interval=1,
+            state_record_indices=np.array([0], dtype=np.int32),
+            aux_record_indices=np.array([], dtype=np.int32),
+            state_names=["x"],
+            aux_names=[],
             ic=ic, params=params,
             cap_rec=1, cap_evt=1,
         )
@@ -140,12 +151,12 @@ class _RecordingRunner:
     def __call__(self, *args):
         # dt is the third scalar argument (t0, t_end, dt_init, ...)
         self.dt_arg = float(args[2])
-        user_break_flag = args[-10]
-        status_out = args[-9]
-        hint_out = args[-8]
-        i_out = args[-7]
-        step_out = args[-6]
-        t_out = args[-5]
+        user_break_flag = args[-15]
+        status_out = args[-14]
+        hint_out = args[-13]
+        i_out = args[-12]
+        step_out = args[-11]
+        t_out = args[-10]
 
         user_break_flag[0] = 0
         status_out[0] = DONE
@@ -172,14 +183,20 @@ def test_wrapper_uses_wrms_dt_when_available():
         rhs=_rhs_wrms,
         events_pre=_events_pre,
         events_post=_events_post,
+        update_aux=_update_aux,
         dtype=np.float64,
         n_state=2,
+        n_aux=0,
         t0=0.0,
         t_end=1.0,
         dt_init=None,
         max_steps=1,
         record=False,
         record_interval=1,
+        state_record_indices=np.array([0, 1], dtype=np.int32),
+        aux_record_indices=np.array([], dtype=np.int32),
+        state_names=["x", "y"],
+        aux_names=[],
         ic=ic,
         params=params,
         cap_rec=1,

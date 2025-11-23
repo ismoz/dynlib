@@ -10,7 +10,7 @@ import numpy as np
 
 RuntimeWorkspace = namedtuple(
     "RuntimeWorkspace",
-    ["lag_ring", "lag_head", "lag_info"],
+    ["lag_ring", "lag_head", "lag_info", "aux_values"],
 )
 
 __all__ = [
@@ -35,6 +35,7 @@ def make_runtime_workspace(
     *,
     lag_state_info: Sequence[Tuple[int, int, int, int]] | None,
     dtype: np.dtype,
+    n_aux: int = 0,
 ) -> RuntimeWorkspace:
     """
     Allocate the runtime workspace owned by the runner/DSL layer.
@@ -42,14 +43,16 @@ def make_runtime_workspace(
     Args:
         lag_state_info: Sequence of (state_idx, depth, offset, head_index)
             describing circular buffers for lagged states.
-        dtype: Model dtype used for lag_ring.
+        dtype: Model dtype used for lag_ring and aux_values.
+        n_aux: Number of auxiliary variables to allocate storage for.
     """
     lag_meta = tuple(lag_state_info or ())
+    aux_values = _zeros((n_aux,), dtype)
     if not lag_meta:
         empty_ring = _zeros((0,), dtype)
         empty_head = _zeros((0,), np.int32)
         empty_info = _zeros((0, 3), np.int32)
-        return RuntimeWorkspace(empty_ring, empty_head, empty_info)
+        return RuntimeWorkspace(empty_ring, empty_head, empty_info, aux_values)
 
     total_depth = int(sum(depth for _, depth, _, _ in lag_meta))
     n_lag = len(lag_meta)
@@ -63,7 +66,7 @@ def make_runtime_workspace(
         lag_info[j, 1] = int(depth)
         lag_info[j, 2] = int(offset)
 
-    return RuntimeWorkspace(lag_ring, lag_head, lag_info)
+    return RuntimeWorkspace(lag_ring, lag_head, lag_info, aux_values)
 
 
 def initialize_lag_runtime_workspace(

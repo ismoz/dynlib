@@ -118,7 +118,7 @@ def runner_discrete(
     # proposals/outs (len-1 arrays where applicable)
     y_prop, t_prop, dt_next, err_est,
     # recording
-    T, Y, STEP, FLAGS,
+    T, Y, AUX, STEP, FLAGS,
     # event log (present; cap may be 1 if disabled)
     EVT_CODE, EVT_INDEX, EVT_LOG_DATA,
     # event log scratch (for writing log values before copying)
@@ -129,7 +129,9 @@ def runner_discrete(
     user_break_flag, status_out, hint_out,
     i_out, step_out, t_out,
     # function symbols (jittable callables)
-    stepper, rhs, events_pre, events_post
+    stepper, rhs, events_pre, events_post, update_aux,
+    # NEW: selective recording parameters
+    state_rec_indices, aux_rec_indices, n_rec_states, n_rec_aux,
 ) -> int:
     """
     Discrete-time runner: iteration-based execution with events and recording.
@@ -167,8 +169,12 @@ def runner_discrete(
             return GROW_REC
         
         T[i] = t
-        for k in range(n_state):
-            Y[k, i] = y_curr[k]
+        # Record selected states
+        for k in range(n_rec_states):
+            Y[k, i] = y_curr[state_rec_indices[k]]
+        # Record selected aux (if any)
+        for k in range(n_rec_aux):
+            AUX[k, i] = runtime_ws.aux_values[aux_rec_indices[k]]
         STEP[i] = step
         FLAGS[i] = OK
         i += 1
@@ -189,8 +195,12 @@ def runner_discrete(
                 return GROW_REC
             
             T[i] = t
-            for k in range(n_state):
-                Y[k, i] = y_curr[k]
+            # Record selected states
+            for k in range(n_rec_states):
+                Y[k, i] = y_curr[state_rec_indices[k]]
+            # Record selected aux (if any)
+            for k in range(n_rec_aux):
+                AUX[k, i] = runtime_ws.aux_values[aux_rec_indices[k]]
             STEP[i] = step
             FLAGS[i] = OK
             i += 1
@@ -289,6 +299,10 @@ def runner_discrete(
             y_curr[k] = y_prop[k]
         step = next_step
         
+        # Update aux values from committed state (if any aux variables exist)
+        if runtime_ws.aux_values.shape[0] > 0:
+            update_aux(t_post, y_curr, params, runtime_ws.aux_values, runtime_ws)
+        
         lag_info = runtime_ws.lag_info
         if lag_info.shape[0] > 0:
             lag_ring = runtime_ws.lag_ring
@@ -320,8 +334,12 @@ def runner_discrete(
                 return GROW_REC
             
             T[i] = t
-            for k in range(n_state):
-                Y[k, i] = y_curr[k]
+            # Record selected states
+            for k in range(n_rec_states):
+                Y[k, i] = y_curr[state_rec_indices[k]]
+            # Record selected aux (if any)
+            for k in range(n_rec_aux):
+                AUX[k, i] = runtime_ws.aux_values[aux_rec_indices[k]]
             STEP[i] = step
             FLAGS[i] = OK
             i += 1

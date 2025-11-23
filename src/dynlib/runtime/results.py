@@ -14,6 +14,8 @@ class Results:
 
     Fields:
       - T, Y, STEP, FLAGS: backing arrays (not copies)
+      - AUX: aux variables array (may be None)
+      - state_names, aux_names: names of recorded variables
       - EVT_CODE, EVT_INDEX, EVT_LOG_DATA: event arrays (may be size 1 if disabled)
       - n: number of valid records
       - m: number of valid event entries
@@ -21,13 +23,15 @@ class Results:
 
     Notes:
       - All accessors return *views* limited to n/m (no copying).
-      - Y has shape (n_state, n); states are columns per record index.
+      - Y has shape (n_rec_states, n); states are columns per record index.
+      - AUX has shape (n_rec_aux, n) if aux recorded, else None
       - EVT_LOG_DATA has shape (cap_evt, max_log_width); interpret column counts using the event definition (len(log)).
       - EVT_INDEX stores the owning record index (0-based). Events without a materialized record use -1.
     """
     # recording (backing arrays)
     T: np.ndarray          # float64, shape (cap_rec,)
-    Y: np.ndarray          # model dtype, shape (n_state, cap_rec)
+    Y: np.ndarray          # model dtype, shape (n_rec_states, cap_rec)
+    AUX: np.ndarray | None # model dtype, shape (n_rec_aux, cap_rec) or None
     STEP: np.ndarray       # int64,   shape (cap_rec,)
     FLAGS: np.ndarray      # int32,   shape (cap_rec,)
 
@@ -46,6 +50,10 @@ class Results:
     final_dt: float        # integrator's next dt suggestion
     step_count_final: int  # last accepted global step (relative to run)
     final_workspace: Mapping[str, Mapping[str, object]]  # snapshots of stepper/runtime workspaces
+    
+    # metadata for recorded variables
+    state_names: list[str] # names of recorded states (ordered)
+    aux_names: list[str]   # names of recorded aux (ordered, without "aux." prefix)
 
     # ---------------- views ----------------
 
@@ -56,6 +64,10 @@ class Results:
     @property
     def Y_view(self) -> np.ndarray:
         return self.Y[:, : self.n]
+
+    @property
+    def AUX_view(self) -> np.ndarray | None:
+        return self.AUX[:, : self.n] if self.AUX is not None else None
 
     @property
     def STEP_view(self) -> np.ndarray:
@@ -103,7 +115,7 @@ class Results:
     def to_pandas(self, state_names: Iterable[str] | None = None):
         """
         Build a tidy pandas.DataFrame (optional dependency).
-        Columns: 't', 'step', 'flag', and per-state columns.
+        Columns: 't', 'step', 'flag', and per-state columns, and per-aux columns.
         """
         try:
             import pandas as pd  # type: ignore
@@ -118,9 +130,18 @@ class Results:
         }
         y = self.Y[:, :n]
         if state_names is None:
-            state_names = [f"s{i}" for i in range(y.shape[0])]
+            # Use recorded state names if available
+            state_names = self.state_names if self.state_names else [f"s{i}" for i in range(y.shape[0])]
         for idx, name in enumerate(state_names):
             data[str(name)] = y[idx]
+        
+        # Add aux variables if present
+        if self.AUX is not None:
+            aux = self.AUX[:, :n]
+            aux_names = self.aux_names if self.aux_names else [f"aux{i}" for i in range(aux.shape[0])]
+            for idx, name in enumerate(aux_names):
+                data[f"aux.{name}"] = aux[idx]
+        
         return pd.DataFrame(data)
 
     def __len__(self) -> int:
@@ -130,3 +151,47 @@ class Results:
     def ok(self) -> bool:
         """Return True when the runner exited cleanly (status == DONE)."""
         return int(self.status) == DONE
+    
+    def get_var(self, name: str) -> np.ndarray:
+        """
+        Get recorded variable by name.
+        
+        Args:
+            name: State name ("x"), aux name ("energy"), or aux with prefix ("aux.energy")
+        
+        Returns:
+            Array of shape (n,) with recorded values
+        
+        Raises:
+            KeyError: If variable not recorded
+            
+        Note:
+            Variables are auto-detected: states first, then aux variables.
+            Aux variables can be accessed with or without "aux." prefix.
+        """
+        if name.startswith("aux."):
+            # Explicit aux variable with prefix
+            aux_name = name[4:]
+            if self.AUX is None or aux_name not in self.aux_names:
+                raise KeyError(f"Aux variable '{aux_name}' not recorded")
+            idx = self.aux_names.index(aux_name)
+            return self.AUX[idx, :self.n]
+        elif name in self.state_names:
+            # State variable
+            idx = self.state_names.index(name)
+            return self.Y[idx, :self.n]
+        elif self.AUX is not None and name in self.aux_names:
+            # Aux variable without prefix (auto-detected)
+            idx = self.aux_names.index(name)
+            return self.AUX[idx, :self.n]
+        else:
+            # Not found - provide helpful error
+            raise KeyError(
+                f"Unknown variable: '{name}'. "
+                f"Available states: {self.state_names}. "
+                f"Available aux: {self.aux_names}."
+            )
+    
+    def __getitem__(self, name: str) -> np.ndarray:
+        """Shorthand for get_var: res["x"] or res["aux.energy"]"""
+        return self.get_var(name)

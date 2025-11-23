@@ -18,9 +18,11 @@ class CompiledCallables:
     rhs: Callable
     events_pre: Callable
     events_post: Callable
+    update_aux: Callable
     rhs_source: str
     events_pre_source: str
     events_post_source: str
+    update_aux_source: str
 
 def _state_param_maps(spec: ModelSpec) -> Tuple[Dict[str, int], Dict[str, int]]:
     s2i = {name: i for i, name in enumerate(spec.states)}
@@ -328,17 +330,101 @@ def _emit_events_function(spec: ModelSpec, phase: str, nmap: NameMaps):
     exec(compile(mod, f"<dsl-events-{phase}>", "exec"), ns, ns)
     return ns[f"events_{phase}"], module_source
 
+def _compile_update_aux(spec: ModelSpec, nmap: NameMaps):
+    """
+    Emit a function that computes all aux values from current state:
+        def update_aux(t, y_vec, params, aux_out, runtime_ws):
+            aux_out[0] = <lowered_expr_0>
+            aux_out[1] = <lowered_expr_1>
+            ...
+    
+    If no aux variables exist, returns a no-op function.
+    """
+    import ast
+    aux_defs = _aux_defs(spec)
+    
+    if not aux_defs:
+        # No aux variables - return a no-op function
+        mod = ast.Module(
+            body=[
+                ast.Import(names=[ast.alias(name="math", asname=None)]),
+                ast.FunctionDef(
+                    name="update_aux",
+                    args=ast.arguments(posonlyargs=[], args=[
+                        ast.arg(arg="t"),
+                        ast.arg(arg="y_vec"),
+                        ast.arg(arg="params"),
+                        ast.arg(arg="aux_out"),
+                        ast.arg(arg="runtime_ws"),
+                    ], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]),
+                    body=[ast.Pass()],
+                    decorator_list=[],
+                )
+            ],
+            type_ignores=[],
+        )
+        ast.fix_missing_locations(mod)
+        module_source = ast.unparse(mod)
+        ns: Dict[str, object] = {}
+        exec(compile(mod, "<dsl-update-aux>", "exec"), ns, ns)
+        return ns["update_aux"], module_source
+    
+    # Build assignment statements for each aux variable
+    body: List[ast.stmt] = []
+    for idx, (name, expr) in enumerate(aux_defs.items()):
+        # Lower the aux expression (may reference states, params, other aux)
+        preamble, node = lower_expr_with_preamble(
+            expr, nmap, aux_defs=aux_defs, fn_defs=nmap.functions
+        )
+        assign = ast.Assign(
+            targets=[ast.Subscript(
+                value=ast.Name(id="aux_out", ctx=ast.Load()),
+                slice=ast.Constant(value=idx),
+                ctx=ast.Store()
+            )],
+            value=node,
+        )
+        body.extend(preamble)
+        body.append(assign)
+    
+    mod = ast.Module(
+        body=[
+            ast.Import(names=[ast.alias(name="math", asname=None)]),
+            ast.FunctionDef(
+                name="update_aux",
+                args=ast.arguments(posonlyargs=[], args=[
+                    ast.arg(arg="t"),
+                    ast.arg(arg="y_vec"),
+                    ast.arg(arg="params"),
+                    ast.arg(arg="aux_out"),
+                    ast.arg(arg="runtime_ws"),
+                ], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]),
+                body=body,
+                decorator_list=[],
+            )
+        ],
+        type_ignores=[],
+    )
+    ast.fix_missing_locations(mod)
+    module_source = ast.unparse(mod)
+    ns: Dict[str, object] = {}
+    exec(compile(mod, "<dsl-update-aux>", "exec"), ns, ns)
+    return ns["update_aux"], module_source
+
 def emit_rhs_and_events(spec: ModelSpec) -> CompiledCallables:
     nmap = _build_name_maps(spec)
     rhs_fn, rhs_src = _compile_rhs(spec, nmap)
     events_pre_fn, events_pre_src = _emit_events_function(spec, "pre", nmap)
     events_post_fn, events_post_src = _emit_events_function(spec, "post", nmap)
+    update_aux_fn, update_aux_src = _compile_update_aux(spec, nmap)
 
     return CompiledCallables(
         rhs=rhs_fn,
         events_pre=events_pre_fn,
         events_post=events_post_fn,
+        update_aux=update_aux_fn,
         rhs_source=rhs_src,
         events_pre_source=events_pre_src,
         events_post_source=events_post_src,
+        update_aux_source=update_aux_src,
     )

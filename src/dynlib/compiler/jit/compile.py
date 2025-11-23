@@ -85,23 +85,25 @@ def maybe_jit_triplet(
     rhs: Callable,
     events_pre: Callable,
     events_post: Callable,
+    update_aux: Callable,
     *,
     jit: bool,
     cache: bool = False,
     cache_setup: Optional[Callable[[str], None]] = None,
-) -> Tuple[JittedCallable, JittedCallable, JittedCallable]:
-    """Apply JIT to RHS/events, optionally wiring up disk cache."""
+) -> Tuple[JittedCallable, JittedCallable, JittedCallable, JittedCallable]:
+    """Apply JIT to RHS/events/update_aux, optionally wiring up disk cache."""
     components = (
         ("rhs", rhs),
         ("events_pre", events_pre),
         ("events_post", events_post),
+        ("update_aux", update_aux),
     )
     results = []
     for name, fn in components:
         if cache and cache_setup is not None:
             cache_setup(name)
         results.append(jit_compile(fn, jit=jit, cache=cache))
-    return results[0], results[1], results[2]
+    return results[0], results[1], results[2], results[3]
 
 
 def _jit_compile_with_disk_cache(fn: Callable) -> Optional[JittedCallable]:

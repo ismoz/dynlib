@@ -2,6 +2,49 @@
 
 ---
 
+## [2.30.0] – 2025-11-23
+### Added
+- Added `update_aux` callable to compute auxiliary variables from current state values. This function is 
+  called after each committed step to ensure aux variables are available for recording and event conditions. 
+  Inside RHS the aux values are still replaced by expressions to perform fast stepper multi-stage calculations.
+- Added selective variable recording via new `record_vars` parameter in `Sim.run()`. Users can now specify 
+  exactly which variables to record:
+  - `record_vars=None` (default): Record all states (backward compatible)
+  - `record_vars=["x", "y"]`: Record specific states
+  - `record_vars=["aux.energy"]`: Record specific aux variables with explicit prefix
+  - `record_vars=["energy"]`: Record aux variables with auto-detection (no prefix needed)
+  - `record_vars=["x", "energy", "aux.power"]`: Mix states and aux variables
+  - `record_vars=[]`: Record nothing (only time, step, flags; equivalent to `record=False`)
+- Added `aux_values` array to `RuntimeWorkspace` for storing computed auxiliary variable values during 
+  simulation.
+- Enhanced `Results` class with `AUX` array for recorded auxiliary variables, plus `state_names` and `aux_names` 
+  metadata.
+- Added `get_var()` and `__getitem__()` methods to `Results` for accessing recorded variables by name with auto-
+  detection.
+- Added `to_pandas()` support for auxiliary variables in selective recording.
+
+### Changed
+- Updated runner functions to call `update_aux` after each committed step to maintain aux variable values.
+- Modified JIT compilation to handle quadruplet (rhs, events_pre, events_post, update_aux) instead of triplet.
+- Enhanced `ResultsView` to support accessing auxiliary variables alongside states.
+- Updated `Sim` class to handle selective recording with proper buffer allocation and metadata tracking.
+- Modified `run_with_wrapper` to pass selective recording parameters to runners.
+
+### Tests
+- Added 4 new tests in `tests/unit/test_selective_recording.py` to verify auto-detection behavior:
+  - `test_aux_auto_detection_without_prefix`: Aux variables work without prefix
+  - `test_mixed_auto_detect_and_explicit_prefix`: Mixing both syntaxes
+  - `test_state_priority_over_aux_same_name`: States take priority in detection
+  - `test_unknown_variable_helpful_error`: Error messages list available variables
+- Updated existing tests to match improved error messages.
+- Added comprehensive test coverage for selective recording functionality including buffer growth, resume 
+  behavior, and error handling.
+
+### Known Issues
+- JIT warm-up is broken again. Possibly related to the new quadruplet approach.
+
+---
+
 ## [2.29.6] – 2025-11-23
 ### Added
 - Added support for adding and removing parameters via mods. Now `add.params` can be used to add new 

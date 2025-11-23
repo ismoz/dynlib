@@ -116,29 +116,29 @@ class ResultsView:
         return self._state_names
 
     def __getitem__(self, key: Union[str, Sequence[str]]) -> np.ndarray:
-        """Access recorded state series by name.
+        """Access recorded state or aux variable series by name.
 
-        - ``res["v"]`` -> 1-D view (length ``n``)
+        - ``res["v"]`` -> 1-D view (length ``n``) for state or aux variable
+        - ``res["aux.energy"]`` -> 1-D view with explicit aux prefix
         - ``res[["v","w"]]`` -> 2-D array (shape ``(n, k)``) stacked in request
           order. This requires fancy indexing and therefore returns a compact
-          copy, unlike the single-state view above.
+          copy, unlike the single-variable view above.
+          
+        Variables are auto-detected: states first, then aux variables.
+        Aux variables can be accessed with or without the "aux." prefix.
         """
-        n = int(self._raw.n)
-        Y = self._raw.Y_view  # shape (n_state, n)
         if isinstance(key, str):
-            if key not in self._state_index:
-                raise _friendly_key_error("state", key, self._state_names)
-            return Y[self._state_index[key], :n]
-        # sequence of names
+            # Single variable - delegate to raw results which handles auto-detection
+            return self._raw.get_var(key)
+        
+        # sequence of names - need to handle each one
         names = _ensure_tuple(key)
-        idxs: List[int] = []
+        arrays: List[np.ndarray] = []
         for nm in names:
-            if nm not in self._state_index:
-                raise _friendly_key_error("state", nm, self._state_names)
-            idxs.append(self._state_index[nm])
-        # Stack chosen states as columns (transpose the row slice).
-        # Fancy indexing allocates a compact copy (documented in the docstring).
-        return Y[np.array(idxs, dtype=int), :n].T
+            arrays.append(self._raw.get_var(nm))
+        
+        # Stack as columns (each array is already shape (n,))
+        return np.column_stack(arrays)
 
     # ---- low-level passthrough ----
     @property

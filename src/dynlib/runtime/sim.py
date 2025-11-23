@@ -133,10 +133,14 @@ class _RunDefaults:
 class _ResultAccumulator:
     """
     Mutable recording buffers that grow geometrically as stitched results append.
+    
+    Handles selective recording by accepting n_rec_states and n_rec_aux which may be 
+    less than or equal to the full n_state and n_aux.
     """
 
-    def __init__(self, *, n_state: int, dtype: np.dtype, max_log_width: int) -> None:
-        self.n_state = int(n_state)
+    def __init__(self, *, n_rec_states: int, n_rec_aux: int, dtype: np.dtype, max_log_width: int) -> None:
+        self.n_rec_states = int(n_rec_states)
+        self.n_rec_aux = int(n_rec_aux)
         self.dtype = np.dtype(dtype)
         self.log_cols = max(1, int(max_log_width))
         self._record_cap = 0
@@ -144,7 +148,8 @@ class _ResultAccumulator:
         self.n = 0
         self.m = 0
         self.T = np.zeros((0,), dtype=np.float64)
-        self.Y = np.zeros((self.n_state, 0), dtype=self.dtype)
+        self.Y = np.zeros((self.n_rec_states, 0), dtype=self.dtype)
+        self.AUX = np.zeros((self.n_rec_aux, 0), dtype=self.dtype) if n_rec_aux > 0 else None
         self.STEP = np.zeros((0,), dtype=np.int64)
         self.FLAGS = np.zeros((0,), dtype=np.int32)
         self.EVT_CODE = np.zeros((0,), dtype=np.int32)
@@ -161,6 +166,7 @@ class _ResultAccumulator:
         y_seg: np.ndarray,
         step_seg: np.ndarray,
         flags_seg: np.ndarray,
+        aux_seg: np.ndarray | None = None,
     ) -> None:
         if t_seg.size == 0:
             return
@@ -170,6 +176,8 @@ class _ResultAccumulator:
         end = needed
         self.T[start:end] = t_seg
         self.Y[:, start:end] = y_seg
+        if aux_seg is not None and self.AUX is not None:
+            self.AUX[:, start:end] = aux_seg
         self.STEP[start:end] = step_seg
         self.FLAGS[start:end] = flags_seg
         self.n = end
@@ -202,10 +210,13 @@ class _ResultAccumulator:
         final_dt: float,
         step_count_final: int,
         workspace: WorkspaceSnapshot,
+        state_names: list[str],
+        aux_names: list[str],
     ) -> Results:
         return Results(
             T=self.T,
             Y=self.Y,
+            AUX=self.AUX,  # Pass accumulated AUX buffer
             STEP=self.STEP,
             FLAGS=self.FLAGS,
             EVT_CODE=self.EVT_CODE,
@@ -220,6 +231,8 @@ class _ResultAccumulator:
             final_dt=float(final_dt),
             step_count_final=int(step_count_final),
             final_workspace=workspace,
+            state_names=state_names,
+            aux_names=aux_names,
         )
 
     def assert_monotone_time(self) -> None:
@@ -247,10 +260,15 @@ class _ResultAccumulator:
         self.T = _resize_1d(self.T, new_cap)
         self.STEP = _resize_1d(self.STEP, new_cap)
         self.FLAGS = _resize_1d(self.FLAGS, new_cap)
-        new_Y = np.zeros((self.n_state, new_cap), dtype=self.dtype)
+        new_Y = np.zeros((self.n_rec_states, new_cap), dtype=self.dtype)
         if self.n:
             new_Y[:, : self.n] = self.Y[:, : self.n]
         self.Y = new_Y
+        if self.AUX is not None:
+            new_AUX = np.zeros((self.n_rec_aux, new_cap), dtype=self.dtype)
+            if self.n:
+                new_AUX[:, : self.n] = self.AUX[:, : self.n]
+            self.AUX = new_AUX
         self._record_cap = new_cap
 
     def _ensure_event_capacity(self, min_needed: int) -> None:
@@ -282,6 +300,7 @@ class Sim:
         self._results_view: Optional[ResultsView] = None
         self._dtype = model.dtype
         self._n_state = len(model.spec.states)
+        self._n_aux = len(model.spec.aux)
         self._max_log_width = _max_event_log_width(model.spec.events)
         self._workspace_sig = tuple(model.workspace_sig)
         self._pins = SessionPins(
@@ -309,6 +328,10 @@ class Sim:
         self._pending_run_tag: Optional[str] = None
         self._pending_run_cfg_hash: Optional[str] = None
         self._last_run_was_resume = False
+        
+        # Recording selection (for resume consistency): None = not yet determined, [] = explicit empty
+        self._recording_state_names: list[str] | None = None
+        self._recording_aux_names: list[str] | None = None
         
         # Initialize presets bank with inline presets from model DSL
         self._presets: Dict[str, _PresetData] = {}
@@ -341,6 +364,7 @@ class Sim:
         max_steps: Optional[int] = None,
         record: Optional[bool] = None,
         record_interval: Optional[int] = None,
+        record_vars: list[str] | None = None,  # NEW: selective recording
         ic: Optional[np.ndarray] = None,
         params: Optional[np.ndarray] = None,
         cap_rec: Optional[int] = None,
@@ -362,6 +386,14 @@ class Sim:
             max_steps: Maximum steps (safety guard for continuous, target for discrete if N not set)
             record: Whether to record states (default from sim config)
             record_interval: Record every N steps
+            record_vars: List of variable names to record.
+                - None (default): Record all states (backward compatible)
+                - []: Record nothing (only T, STEP, FLAGS)
+                - State names: "x", "y", "z"
+                - Aux names (auto-detected): "energy", "power"
+                - Aux names with explicit prefix: "aux.energy", "aux.power"
+                - Can mix: ["x", "energy", "z"] or ["x", "aux.energy", "z"]
+                - Variables are auto-detected: states first, then aux
             ic: Initial conditions (default from model spec)
             params: Parameters (default from model spec)
             cap_rec: Initial recording buffer capacity
@@ -480,6 +512,13 @@ class Sim:
             raise ValueError("transient must be non-negative")
         if resume and transient > 0.0:
             raise ValueError("transient warm-up is not allowed during resume")
+        
+        # Validate record_vars consistency for resume
+        if resume and record_vars is not None:
+            raise ValueError(
+                "record_vars cannot be changed during resume. "
+                "Call reset() first to start a new recording session with different variables."
+            )
 
          # At this point:
         #   - record, record_interval, max_steps, cap_rec, cap_evt, transient
@@ -495,6 +534,21 @@ class Sim:
             self._pending_run_tag = None
             self._pending_run_cfg_hash = None
             self._last_run_was_resume = False
+            # Clear recording selection when starting fresh
+            self._recording_state_names = []
+            self._recording_aux_names = []
+        else:
+            # When resuming, use the stored record_vars from previous run
+            # (record_vars parameter is disallowed for resume, enforced above)
+            record_vars = None  # Will be reconstructed from stored names below
+        
+        # For now, disable result accumulation when using selective recording
+        # (would require more complex logic to handle variable shape changes)
+        if record_vars is not None and resume and self._result_accum is not None:
+            raise ValueError(
+                "Selective recording with resume is not supported yet. "
+                "Use record_vars=None (default) for resume functionality."
+            )
 
         seed = self._select_seed(
             resume=resume,
@@ -574,6 +628,7 @@ class Sim:
                 transient_T = seed.t + transient
                 transient_N = max_steps  # Use max_steps as guard
             
+            # For transient, we don't care about recording selection - use empty arrays
             warm_result = self._execute_run(
                 seed=run_seed,
                 t_end=transient_T,
@@ -586,6 +641,10 @@ class Sim:
                 stepper_config=stepper_config,
                 adaptive=adaptive,
                 wrms_cfg=wrms_cfg,
+                state_rec_indices=np.array([], dtype=np.int32),
+                aux_rec_indices=np.array([], dtype=np.int32),
+                state_names=[],
+                aux_names=[],
             )
             self._ensure_runner_done(warm_result, phase="transient warm-up")
             self._session_state = self._state_from_results(
@@ -614,6 +673,19 @@ class Sim:
         self._pending_run_tag = tag
         self._pending_run_cfg_hash = _config_digest(stepper_config)
         self._last_run_was_resume = bool(resume)
+        
+        # Resolve recording selection (which variables to record)
+        if resume and self._recording_state_names is not None:
+            # Reconstruct record_vars from stored selection for consistency
+            record_vars = list(self._recording_state_names)
+            record_vars.extend(f"aux.{name}" for name in self._recording_aux_names)
+        
+        state_rec_indices, aux_rec_indices, state_names, aux_names = self._resolve_recording_selection(record_vars)
+        
+        # Store the recording selection for future resume calls
+        if not resume:
+            self._recording_state_names = state_names
+            self._recording_aux_names = aux_names
 
         # Recorded run (or the only run when transient==0)
         recorded_result = self._execute_run(
@@ -628,6 +700,10 @@ class Sim:
             stepper_config=stepper_config,
             adaptive=adaptive,
             wrms_cfg=wrms_cfg,
+            state_rec_indices=state_rec_indices,
+            aux_rec_indices=aux_rec_indices,
+            state_names=state_names,
+            aux_names=aux_names,
         )
         try:
             self._ensure_runner_done(recorded_result, phase="recorded run")
@@ -701,6 +777,9 @@ class Sim:
         self._pending_run_tag = None
         self._pending_run_cfg_hash = None
         self._last_run_was_resume = False
+        # Clear recording selection so new record_vars can be specified
+        self._recording_state_names = None
+        self._recording_aux_names = None
 
     def list_snapshots(self) -> list[dict[str, Any]]:
         """Return metadata for all snapshots (auto-creating the initial snapshot if needed)."""
@@ -1688,6 +1767,68 @@ class Sim:
 
     # ---------------------------- internal helpers -----------------------------
 
+    def _resolve_recording_selection(
+        self, record_vars: list[str] | None
+    ) -> tuple[np.ndarray, np.ndarray, list[str], list[str]]:
+        """
+        Convert variable names to index arrays for selective recording.
+        
+        Args:
+            record_vars: List of variable names to record, or None for default (all states)
+        
+        Returns:
+            state_indices: np.ndarray of state indices to record, shape (n_rec_states,)
+            aux_indices: np.ndarray of aux indices to record, shape (n_rec_aux,)
+            state_names: list of state variable names being recorded
+            aux_names: list of aux variable names being recorded (without "aux." prefix)
+        """
+        if record_vars is None:
+            # Default: all states, no aux (backward compatible)
+            state_indices = np.arange(self._n_state, dtype=np.int32)
+            aux_indices = np.array([], dtype=np.int32)
+            state_names = list(self.model.spec.states)
+            aux_names = []
+            return state_indices, aux_indices, state_names, aux_names
+        
+        all_state_names = list(self.model.spec.states)
+        all_aux_names = list(self.model.spec.aux.keys()) if self.model.spec.aux else []
+        
+        state_indices_list = []
+        aux_indices_list = []
+        state_names = []
+        aux_names = []
+        
+        for var in record_vars:
+            if var.startswith("aux."):
+                # Explicit aux variable with prefix
+                aux_name = var[4:]  # Remove "aux." prefix
+                if aux_name not in all_aux_names:
+                    raise ValueError(f"Unknown aux variable: {aux_name}")
+                aux_indices_list.append(all_aux_names.index(aux_name))
+                aux_names.append(aux_name)
+            elif var in all_state_names:
+                # State variable
+                state_indices_list.append(all_state_names.index(var))
+                state_names.append(var)
+            elif var in all_aux_names:
+                # Aux variable without prefix (auto-detected)
+                aux_indices_list.append(all_aux_names.index(var))
+                aux_names.append(var)
+            else:
+                # Not found - provide helpful error message
+                raise ValueError(
+                    f"Unknown variable: '{var}'. "
+                    f"Available states: {all_state_names}. "
+                    f"Available aux: {all_aux_names}."
+                )
+        
+        return (
+            np.array(state_indices_list, dtype=np.int32),
+            np.array(aux_indices_list, dtype=np.int32),
+            state_names,
+            aux_names
+        )
+
     def _load_inline_presets(self) -> None:
         """Auto-populate presets bank from model.spec.presets."""
         param_names = set(self.model.spec.params)
@@ -2042,6 +2183,10 @@ class Sim:
         stepper_config: np.ndarray,
         adaptive: bool,
         wrms_cfg: WRMSConfig | None,
+        state_rec_indices: np.ndarray,
+        aux_rec_indices: np.ndarray,
+        state_names: list[str],
+        aux_names: list[str],
     ) -> Results:
         return run_with_wrapper(
             runner=self.model.runner,
@@ -2049,14 +2194,20 @@ class Sim:
             rhs=self.model.rhs,
             events_pre=self.model.events_pre,
             events_post=self.model.events_post,
+            update_aux=self.model.update_aux,
             dtype=self.model.dtype,
             n_state=self._n_state,
+            n_aux=len(self.model.spec.aux or {}),
             t0=float(seed.t),
             t_end=float(t_end),
             dt_init=float(seed.dt),
             max_steps=max_steps,
             record=record,
             record_interval=int(record_interval),
+            state_record_indices=state_rec_indices,
+            aux_record_indices=aux_rec_indices,
+            state_names=state_names,
+            aux_names=aux_names,
             ic=seed.y,
             params=seed.params,
             cap_rec=cap_rec,
@@ -2131,6 +2282,7 @@ class Sim:
                 chunk.Y_view[:, start:],
                 chunk.STEP_view[start:] + step_offset,
                 chunk.FLAGS_view[start:],
+                aux_seg=chunk.AUX_view[:, start:] if chunk.AUX is not None else None,
             )
 
         appended_evt_len = 0
@@ -2208,13 +2360,21 @@ class Sim:
             final_dt=state.dt_curr,
             step_count_final=state.step_count,
             workspace=_copy_workspace_dict(state.workspace),
+            state_names=last_result.state_names,
+            aux_names=last_result.aux_names,
         )
         self._results_view = None
 
     def _ensure_accumulator(self) -> _ResultAccumulator:
         if self._result_accum is None:
+            # Use the recorded states/aux count from the recording selection
+            # None means "not determined yet" -> default to full recording
+            # Empty list [] means "explicitly no recording"
+            n_rec_states = len(self._recording_state_names) if self._recording_state_names is not None else self._n_state
+            n_rec_aux = len(self._recording_aux_names) if self._recording_aux_names is not None else self._n_aux
             self._result_accum = _ResultAccumulator(
-                n_state=self._n_state,
+                n_rec_states=n_rec_states,
+                n_rec_aux=n_rec_aux,
                 dtype=self._dtype,
                 max_log_width=self._max_log_width,
             )

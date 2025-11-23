@@ -105,12 +105,14 @@ class CompiledPieces:
     rhs: callable
     events_pre: callable
     events_post: callable
+    update_aux: callable
     spec_hash: str
     triplet_digest: Optional[str] = None
     triplet_from_disk: bool = False
     rhs_source: Optional[str] = None
     events_pre_source: Optional[str] = None
     events_post_source: Optional[str] = None
+    update_aux_source: Optional[str] = None
 
 @dataclass(frozen=True)
 class FullModel:
@@ -121,6 +123,7 @@ class FullModel:
     rhs: Callable
     events_pre: Callable
     events_post: Callable
+    update_aux: Callable
     stepper: Callable
     runner: Callable
     spec_hash: str
@@ -129,6 +132,7 @@ class FullModel:
     rhs_source: Optional[str] = None
     events_pre_source: Optional[str] = None
     events_post_source: Optional[str] = None
+    update_aux_source: Optional[str] = None
     stepper_source: Optional[str] = None
     lag_state_info: Optional[Tuple[Tuple[int, int, int, int], ...]] = None
     uses_lag: bool = False
@@ -237,8 +241,9 @@ def build_callables(
 
     s_hash = compute_spec_hash(spec)
     lag_state_info = _compute_lag_state_info(spec)
+    n_aux = len(spec.aux or {})
     runtime_sig = workspace_structsig(
-        make_runtime_workspace(lag_state_info=lag_state_info, dtype=np.dtype(dtype))
+        make_runtime_workspace(lag_state_info=lag_state_info, dtype=np.dtype(dtype), n_aux=n_aux)
     )
     structsig = tuple(runtime_sig)
     key = CacheKey(
@@ -251,22 +256,34 @@ def build_callables(
 
     cached = _cache.get(key)
     if cached is not None and cached.get("jit") == bool(jit):
-        tri = cached["triplet"]
+        quad = cached.get("quadruplet")  # NEW: may have 4-tuple with update_aux
+        tri = cached.get("triplet")  # OLD: 3-tuple without update_aux
         meta = cached.get("triplet_meta", {})
         sources = cached.get("sources", {})
-        return CompiledPieces(
-            spec,
-            stepper_name,
-            tri[0],
-            tri[1],
-            tri[2],
-            s_hash,
-            triplet_digest=meta.get("digest"),
-            triplet_from_disk=meta.get("from_disk", False),
-            rhs_source=sources.get("rhs"),
-            events_pre_source=sources.get("events_pre"),
-            events_post_source=sources.get("events_post"),
-        )
+        
+        # Handle old caches (3-tuple) vs new caches (4-tuple)
+        if quad and len(quad) == 4:
+            return CompiledPieces(
+                spec,
+                stepper_name,
+                quad[0],
+                quad[1],
+                quad[2],
+                quad[3],
+                s_hash,
+                triplet_digest=meta.get("digest"),
+                triplet_from_disk=meta.get("from_disk", False),
+                rhs_source=sources.get("rhs"),
+                events_pre_source=sources.get("events_pre"),
+                events_post_source=sources.get("events_post"),
+                update_aux_source=sources.get("update_aux"),
+            )
+        elif tri and len(tri) == 3:
+            # Old cache without update_aux - regenerate by falling through
+            pass
+        else:
+            # Unknown format - regenerate
+            pass
 
     cc: CompiledCallables = emit_rhs_and_events(spec)
     use_disk_cache = bool(jit and disk_cache and cache_root is not None)
@@ -284,33 +301,36 @@ def build_callables(
                 "rhs": cc.rhs_source,
                 "events_pre": cc.events_pre_source,
                 "events_post": cc.events_post_source,
+                "update_aux": cc.update_aux_source,
             },
         )
 
-    rhs_art, pre_art, post_art = maybe_jit_triplet(
+    rhs_art, pre_art, post_art, aux_art = maybe_jit_triplet(
         cc.rhs,
         cc.events_pre,
         cc.events_post,
+        cc.update_aux,
         jit=jit,
         cache=use_disk_cache,
         cache_setup=cache_context.configure if cache_context else None,
     )
 
-    triplet_digest = rhs_art.cache_digest or pre_art.cache_digest or post_art.cache_digest
-    triplet_from_disk = rhs_art.cache_hit and pre_art.cache_hit and post_art.cache_hit
+    triplet_digest = rhs_art.cache_digest or pre_art.cache_digest or post_art.cache_digest or aux_art.cache_digest
+    triplet_from_disk = rhs_art.cache_hit and pre_art.cache_hit and post_art.cache_hit and aux_art.cache_hit
 
-    rhs_fn, pre_fn, post_fn = rhs_art.fn, pre_art.fn, post_art.fn
+    rhs_fn, pre_fn, post_fn, aux_fn = rhs_art.fn, pre_art.fn, post_art.fn, aux_art.fn
 
     _cache.put(
         key,
         {
-            "triplet": (rhs_fn, pre_fn, post_fn),
+            "quadruplet": (rhs_fn, pre_fn, post_fn, aux_fn),
             "jit": bool(jit),
             "triplet_meta": {"digest": triplet_digest, "from_disk": triplet_from_disk},
             "sources": {
                 "rhs": cc.rhs_source,
                 "events_pre": cc.events_pre_source,
                 "events_post": cc.events_post_source,
+                "update_aux": cc.update_aux_source,
             },
         },
     )
@@ -321,12 +341,14 @@ def build_callables(
         rhs_fn,
         pre_fn,
         post_fn,
+        aux_fn,
         s_hash,
         triplet_digest=triplet_digest,
         triplet_from_disk=triplet_from_disk,
         rhs_source=cc.rhs_source,
         events_pre_source=cc.events_pre_source,
         events_post_source=cc.events_post_source,
+        update_aux_source=cc.update_aux_source,
     )
 
 
@@ -336,6 +358,7 @@ def _warmup_jit_runner(
     rhs: Callable,
     events_pre: Callable,
     events_post: Callable,
+    update_aux: Callable,
     spec: ModelSpec,
     dtype: str,
     stepper_spec=None,  # NEW: optional stepper spec for config
@@ -351,11 +374,13 @@ def _warmup_jit_runner(
     
     dtype_np = np.dtype(dtype)
     n_state = len(spec.states)
+    n_aux = len(spec.aux or {})
     
     # Allocate minimal workspaces and buffers for warmup
     runtime_ws = make_runtime_workspace(
         lag_state_info=_compute_lag_state_info(spec),
         dtype=dtype_np,
+        n_aux=n_aux,
     )
     stepper_ws = (
         stepper_spec.make_workspace(n_state, dtype_np, model_spec=spec)
@@ -413,7 +438,7 @@ def _warmup_jit_runner(
             np.int64(0), np.int64(0), int(rec.cap_rec), int(ev.cap_evt),
             user_break_flag, status_out, hint_out,
             i_out, step_out, t_out,
-            stepper, rhs, events_pre, events_post,
+            stepper, rhs, events_pre, events_post, update_aux,
         )
     except Exception:
         # Warmup failure is not critical - the JIT will compile on first real call
@@ -679,9 +704,11 @@ def build(
     )
     
     lag_state_info_list = _compute_lag_state_info(spec)
+    n_aux = len(spec.aux or {})
     runtime_ws_template = make_runtime_workspace(
         lag_state_info=lag_state_info_list,
         dtype=dtype_np,
+        n_aux=n_aux,
     )
 
     def _make_stepper_workspace() -> object | None:
@@ -792,6 +819,7 @@ def build(
             pieces.rhs,
             pieces.events_pre,
             pieces.events_post,
+            pieces.update_aux,
             spec,
             dtype_str,
             stepper_spec,  # NEW: pass stepper_spec
@@ -806,6 +834,7 @@ def build(
         rhs=pieces.rhs,
         events_pre=pieces.events_pre,
         events_post=pieces.events_post,
+        update_aux=pieces.update_aux,
         stepper=stepper_fn,
         runner=runner_fn,
         spec_hash=pieces.spec_hash,
@@ -814,6 +843,7 @@ def build(
         rhs_source=pieces.rhs_source,
         events_pre_source=pieces.events_pre_source,
         events_post_source=pieces.events_post_source,
+        update_aux_source=pieces.update_aux_source,
         stepper_source=stepper_source if 'stepper_source' in locals() and stepper_source else None,
         lag_state_info=lag_state_info_list,
         uses_lag=spec.uses_lag,

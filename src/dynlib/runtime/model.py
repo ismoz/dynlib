@@ -21,6 +21,7 @@ class Model:
         rhs: Compiled RHS callable
         events_pre: Compiled pre-events callable
         events_post: Compiled post-events callable
+        update_aux: Compiled aux updater callable
         stepper: Compiled stepper callable
         runner: Compiled runner callable
         spec_hash: Content hash of the spec
@@ -28,6 +29,7 @@ class Model:
         rhs_source: Python source code for RHS function (if available)
         events_pre_source: Python source code for pre-events function (if available)
         events_post_source: Python source code for post-events function (if available)
+        update_aux_source: Python source code for update_aux function (if available)
         stepper_source: Python source code for stepper function (if available)
     """
     spec: ModelSpec
@@ -36,6 +38,7 @@ class Model:
     rhs: Callable
     events_pre: Callable
     events_post: Callable
+    update_aux: Callable
     stepper: Callable
     runner: Callable
     spec_hash: str
@@ -43,6 +46,7 @@ class Model:
     rhs_source: Optional[str] = None
     events_pre_source: Optional[str] = None
     events_post_source: Optional[str] = None
+    update_aux_source: Optional[str] = None
     stepper_source: Optional[str] = None
     lag_state_info: Optional[Tuple[Tuple[int, int, int, int], ...]] = None
     uses_lag: bool = False
@@ -78,6 +82,7 @@ class Model:
             ("rhs", self.rhs_source),
             ("events_pre", self.events_pre_source),
             ("events_post", self.events_post_source),
+            ("update_aux", self.update_aux_source),
             ("stepper", self.stepper_source),
         ]
         

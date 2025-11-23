@@ -30,6 +30,7 @@ def _load_decay_model(jit: bool = True) -> Model:
         rhs=full_model.rhs,
         events_pre=full_model.events_pre,
         events_post=full_model.events_post,
+        update_aux=full_model.update_aux,
         stepper=full_model.stepper,
         runner=full_model.runner,
         spec_hash=full_model.spec_hash,

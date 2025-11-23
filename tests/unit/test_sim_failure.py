@@ -27,6 +27,7 @@ def _load_model(toml_name: str) -> Model:
         rhs=built.rhs,
         events_pre=built.events_pre,
         events_post=built.events_post,
+        update_aux=built.update_aux,
         stepper=built.stepper,
         runner=built.runner,
         spec_hash=built.spec_hash,
@@ -34,6 +35,7 @@ def _load_model(toml_name: str) -> Model:
         rhs_source=built.rhs_source,
         events_pre_source=built.events_pre_source,
         events_post_source=built.events_post_source,
+        update_aux_source=built.update_aux_source,
         stepper_source=built.stepper_source,
         lag_state_info=built.lag_state_info,
         uses_lag=built.uses_lag,
@@ -59,6 +61,7 @@ def _make_result(sim: Sim, status: Status, *, t_final: float = 0.0, step_count: 
     return Results(
         T=np.zeros((1,), dtype=np.float64),
         Y=np.zeros((n_state, 1), dtype=dtype),
+        AUX=None,
         STEP=np.zeros((1,), dtype=np.int64),
         FLAGS=np.zeros((1,), dtype=np.int32),
         EVT_CODE=np.zeros((1,), dtype=np.int32),
@@ -73,6 +76,8 @@ def _make_result(sim: Sim, status: Status, *, t_final: float = 0.0, step_count: 
         final_dt=float(sim._nominal_dt),
         step_count_final=int(step_count),
         final_workspace={"runtime": {}, "stepper": {}},
+        state_names=[],
+        aux_names=[],
     )
 
 

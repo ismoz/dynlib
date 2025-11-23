@@ -29,8 +29,10 @@ def run_with_wrapper(
     rhs: Callable[..., None],
     events_pre: Callable[..., None],
     events_post: Callable[..., None],
+    update_aux: Callable[..., None],
     dtype: np.dtype,
     n_state: int,
+    n_aux: int,
     # sim config
     t0: float,
     t_end: float,
@@ -38,6 +40,11 @@ def run_with_wrapper(
     max_steps: int,
     record: bool,
     record_interval: int,
+    # NEW: selective recording
+    state_record_indices: np.ndarray,  # indices of states to record
+    aux_record_indices: np.ndarray,    # indices of aux to record
+    state_names: list[str],            # names of states being recorded
+    aux_names: list[str],              # names of aux being recorded
     # initial state/params
     ic: np.ndarray,
     params: np.ndarray,
@@ -72,7 +79,8 @@ def run_with_wrapper(
             i_start, step_start, cap_rec, cap_evt,
             user_break_flag, status_out, hint_out,
             i_out, step_out, t_out,
-            stepper, rhs, events_pre, events_post
+            stepper, rhs, events_pre, events_post, update_aux,
+            state_rec_indices, aux_rec_indices, n_rec_states, n_rec_aux
         ) -> int32
 
     Notes:
@@ -81,6 +89,7 @@ def run_with_wrapper(
       - stepper_config is a read-only float64 array containing runtime configuration.
       - When ``discrete=True`` the runner horizon is interpreted as an iteration
         budget ``N`` (second argument). Otherwise it is ``t_end`` (continuous time).
+      - state_rec_indices and aux_rec_indices control selective recording.
     """
     if discrete:
         if target_steps is None:
@@ -105,17 +114,25 @@ def run_with_wrapper(
     runtime_ws = make_runtime_workspace(
         lag_state_info=lag_state_info,
         dtype=dtype,
+        n_aux=n_aux,
     )
     stepper_ws = make_stepper_workspace() if make_stepper_workspace else None
 
-    # Allocate recording/event pools
-    rec, ev = allocate_pools(
-        n_state=n_state,
-        dtype=dtype,
-        cap_rec=cap_rec,
-        cap_evt=cap_evt,
-        max_log_width=max_log_width,
-    )
+    # Allocate recording/event pools with selective recording
+    n_rec_states = len(state_record_indices)
+    n_rec_aux = len(aux_record_indices)
+    
+    # Allocate Y for selected states only
+    T = np.zeros((cap_rec,), dtype=np.float64)
+    Y = np.zeros((n_rec_states, cap_rec), dtype=dtype) if n_rec_states > 0 else np.zeros((0, cap_rec), dtype=dtype)
+    AUX = np.zeros((n_rec_aux, cap_rec), dtype=dtype) if n_rec_aux > 0 else np.zeros((0, cap_rec), dtype=dtype)
+    STEP = np.zeros((cap_rec,), dtype=np.int64)
+    FLAGS = np.zeros((cap_rec,), dtype=np.int32)
+    
+    # Event log arrays
+    EVT_CODE = np.zeros((cap_evt,), dtype=np.int32)
+    EVT_INDEX = np.zeros((cap_evt,), dtype=np.int32)
+    EVT_LOG_DATA = np.zeros((cap_evt, max(1, max_log_width)), dtype=dtype)
 
     # Apply workspace seed (for resume scenarios) before entering runner
     if workspace_seed:
@@ -190,13 +207,14 @@ def run_with_wrapper(
             stepper_ws,
             stepper_config,
             y_prop, t_prop, dt_next, err_est,
-            rec.T, rec.Y, rec.STEP, rec.FLAGS,
-            ev.EVT_CODE, ev.EVT_INDEX, ev.EVT_LOG_DATA,
+            T, Y, AUX, STEP, FLAGS,
+            EVT_CODE, EVT_INDEX, EVT_LOG_DATA,
             evt_log_scratch,
-            i_start, step_start, int(rec.cap_rec), int(ev.cap_evt),
+            i_start, step_start, int(cap_rec), int(cap_evt),
             user_break_flag, status_out, hint_out,
             i_out, step_out, t_out,
-            stepper, rhs, events_pre, events_post,
+            stepper, rhs, events_pre, events_post, update_aux,
+            state_record_indices, aux_record_indices, n_rec_states, n_rec_aux,
         )
 
         status_value = int(status)
@@ -216,9 +234,10 @@ def run_with_wrapper(
             final_dt = float(dt_next[0]) if step_curr > 0 else float(dt_curr)
             t_final = float(t_out[0])
             return Results(
-                T=rec.T, Y=rec.Y, STEP=rec.STEP, FLAGS=rec.FLAGS,
-                EVT_CODE=ev.EVT_CODE, EVT_INDEX=ev.EVT_INDEX,
-                EVT_LOG_DATA=ev.EVT_LOG_DATA,
+                T=T, Y=Y, AUX=(AUX if n_rec_aux > 0 else None), 
+                STEP=STEP, FLAGS=FLAGS,
+                EVT_CODE=EVT_CODE, EVT_INDEX=EVT_INDEX,
+                EVT_LOG_DATA=EVT_LOG_DATA,
                 n=n_filled, m=m_filled,
                 status=status_value,
                 final_state=final_state,
@@ -227,11 +246,38 @@ def run_with_wrapper(
                 final_dt=final_dt,
                 step_count_final=step_curr,
                 final_workspace=final_ws,
+                state_names=state_names,
+                aux_names=aux_names,
             )
 
         if status_value == GROW_REC:
             # Require at least one more slot beyond current n_filled
-            rec = grow_rec_arrays(rec, filled=n_filled, min_needed=n_filled + 1)
+            new_cap = cap_rec
+            while new_cap < n_filled + 1:
+                new_cap *= 2
+            
+            T_new = np.zeros((new_cap,), dtype=np.float64)
+            Y_new = np.zeros((n_rec_states, new_cap), dtype=dtype) if n_rec_states > 0 else np.zeros((0, new_cap), dtype=dtype)
+            AUX_new = np.zeros((n_rec_aux, new_cap), dtype=dtype) if n_rec_aux > 0 else np.zeros((0, new_cap), dtype=dtype)
+            STEP_new = np.zeros((new_cap,), dtype=np.int64)
+            FLAGS_new = np.zeros((new_cap,), dtype=np.int32)
+            
+            if n_filled > 0:
+                T_new[:n_filled] = T[:n_filled]
+                if n_rec_states > 0:
+                    Y_new[:, :n_filled] = Y[:, :n_filled]
+                if n_rec_aux > 0:
+                    AUX_new[:, :n_filled] = AUX[:, :n_filled]
+                STEP_new[:n_filled] = STEP[:n_filled]
+                FLAGS_new[:n_filled] = FLAGS[:n_filled]
+            
+            T = T_new
+            Y = Y_new
+            AUX = AUX_new
+            STEP = STEP_new
+            FLAGS = FLAGS_new
+            cap_rec = new_cap
+            
             # Re-enter: update cursors/caps
             i_start = np.int64(n_filled)
             step_start = np.int64(step_curr)
@@ -243,7 +289,24 @@ def run_with_wrapper(
             continue
 
         if status_value == GROW_EVT:
-            ev = grow_evt_arrays(ev, filled=m_filled, min_needed=m_filled + 1, dtype=dtype)
+            new_cap = cap_evt
+            while new_cap < m_filled + 1:
+                new_cap *= 2
+            
+            EVT_CODE_new = np.zeros((new_cap,), dtype=np.int32)
+            EVT_INDEX_new = np.zeros((new_cap,), dtype=np.int32)
+            EVT_LOG_DATA_new = np.zeros((new_cap, max(1, max_log_width)), dtype=dtype)
+            
+            if m_filled > 0:
+                EVT_CODE_new[:m_filled] = EVT_CODE[:m_filled]
+                EVT_INDEX_new[:m_filled] = EVT_INDEX[:m_filled]
+                EVT_LOG_DATA_new[:m_filled, :] = EVT_LOG_DATA[:m_filled, :]
+            
+            EVT_CODE = EVT_CODE_new
+            EVT_INDEX = EVT_INDEX_new
+            EVT_LOG_DATA = EVT_LOG_DATA_new
+            cap_evt = new_cap
+            
             # Keep event cursor in hint_out for re-entry
             hint_out[0] = np.int32(m_filled)
             i_start = np.int64(n_filled)
@@ -272,9 +335,10 @@ def run_with_wrapper(
             }
             final_dt = float(dt_next[0]) if step_curr > 0 else float(dt_curr)
             return Results(
-                T=rec.T, Y=rec.Y, STEP=rec.STEP, FLAGS=rec.FLAGS,
-                EVT_CODE=ev.EVT_CODE, EVT_INDEX=ev.EVT_INDEX,
-                EVT_LOG_DATA=ev.EVT_LOG_DATA,
+                T=T, Y=Y, AUX=(AUX if n_rec_aux > 0 else None),
+                STEP=STEP, FLAGS=FLAGS,
+                EVT_CODE=EVT_CODE, EVT_INDEX=EVT_INDEX,
+                EVT_LOG_DATA=EVT_LOG_DATA,
                 n=n_filled, m=m_filled, status=status_value,
                 final_state=final_state,
                 final_params=final_params,
@@ -282,6 +346,8 @@ def run_with_wrapper(
                 final_dt=final_dt,
                 step_count_final=step_curr,
                 final_workspace=final_ws,
+                state_names=state_names,
+                aux_names=aux_names,
             )
 
         # Any other code is unexpected in wrapper-level exit contract.
