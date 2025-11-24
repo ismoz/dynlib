@@ -158,6 +158,23 @@ class _NameLowerer(ast.NodeTransformer):
                 "decreasing",
             }:
                 return self._expand_macro(macro_name, node)
+            if macro_name == "range":
+                if node.keywords:
+                    raise ModelLoadError("range() does not support keyword arguments in the DSL")
+                if len(node.args) not in {1, 2, 3}:
+                    raise ModelLoadError("range() expects 1, 2, or 3 positional arguments")
+                casted_args = [
+                    ast.Call(
+                        func=ast.Name(id="int", ctx=ast.Load()),
+                        args=[self.visit(arg)],
+                        keywords=[],
+                    )
+                    for arg in node.args
+                ]
+                return ast.copy_location(
+                    ast.Call(func=ast.Name(id="range", ctx=ast.Load()), args=casted_args, keywords=[]),
+                    node,
+                )
         # Check for lag_<name>(k) pattern (with optional arg defaulting to 1)
         if isinstance(node.func, ast.Name) and node.func.id.startswith("lag_"):
             state_name = node.func.id[4:]  # remove "lag_" prefix

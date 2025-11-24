@@ -147,6 +147,7 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
         validate_identifier_uniqueness,
         validate_reserved_identifiers,
         validate_constants,
+        validate_identifiers_resolved,
         collect_lag_requests,
         detect_equation_lag_usage,
     )
@@ -161,6 +162,7 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
     validate_no_duplicate_equation_targets(normal)
     validate_presets(normal)
     validate_aux_names(normal)
+    validate_identifiers_resolved(normal)
     
     # Collect lag requests from all expressions
     lag_requests = collect_lag_requests(normal)

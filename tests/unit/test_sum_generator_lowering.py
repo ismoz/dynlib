@@ -21,7 +21,7 @@ x = 0.0
 N = 4
 
 [equations.rhs]
-x = "sum(i*i for i in range(int(N)))"
+x = "sum(i*i for i in range(N))"
 """
 
 MODEL_TERNARY = "inline:" + """
@@ -36,7 +36,7 @@ x = 0.0
 N = 3
 
 [equations.rhs]
-x = "1.0 if t < 0 else sum(i for i in range(int(N)))"
+x = "1.0 if t < 0 else sum(i for i in range(N))"
 """
 
 MODEL_PROD = "inline:" + """
@@ -51,7 +51,7 @@ x = 0.0
 N = 4
 
 [equations.rhs]
-x = "prod((i+1) for i in range(int(N)))"
+x = "prod((i+1) for i in range(N))"
 """
 
 

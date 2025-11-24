@@ -2,6 +2,20 @@
 
 ---
 
+## [2.30.5] – 2025-11-24
+### Added
+- Added support for `range()` function in DSL expressions. Arguments are automatically cast to integers for 
+  proper Numba compatibility.
+- Added validation to check that all identifiers used in expressions are properly declared as states, parameters, 
+  auxiliary variables, functions, or constants, or are supported builtins and macros. This prevents typos and 
+  undefined references.
+
+### Tests
+- Updated test models to remove manual `int()` casts around `range()` calls, as the function now handles type 
+  conversion internally.
+
+---
+
 ## [2.30.4] – 2025-11-24
 ### Added
 - Added user-defined `[constants]` table support to inline model-specific numeric literals across DSL

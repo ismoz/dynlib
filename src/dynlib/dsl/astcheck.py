@@ -4,7 +4,7 @@ from typing import Dict, Any, Set, List
 import re
 
 from dynlib.errors import ModelLoadError
-from .constants import RESERVED_IDENTIFIERS, RUNTIME_RESERVED_NAMES
+from .constants import BUILTIN_CONSTS, RESERVED_IDENTIFIERS, RUNTIME_RESERVED_NAMES
 
 __all__ = [
     "collect_names",
@@ -20,6 +20,7 @@ __all__ = [
     "validate_identifier_uniqueness",
     "validate_reserved_identifiers",
     "validate_constants",
+    "validate_identifiers_resolved",
 ]
 
 #NOTE: emitter.py and schema.py also perform the same regex matching;
@@ -60,6 +61,91 @@ def collect_names(normal: Dict[str, Any]) -> Dict[str, Set[str]]:
         "events": events,
         "constants": constants,
     }
+
+
+def _collect_free_identifiers(expr: str) -> Set[str]:
+    """
+    Return identifiers that are *used* in an expression (Load context) but not
+    bound by a comprehension target or lambda argument within that expression.
+    """
+    import ast
+
+    # Keep expression parsing consistent with downstream lowering (support "^" as power)
+    expr = expr.strip().replace("^", "**")
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except SyntaxError as exc:
+        raise ModelLoadError(f"Invalid expression syntax: {exc.msg}") from exc
+
+    class _Collector(ast.NodeVisitor):
+        def __init__(self):
+            self.scope_stack: List[Set[str]] = [set()]
+            self.free: Set[str] = set()
+
+        def _is_bound(self, name: str) -> bool:
+            return any(name in scope for scope in self.scope_stack)
+
+        def _push(self, names: Set[str] | None = None) -> None:
+            self.scope_stack.append(set(names or ()))
+
+        def _pop(self) -> None:
+            self.scope_stack.pop()
+
+        def _bind_target(self, target: ast.AST) -> None:
+            if isinstance(target, ast.Name):
+                self.scope_stack[-1].add(target.id)
+            elif isinstance(target, (ast.Tuple, ast.List)):
+                for elt in target.elts:
+                    self._bind_target(elt)
+            elif isinstance(target, ast.Starred):
+                self._bind_target(target.value)
+
+        def visit_Name(self, node: ast.Name):
+            if isinstance(node.ctx, ast.Load) and not self._is_bound(node.id):
+                self.free.add(node.id)
+
+        def visit_Lambda(self, node: ast.Lambda):
+            arg_names = {arg.arg for arg in node.args.args}
+            self._push(arg_names)
+            self.visit(node.body)
+            self._pop()
+
+        def _visit_comprehension(self, generators: List[ast.comprehension], visit_elt) -> None:
+            def walk(idx: int) -> None:
+                if idx == len(generators):
+                    visit_elt()
+                    return
+                gen = generators[idx]
+                self.visit(gen.iter)
+                self._push()
+                self._bind_target(gen.target)
+                for cond in gen.ifs:
+                    self.visit(cond)
+                walk(idx + 1)
+                self._pop()
+
+            walk(0)
+
+        def visit_ListComp(self, node: ast.ListComp):
+            self._visit_comprehension(node.generators, lambda: self.visit(node.elt))
+
+        def visit_SetComp(self, node: ast.SetComp):
+            self._visit_comprehension(node.generators, lambda: self.visit(node.elt))
+
+        def visit_GeneratorExp(self, node: ast.GeneratorExp):
+            self._visit_comprehension(node.generators, lambda: self.visit(node.elt))
+
+        def visit_DictComp(self, node: ast.DictComp):
+            self._visit_comprehension(node.generators, lambda: (self.visit(node.key), self.visit(node.value)))
+
+        def visit_NamedExpr(self, node: ast.NamedExpr):
+            # Walrus assigns within the expression; treat target as bound for the value
+            self.visit(node.value)
+            self.scope_stack[-1].add(node.target.id)
+
+    collector = _Collector()
+    collector.visit(tree)
+    return collector.free
 
 
 def _find_idents(expr: str) -> Set[str]:
@@ -497,3 +583,96 @@ def validate_presets(normal: Dict[str, Any]) -> None:
             raise ModelLoadError(
                 f"[presets.{name}] must define at least one param or state"
             )
+
+
+def validate_identifiers_resolved(normal: Dict[str, Any]) -> None:
+    """
+    Ensure every identifier used in an expression can be resolved to a declared
+    state/param/aux/function/constant (or a supported builtin/macro).
+    """
+    names = collect_names(normal)
+    states = names["states"]
+    params = names["params"]
+    aux = names["aux"]
+    functions = names["functions"]
+    constants = names["constants"]
+
+    allowed_builtins = {
+        # math-style functions (rewritten downstream)
+        "abs", "min", "max", "round", "exp", "expm1", "log", "log10", "log2", "log1p",
+        "sqrt", "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+        "sinh", "cosh", "tanh", "asinh", "acosh", "atanh",
+        "floor", "ceil", "trunc", "hypot", "copysign", "erf", "erfc",
+        # DSL macros
+        "sign", "heaviside", "step", "relu", "clip", "approx",
+        "cross_up", "cross_down", "cross_either", "changed",
+        "in_interval", "enters_interval", "leaves_interval",
+        "increasing", "decreasing",
+        # Builtins used in comprehensions/aggregations
+        "sum", "range", "int", "float", "bool", "len",
+        # Module prefixes allowed in user expressions
+        "math",
+    }
+
+    allowed_lag = {f"lag_{s}" for s in states}
+    base_allowed = (
+        states | params | aux | functions | constants |
+        set(RUNTIME_RESERVED_NAMES) | set(BUILTIN_CONSTS.keys())
+    )
+    base_allowed = base_allowed | allowed_builtins | allowed_lag
+
+    def _check_expr(expr: str, location: str, extra_allowed: Set[str] | None = None) -> None:
+        if not expr:
+            return
+        allowed = base_allowed | (extra_allowed or set())
+        free_idents = _collect_free_identifiers(expr)
+        unknown = [name for name in free_idents if name not in allowed]
+        if unknown:
+            missing = ", ".join(sorted(set(unknown)))
+            raise ModelLoadError(
+                f"Unknown identifier(s) in {location}: {missing}. "
+                "Declare them as states/params/aux/functions or constants."
+            )
+
+    # functions.<name>.expr
+    for fname, fdef in (normal.get("functions") or {}).items():
+        args = set(fdef.get("args") or [])
+        _check_expr(fdef.get("expr", ""), f"[functions.{fname}].expr", extra_allowed=args)
+
+    # aux.<name>
+    for aname, expr in (normal.get("aux") or {}).items():
+        _check_expr(expr, f"[aux.{aname}]")
+
+    # equations.rhs entries
+    equations = normal.get("equations", {}) or {}
+    for sname, expr in (equations.get("rhs") or {}).items():
+        _check_expr(expr, f"[equations.rhs.{sname}]")
+
+    # equations.expr block form
+    block_expr = equations.get("expr")
+    if isinstance(block_expr, str):
+        for line in block_expr.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if "=" not in line:
+                continue  # other validators handle this
+            _, rhs = [p.strip() for p in line.split("=", 1)]
+            _check_expr(rhs, "[equations].expr")
+
+    # events cond + actions
+    for ev in (normal.get("events") or []):
+        ev_name = ev["name"]
+        _check_expr(ev.get("cond", ""), f"[events.{ev_name}].cond")
+        if ev.get("action_keyed"):
+            for tgt, expr in ev["action_keyed"].items():
+                _check_expr(expr, f"[events.{ev_name}].action.{tgt}")
+        if ev.get("action_block"):
+            for line in ev["action_block"].splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                if "=" not in line:
+                    continue
+                _, rhs = [p.strip() for p in line.split("=", 1)]
+                _check_expr(rhs, f"[events.{ev_name}].action")

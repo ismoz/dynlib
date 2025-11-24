@@ -9,6 +9,7 @@ compile_all.sh
 # Folders
 .snn_kernel_cache/
 presets/
+experiments/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
