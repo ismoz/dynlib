@@ -16,6 +16,10 @@ It lists all available tables and their keys.
 
 ## Optional Tables
 
+### [constants]
+- `constant_name = value` (scalars, numeric expressions allowed, can reference prior constants)
+- Constants cannot be assigned and they are read-only literals.
+
 ### [params]
 - `param_name = value` (scalars or arrays, cast to model dtype)
 

@@ -2,6 +2,13 @@
 
 ---
 
+## [2.30.6] – 2025-11-25
+### Added
+- Added a new `analysis` module with parameter sweep tools for running simulations with different parameter 
+  values and collecting results. It is an early sketch.
+
+---
+
 ## [2.30.5] – 2025-11-24
 ### Added
 - Added support for `range()` function in DSL expressions. Arguments are automatically cast to integers for 
