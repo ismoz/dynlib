@@ -60,7 +60,7 @@ def validate_tables(doc: Dict[str, Any]) -> None:
     """Presence and shape checks for top-level tables.
 
     Required: [model], [states]
-    Optional: [params], [equations], [equations.rhs], [aux], [functions], [events.*], [sim]
+    Optional: [params], [constants], [equations], [equations.rhs], [aux], [functions], [events.*], [sim]
     """
     validate_model_header(doc)
 
@@ -68,10 +68,14 @@ def validate_tables(doc: Dict[str, Any]) -> None:
     if not isinstance(doc["states"], dict):
         raise ModelLoadError("[states] must be a table of name = value")
 
-    # params is optional; if present, must be a table
+    # params/constants are optional; if present, must be a table
     params = doc.get("params")
     if params is not None and not isinstance(params, dict):
         raise ModelLoadError("[params] must be a table if present")
+
+    constants = doc.get("constants")
+    if constants is not None and not isinstance(constants, dict):
+        raise ModelLoadError("[constants] must be a table if present")
 
     eq = doc.get("equations")
     if eq is not None and not isinstance(eq, dict):

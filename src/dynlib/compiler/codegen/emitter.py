@@ -38,7 +38,7 @@ def _build_name_maps(spec: ModelSpec) -> NameMaps:
     s2i, p2i = _state_param_maps(spec)
     aux_names = tuple((spec.aux or {}).keys())
     funcs = _functions_table(spec)
-    consts = cast_constants(spec.dtype)
+    consts = cast_constants(spec.dtype, extra=dict(zip(spec.constants, spec.constant_vals)))
     return NameMaps(
         s2i,
         p2i,

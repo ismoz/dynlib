@@ -73,6 +73,8 @@ class ModelSpec:
     kind: str                 # "ode" | "map"
     label: str | None
     dtype: str               # canonical dtype string
+    constants: Tuple[str, ...]
+    constant_vals: Tuple[float | int, ...]
     states: Tuple[str, ...]   # ordered
     state_ic: Tuple[float | int, ...]
     params: Tuple[str, ...]
@@ -144,11 +146,13 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
         validate_aux_names,
         validate_identifier_uniqueness,
         validate_reserved_identifiers,
+        validate_constants,
         collect_lag_requests,
         detect_equation_lag_usage,
     )
     
     validate_reserved_identifiers(normal)
+    validate_constants(normal)
     validate_identifier_uniqueness(normal)
     validate_expr_acyclic(normal)
     validate_event_legality(normal)
@@ -165,6 +169,9 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
     kind = model["type"]
     dtype = _canon_dtype(model.get("dtype", "float64"))
     label = model.get("label")
+
+    constants = tuple((normal.get("constants") or {}).keys())
+    constant_vals = tuple((normal.get("constants") or {}).values())
 
     states = tuple(normal["states"].keys())
     state_ic = tuple(normal["states"].values())
@@ -244,6 +251,8 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
         kind=kind,
         label=label,
         dtype=dtype,
+        constants=constants,
+        constant_vals=constant_vals,
         states=states,
         state_ic=state_ic,
         params=params,
@@ -272,6 +281,8 @@ def _json_canon(obj: Any) -> str:
                 "kind": o.kind,
                 "label": o.label,
                 "dtype": o.dtype,
+                "constants": list(o.constants),
+                "constant_vals": list(o.constant_vals),
                 "states": list(o.states),
                 "state_ic": list(o.state_ic),
                 "params": list(o.params),

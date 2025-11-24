@@ -19,6 +19,7 @@ __all__ = [
     "validate_aux_names",
     "validate_identifier_uniqueness",
     "validate_reserved_identifiers",
+    "validate_constants",
 ]
 
 #NOTE: emitter.py and schema.py also perform the same regex matching;
@@ -50,12 +51,14 @@ def collect_names(normal: Dict[str, Any]) -> Dict[str, Set[str]]:
     aux = set((normal.get("aux") or {}).keys())
     functions = set((normal.get("functions") or {}).keys())
     events = set(ev["name"] for ev in (normal.get("events") or []))
+    constants = set((normal.get("constants") or {}).keys())
     return {
         "states": states,
         "params": params,
         "aux": aux,
         "functions": functions,
         "events": events,
+        "constants": constants,
     }
 
 
@@ -324,6 +327,26 @@ def validate_aux_names(normal: Dict[str, Any]) -> None:
     _validate_reserved_names(aux_names, "[aux]")
 
 
+def validate_constants(normal: Dict[str, Any]) -> None:
+    """Validate constant identifiers: reserved words and collisions."""
+    const_names = set((normal.get("constants") or {}).keys())
+    _validate_reserved_names(const_names, "[constants]")
+
+    collisions = (
+        ("states", "state"),
+        ("params", "parameter"),
+        ("aux", "auxiliary variable"),
+    )
+    for section, friendly in collisions:
+        dup = const_names & set((normal.get(section) or {}).keys())
+        if dup:
+            name = sorted(dup)[0]
+            article = "an" if friendly[0].lower() in {"a", "e", "i", "o", "u"} else "a"
+            raise ModelLoadError(
+                f"{name} is defined as a constant and cannot be reused as {article} {friendly}."
+            )
+
+
 def validate_reserved_identifiers(normal: Dict[str, Any]) -> None:
     """Reject reserved names across states/params/aux/functions."""
     names = collect_names(normal)
@@ -331,12 +354,13 @@ def validate_reserved_identifiers(normal: Dict[str, Any]) -> None:
     _validate_reserved_names(names["params"], "[params]")
     _validate_reserved_names(names["aux"], "[aux]")
     _validate_reserved_names(names["functions"], "[functions]")
+    _validate_reserved_names(names["constants"], "[constants]")
 
 
 def validate_identifier_uniqueness(normal: Dict[str, Any]) -> None:
-    """Ensure identifiers are not reused across states/params/aux/functions."""
+    """Ensure identifiers are not reused across states/params/aux/functions/constants."""
     names = collect_names(normal)
-    section_order = ("states", "params", "aux", "functions")
+    section_order = ("states", "params", "aux", "functions", "constants")
 
     owners: Dict[str, Set[str]] = {}
     for section in section_order:
@@ -351,7 +375,7 @@ def validate_identifier_uniqueness(normal: Dict[str, Any]) -> None:
     if conflicts:
         detail = "; ".join(f"{name} ({', '.join(sections)})" for name, sections in sorted(conflicts.items()))
         raise ModelLoadError(
-            "Identifiers must be unique across states/params/aux/functions; "
+            "Identifiers must be unique across states/params/aux/functions/constants; "
             f"conflicts: {detail}"
         )
 

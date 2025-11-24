@@ -28,17 +28,21 @@ RUNTIME_RESERVED_NAMES = frozenset({"t"})
 RESERVED_IDENTIFIERS = frozenset(set(RUNTIME_RESERVED_NAMES) | set(BUILTIN_CONSTS.keys()))
 
 
-def cast_constants(dtype: str) -> Dict[str, float]:
+def cast_constants(dtype: str, extra: Dict[str, float | int] | None = None) -> Dict[str, float | int]:
     """
     Optionally cast built-in constants to a target dtype.
 
     This keeps codegen literals aligned with the model dtype; callers that don't
     care about dtype can keep using Python floats directly.
     """
+    all_consts: Dict[str, float | int] = dict(BUILTIN_CONSTS)
+    if extra:
+        all_consts.update(extra)
+
     try:
         import numpy as np
     except Exception:  # pragma: no cover - numpy should be available, but stay defensive
-        return dict(BUILTIN_CONSTS)
+        return all_consts
 
     np_dtype = np.dtype(dtype)
-    return {name: np_dtype.type(val).item() for name, val in BUILTIN_CONSTS.items()}
+    return {name: np_dtype.type(val).item() for name, val in all_consts.items()}

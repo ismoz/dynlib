@@ -9,8 +9,6 @@ theta = 0.1
 
 [params]
 K  = 0.971635
-pi = 3.141592653589793
-# TODO: Support pi / e constants
 
 [equations.rhs]
 p     = "((p + K * sin(theta)) + pi) % (2*pi) - pi"

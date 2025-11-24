@@ -318,6 +318,7 @@ def apply_mods_v2(normal: Dict[str, Any], selected: List[ModSpec]) -> Dict[str, 
         "functions": dict(normal.get("functions", {})),
         "events": list(normal.get("events", [])),
         "sim": dict(normal.get("sim", {})),
+        "constants": dict(normal.get("constants", {})),
     }
 
     # Apply verbs per mod in fixed verb order

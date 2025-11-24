@@ -31,6 +31,8 @@ def test_build_spec_and_hash_determinism_and_dtype_alias():
     assert spec.state_ic == (1.0, 0.0)
     assert spec.params == ("a",)
     assert spec.param_vals == (1.0,)
+    assert spec.constants == ()
+    assert spec.constant_vals == ()
     assert spec.equations_rhs == {"x": "-a*x", "u": "x - u"}
     assert spec.equations_block is None
     assert spec.aux == {"z": "x+u"}
@@ -118,6 +120,54 @@ def test_reserved_constants_not_allowed_as_identifiers():
     n["functions"] = {"pi": {"args": ["x"], "expr": "x"}}
     with pytest.raises(ModelLoadError, match="reserved"):
         build_spec(parse_model_v2(n))
+
+def test_constants_may_reference_prior_constants():
+    n = minimal_doc()
+    n["constants"] = {"kb": 2.0, "kb2": "2*kb"}
+    parsed = parse_model_v2(n)
+    spec = build_spec(parsed)
+    assert spec.constants == ("kb", "kb2")
+    assert spec.constant_vals == (2.0, 4.0)
+
+
+def test_constant_name_conflicts_raise():
+    n = minimal_doc()
+    n["constants"] = {"kb": 1.0}
+    n["params"]["kb"] = 2.0
+    with pytest.raises(ModelLoadError, match=r"kb is defined as a constant and cannot be reused as a parameter"):
+        build_spec(parse_model_v2(n))
+
+    n = minimal_doc()
+    n["constants"] = {"kb": 1.0}
+    n["states"]["kb"] = 0.0
+    with pytest.raises(ModelLoadError, match=r"kb is defined as a constant and cannot be reused as a state"):
+        build_spec(parse_model_v2(n))
+
+    n = minimal_doc()
+    n["constants"] = {"kb": 1.0}
+    n["aux"]["kb"] = "1"
+    with pytest.raises(ModelLoadError, match=r"kb is defined as a constant and cannot be reused as an auxiliary variable"):
+        build_spec(parse_model_v2(n))
+
+
+def test_user_constants_are_inlined_and_usable_in_numeric_strings():
+    n = minimal_doc()
+    n["constants"] = {"kb": 1.380649e-23, "qe": "2*e"}
+    n["params"]["a"] = "kb * 2"
+    n["aux"]["extra"] = "qe / kb"
+    n["equations"]["rhs"]["x"] = "qe * x + kb"
+    n["equations"]["rhs"]["u"] = "kb"
+
+    parsed = parse_model_v2(n)
+    spec = build_spec(parsed)
+    compiled = emit_rhs_and_events(spec)
+
+    assert spec.constants == ("kb", "qe")
+    assert spec.constant_vals[0] == pytest.approx(1.380649e-23)
+    assert spec.param_vals[0] == pytest.approx(2 * 1.380649e-23)
+    assert "kb" not in compiled.rhs_source and "qe" not in compiled.rhs_source
+    assert "kb" not in compiled.update_aux_source and "qe" not in compiled.update_aux_source
+    assert "1.380649e-23" in compiled.rhs_source
 
 
 def test_builtin_constants_are_inlined_in_codegen():

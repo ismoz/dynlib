@@ -34,7 +34,7 @@ class NameMaps:
     # function table: name -> (argnames, expr_str)
     functions: Dict[str, Tuple[Tuple[str, ...], str]]
     # builtin constants (already cast to target dtype if needed)
-    constants: Dict[str, float]
+    constants: Dict[str, float | int]
     # lag map: state_name -> (buffer_len, ring_offset, head_index)
     lag_map: Dict[str, Tuple[int, int, int]] = None
 
@@ -103,7 +103,7 @@ class _NameLowerer(ast.NodeTransformer):
         nmap: NameMaps,
         aux_defs: Dict[str, ast.AST],
         fn_defs: Dict[str, Tuple[Tuple[str, ...], ast.AST]],
-        constants: Dict[str, float] | None = None,
+        constants: Dict[str, float | int] | None = None,
         runtime_arg: str = "runtime_ws",
     ):
         super().__init__()

@@ -2,6 +2,13 @@
 
 ---
 
+## [2.30.4] – 2025-11-24
+### Added
+- Added user-defined `[constants]` table support to inline model-specific numeric literals across DSL
+  expressions, with collision guards against states/params/aux and reserved identifiers.
+
+---
+
 ## [2.30.3] – 2025-11-24
 ### Added
 - DSL builtin constants `pi` and `e` are now inlined as numeric literals across equations, aux/functions,

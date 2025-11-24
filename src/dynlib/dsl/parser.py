@@ -32,20 +32,28 @@ def _sanitize_literal_expr(expr: str) -> str:
     return expr.replace("^", "**")
 
 
-def _evaluate_numeric_expr(expr: str, context: str) -> float | int:
+def _allowed_numeric_names(extra: Dict[str, float | int] | None = None) -> Dict[str, float | int]:
+    allowed = dict(BUILTIN_CONSTS)
+    if extra:
+        allowed.update(extra)
+    return allowed
+
+
+def _evaluate_numeric_expr(expr: str, context: str, allowed_names: Dict[str, float | int] | None = None) -> float | int:
     txt = expr.strip()
     if not txt:
         raise ModelLoadError(f"{context} must be a numeric literal or expression, got empty string")
+    allowed = _allowed_numeric_names(allowed_names)
     try:
         node = ast.parse(_sanitize_literal_expr(txt), mode="eval")
     except SyntaxError as err:
         raise ModelLoadError(
             f"{context} must be a numeric literal or arithmetic expression (e.g. '8/3')"
         ) from err
-    return _eval_node(node.body, context)
+    return _eval_node(node.body, context, allowed)
 
 
-def _eval_node(node: ast.AST, context: str) -> float | int:
+def _eval_node(node: ast.AST, context: str, allowed_names: Dict[str, float | int]) -> float | int:
     if isinstance(node, ast.Constant):
         val = node.value
         if isinstance(val, bool) or not isinstance(val, (int, float)):
@@ -54,23 +62,23 @@ def _eval_node(node: ast.AST, context: str) -> float | int:
             )
         return val
     if isinstance(node, ast.Name):
-        if node.id in BUILTIN_CONSTS:
-            return BUILTIN_CONSTS[node.id]
+        if node.id in allowed_names:
+            return allowed_names[node.id]
         raise ModelLoadError(
             f"{context} contains unknown identifier '{node.id}'. "
-            f"Only builtin constants are allowed ({', '.join(sorted(BUILTIN_CONSTS))})."
+            f"Allowed constants: {', '.join(sorted(allowed_names))}."
         )
     if isinstance(node, ast.UnaryOp):
         op = _UNARY_OPS.get(type(node.op))
         if op is None:
             raise ModelLoadError(f"{context} contains an unsupported unary operator")
-        return op(_eval_node(node.operand, context))
+        return op(_eval_node(node.operand, context, allowed_names))
     if isinstance(node, ast.BinOp):
         op = _BIN_OPS.get(type(node.op))
         if op is None:
             raise ModelLoadError(f"{context} contains an unsupported operator")
-        left = _eval_node(node.left, context)
-        right = _eval_node(node.right, context)
+        left = _eval_node(node.left, context, allowed_names)
+        right = _eval_node(node.right, context, allowed_names)
         try:
             return op(left, right)
         except ZeroDivisionError as err:
@@ -80,8 +88,9 @@ def _eval_node(node: ast.AST, context: str) -> float | int:
     )
 
 
-def _coerce_numeric_table(tbl: Dict[str, Any], section: str) -> Dict[str, float | int]:
+def _coerce_numeric_table(tbl: Dict[str, Any], section: str, allowed_names: Dict[str, float | int] | None = None) -> Dict[str, float | int]:
     """Return an ordered dict where values are numeric scalars."""
+    allowed = _allowed_numeric_names(allowed_names)
     out: Dict[str, float | int] = {}
     for key in tbl.keys():
         val = tbl[key]
@@ -89,12 +98,29 @@ def _coerce_numeric_table(tbl: Dict[str, Any], section: str) -> Dict[str, float 
         if isinstance(val, (int, float)):
             out[key] = val
         elif isinstance(val, str):
-            out[key] = _evaluate_numeric_expr(val, context)
+            out[key] = _evaluate_numeric_expr(val, context, allowed)
         else:
             raise ModelLoadError(
                 f"{context} must be a number or numeric expression string, got {type(val).__name__}"
             )
     return out
+
+
+def _coerce_constants_table(tbl: Dict[str, Any]) -> Dict[str, float | int]:
+    """Return constants as numeric scalars, allowing earlier constants by name."""
+    constants: Dict[str, float | int] = {}
+    for key in tbl.keys():
+        val = tbl[key]
+        context = f"[constants].{key}"
+        if isinstance(val, (int, float)):
+            constants[key] = val
+        elif isinstance(val, str):
+            constants[key] = _evaluate_numeric_expr(val, context, allowed_names=constants)
+        else:
+            raise ModelLoadError(
+                f"{context} must be a number or numeric expression string, got {type(val).__name__}"
+            )
+    return constants
 
 
 def _ordered_items(d: Dict[str, Any]) -> List[Tuple[str, Any]]:
@@ -239,7 +265,7 @@ def parse_model_v2(doc: Dict[str, Any]) -> Dict[str, Any]:
     """Parse a v2 DSL TOML dict into a normalized model dict (no codegen).
 
     Returns keys:
-      model, states, params, equations:{rhs|expr}, aux, functions, events(list), sim
+      model, states, params, constants, equations:{rhs|expr}, aux, functions, events(list), sim
     """
     validate_tables(doc)
     validate_name_collisions(doc)
@@ -248,11 +274,15 @@ def parse_model_v2(doc: Dict[str, Any]) -> Dict[str, Any]:
     if "dtype" not in model:
         model["dtype"] = "float64"
 
+    # Constants (optional)
+    constants_in = doc.get("constants") or {}
+    constants = _coerce_constants_table(constants_in) if constants_in else {}
+
     # Preserve order of declaration
     states_in = doc["states"]
     params_in = doc.get("params", {})  # params is optional, default to empty
-    states = _coerce_numeric_table(states_in, "states")
-    params = _coerce_numeric_table(params_in, "params") if params_in else {}
+    states = _coerce_numeric_table(states_in, "states", allowed_names=constants)
+    params = _coerce_numeric_table(params_in, "params", allowed_names=constants) if params_in else {}
 
     # Equations
     eq_tbl = doc.get("equations") or {}
@@ -292,6 +322,7 @@ def parse_model_v2(doc: Dict[str, Any]) -> Dict[str, Any]:
         "model": {"type": model["type"], "label": model.get("label"), "dtype": model["dtype"]},
         "states": states,
         "params": params,
+        "constants": constants,
         "equations": {"rhs": rhs_tbl, "expr": block_expr},
         "aux": aux_tbl,
         "functions": functions,
