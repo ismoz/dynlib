@@ -1,7 +1,7 @@
 # src/dynlib/plot/_primitives.py
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -563,11 +563,41 @@ def _apply_tick_rotation(ax: plt.Axes, *, xlabel_rot: float | None, ylabel_rot: 
 
 
 def _coerce_series(
-    series: Mapping[str, Any] | list[tuple[Any, ...]]
+    series: Mapping[str, Any] | list[tuple[Any, ...]] | np.ndarray | list[np.ndarray],
+    names: Sequence[str] | None = None,
 ) -> list[tuple[str, Any, Mapping[str, Any]]]:
+    # 1) Mapping: existing behaviour
     if isinstance(series, Mapping):
         return [(name, values, {}) for name, values in series.items()]
 
+    # 2) ndarray: new path
+    if isinstance(series, np.ndarray):
+        arr = np.asarray(series)
+        if arr.ndim == 1:
+            name = names[0] if names else "y"
+            return [(name, arr, {})]
+        if arr.ndim == 2:
+            M, K = arr.shape
+            if names is not None and len(names) != K:
+                raise ValueError(f"names length ({len(names)}) must match series.shape[1] ({K})")
+            result: list[tuple[str, Any, Mapping[str, Any]]] = []
+            for j in range(K):
+                name = names[j] if names is not None else f"y{j}"
+                result.append((name, arr[:, j], {}))
+            return result
+        raise ValueError("ndarray series must be 1D or 2D")
+
+    # 3) list of ndarrays: new path
+    if isinstance(series, list) and series and isinstance(series[0], np.ndarray):
+        if names is not None and len(names) != len(series):
+            raise ValueError(f"names length ({len(names)}) must match number of series ({len(series)})")
+        result: list[tuple[str, Any, Mapping[str, Any]]] = []
+        for i, arr in enumerate(series):
+            name = names[i] if names is not None else f"series{i}"
+            result.append((name, arr, {}))
+        return result
+
+    # 4) list-of-tuples: existing behaviour
     normalized: list[tuple[str, Any, Mapping[str, Any]]] = []
     for entry in series:
         if not isinstance(entry, tuple):
@@ -924,7 +954,8 @@ class _SeriesPlot:
         self,
         *,
         x,
-        series: Mapping[str, Any] | list[tuple[Any, ...]],
+        series: Mapping[str, Any] | list[tuple[Any, ...]] | np.ndarray | list[np.ndarray],
+        names: Sequence[str] | None = None,
         styles: Mapping[str, Mapping[str, Any]] | None = None,
         xlim: tuple[float | None, float | None] | None = None,
         ylim: tuple[float | None, float | None] | None = None,
@@ -935,7 +966,7 @@ class _SeriesPlot:
         vlines_color: str | None = None,
         vlines_kwargs: Mapping[str, Any] | None = None,
         bands: list[tuple[float, float] | tuple[float, float, str]] | None = None,
-        legend: bool = True,
+        legend: bool = False,
         xlabel_rot: float | None = None,
         ylabel_rot: float | None = None,
         ax=None,
@@ -955,8 +986,9 @@ class _SeriesPlot:
         
         Args:
             x: Time or independent variable array (shared by all series)
-            series: Either a dict {name: values} or list of (name, values) or
-                   (name, values, style_dict) tuples
+            series: Either a dict {name: values}, list of (name, values) or
+                   (name, values, style_dict) tuples, a numpy ndarray, or list of ndarrays
+            names: Optional sequence of names for ndarray series columns
             styles: Optional dict mapping series names to style dicts
             xlim: X-axis limits as (min, max)
             ylim: Y-axis limits as (min, max)
@@ -986,7 +1018,7 @@ class _SeriesPlot:
         x_vals = _resolve_time(x)
         plot_ax = _get_ax(ax)
         base_styles = styles or {}
-        for name, values, inline_style in _coerce_series(series):
+        for name, values, inline_style in _coerce_series(series, names=names):
             y_vals = _resolve_value(values)
             combined_style: dict[str, Any] = {}
             if name in base_styles:

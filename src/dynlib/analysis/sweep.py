@@ -1,9 +1,8 @@
-from dataclasses import dataclass
-from typing import Literal, Sequence, TYPE_CHECKING
+from dataclasses import dataclass, field
+from typing import Literal, Sequence
 import numpy as np
 from dynlib.runtime.sim import Sim
-if TYPE_CHECKING:
-    from dynlib.runtime.results_api import ResultsView
+from dynlib.runtime.results_api import ResultsView
 
 @dataclass
 class ParamSweepScalarResult:
@@ -19,9 +18,71 @@ class ParamSweepTrajResult:
     param_name: str
     values: np.ndarray               # (M,)
     vars: tuple[str, ...]            # ("x", "y", "z")
-    t: list[np.ndarray]              # length M, each shape (n_i,)
+    t_runs: list[np.ndarray]         # length M, each shape (n_i,)
     data: list[np.ndarray]           # length M, each shape (n_i, len(vars))
     meta: dict
+    _var_index: dict[str, int] = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        self._var_index = {name: i for i, name in enumerate(self.vars)}
+
+    def _stacked_data(self) -> np.ndarray | None:
+        """Return stacked data (M, N, len(vars)) if lengths match, else None."""
+        if not self.data:
+            return np.empty((0, 0, len(self.vars)), dtype=float)
+        lengths = {arr.shape[0] for arr in self.data}
+        if len(lengths) == 1:
+            return np.stack(self.data, axis=0)
+        return None
+
+    def stack(self) -> np.ndarray:
+        """Force a stacked 3-D view (M, N, len(vars)); raises if runs are ragged."""
+        stacked = self._stacked_data()
+        if stacked is None:
+            raise ValueError("Cannot stack sweep trajectories: run lengths differ.")
+        return stacked
+
+    def __getitem__(self, key: str | Sequence[str]) -> np.ndarray | list[np.ndarray]:
+        """
+        Named access to trajectories by recorded variable.
+
+        Time is the leading axis when stacking succeeds:
+        - ``res["x"]`` -> shape (N, M) when runs share a length, else list of (n_i,)
+        - ``res[["x","y"]]`` -> shape (N, M, 2) when stackable, else list of (n_i, 2)
+        """
+        names = (key,) if isinstance(key, str) else tuple(key)
+        missing = [nm for nm in names if nm not in self._var_index]
+        if missing:
+            raise KeyError(f"Unknown variable(s) {missing}; available: {self.vars}")
+
+        cols = [self._var_index[nm] for nm in names]
+        stacked = self._stacked_data()
+        if stacked is not None:
+            if len(cols) == 1:
+                return stacked[:, :, cols[0]].T
+            return np.transpose(stacked[:, :, cols], (1, 0, 2))
+
+        # Ragged fallback: preserve per-run lengths
+        out: list[np.ndarray] = []
+        for arr in self.data:
+            if len(cols) == 1:
+                out.append(arr[:, cols[0]])
+            else:
+                out.append(arr[:, cols])
+        return out
+
+    # ---- time axis convenience ----
+    @property
+    def t(self) -> np.ndarray:
+        """Primary time axis (first run). Useful for plotting when grids match."""
+        if not self.t_runs:
+            return np.empty((0,), dtype=float)
+        return self.t_runs[0]
+
+    @property
+    def t_all(self) -> list[np.ndarray]:
+        """All per-run time axes (adaptive runs may differ)."""
+        return self.t_runs
 
 
 def _param_index(sim: Sim, name: str) -> int:
@@ -211,7 +272,7 @@ def traj(
         param_name=param,
         values=vals,
         vars=vars,
-        t=t_list,
+        t_runs=t_list,
         data=data_list,
         meta=meta,
     )

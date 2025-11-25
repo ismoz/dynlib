@@ -2,6 +2,18 @@
 
 ---
 
+## [2.30.7] – 2025-11-25
+### Added
+- Enhanced the `analysis.sweep()` utility with data stacking for consistent run lengths, named access to 
+  variables, and time axis convenience properties:
+  - `res.t` will yield time values for the first sim. 
+  - `res.t_runs` and `res.t_all` will allow access to whole time value ndarray.
+  - `res[x]` will yield parameter sweep results for the `x` variable as (K,N) ndarray.
+- Added support for numpy ndarrays in `plot.multi` function, allowing direct plotting of 1D and 2D arrays with 
+  automatic naming.
+
+---
+
 ## [2.30.6] – 2025-11-25
 ### Added
 - Added a new `analysis` module with parameter sweep tools for running simulations with different parameter 
