@@ -2,6 +2,18 @@
 
 ---
 
+## [2.30.8] – 2025-12-02
+### Added
+- Added `phase.multi()` function to plot multiple 2D phase trajectories on the same axes, useful for showing how 
+  trajectories change with different parameters in phase space.
+- Added `parameter_sweep.py` example showing how to use the sweep functions with a simple exponential decay model.
+
+### Changed
+- Enhanced `sweep.scalar()` and `sweep.traj()` functions with better documentation, support for initial time 
+  offsets, and improved result classes with named variable access.
+
+---
+
 ## [2.30.7] – 2025-11-25
 ### Added
 - Enhanced the `analysis.sweep()` utility with data stacking for consistent run lengths, named access to 

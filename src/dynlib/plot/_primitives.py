@@ -1261,6 +1261,158 @@ class _PhasePlot:
         
         return plot_ax
 
+    def multi(
+        self,
+        *,
+        x,
+        y,
+        labels: Sequence[str] | None = None,
+        styles: Mapping[str, Mapping[str, Any]] | None = None,
+        xlim: tuple[float | None, float | None] | None = None,
+        ylim: tuple[float | None, float | None] | None = None,
+        xlabel: str | None = None,
+        ylabel: str | None = None,
+        title: str | None = None,
+        legend: bool = False,
+        xlabel_rot: float | None = None,
+        ylabel_rot: float | None = None,
+        ax=None,
+        equil: list[tuple[float, float]] | None = None,
+        xpad: float | None = None,
+        ypad: float | None = None,
+        titlepad: float | None = None,
+        xlabel_fs: float | None = None,
+        ylabel_fs: float | None = None,
+        title_fs: float | None = None,
+        xtick_fs: float | None = None,
+        ytick_fs: float | None = None,
+    ) -> plt.Axes:
+        """
+        Plot multiple 2D phase trajectories on the same axes.
+        
+        Useful for visualizing parameter sweeps in phase space, showing how
+        trajectories evolve across different parameter values or initial conditions.
+        
+        Args:
+            x: X-coordinate data - can be:
+               - List of arrays (one per trajectory)
+               - 2D numpy array of shape (M, N) where M is number of trajectories
+               - List from sweep result accessor like result["x"]
+            y: Y-coordinate data - same structure as x
+            labels: Optional sequence of labels for each trajectory
+            styles: Optional dict mapping label names to style dicts
+            xlim: X-axis limits as (min, max)
+            ylim: Y-axis limits as (min, max)
+            xlabel: X-axis label
+            ylabel: Y-axis label
+            title: Plot title
+            legend: Whether to show legend
+            xlabel_rot: X-axis label rotation angle
+            ylabel_rot: Y-axis label rotation angle
+            ax: Existing axes to plot on
+            equil: List of equilibrium points as (x, y) tuples to mark
+            xpad: X-axis label padding
+            ypad: Y-axis label padding
+            titlepad: Title padding
+            xlabel_fs: X-axis label font size
+            ylabel_fs: Y-axis label font size
+            title_fs: Title font size
+            xtick_fs: X-axis tick label font size
+            ytick_fs: Y-axis tick label font size
+            
+        Returns:
+            Matplotlib axes object
+            
+        Examples:
+            >>> # With sweep results
+            >>> sweep_res = sweep.traj(sim, param="r", values=[...], record_vars=["x", "y"])
+            >>> phase.multi(x=sweep_res["x"], y=sweep_res["y"], 
+            ...             labels=[f"r={v:.2f}" for v in sweep_res.values])
+            
+            >>> # With explicit arrays
+            >>> x_trajs = [traj1_x, traj2_x, traj3_x]
+            >>> y_trajs = [traj1_y, traj2_y, traj3_y]
+            >>> phase.multi(x=x_trajs, y=y_trajs, labels=["IC1", "IC2", "IC3"])
+        """
+        plot_ax = _get_ax(ax)
+        
+        # Normalize x and y to list of arrays
+        # Handle both sweep result format (N, M) and list format
+        if isinstance(x, np.ndarray):
+            x_arr = np.asarray(x)
+            if x_arr.ndim == 1:
+                x_list = [x_arr]
+            elif x_arr.ndim == 2:
+                # Check if it's sweep format (N, M) or trajectory format (M, N)
+                # Sweep format: time is leading axis, so shape is (N_time, M_params)
+                # We want M trajectories, so split along axis=1
+                if x_arr.shape[1] <= x_arr.shape[0]:
+                    # Likely sweep format: (N_time, M_params)
+                    x_list = [x_arr[:, i] for i in range(x_arr.shape[1])]
+                else:
+                    # Likely trajectory format: (M_params, N_time)
+                    x_list = [x_arr[i, :] for i in range(x_arr.shape[0])]
+            else:
+                raise ValueError("x array must be 1D or 2D")
+        elif isinstance(x, list):
+            x_list = [_ensure_array(xi) for xi in x]
+        else:
+            raise TypeError("x must be ndarray or list of arrays")
+        
+        if isinstance(y, np.ndarray):
+            y_arr = np.asarray(y)
+            if y_arr.ndim == 1:
+                y_list = [y_arr]
+            elif y_arr.ndim == 2:
+                # Use same logic as x
+                if y_arr.shape[1] <= y_arr.shape[0]:
+                    y_list = [y_arr[:, i] for i in range(y_arr.shape[1])]
+                else:
+                    y_list = [y_arr[i, :] for i in range(y_arr.shape[0])]
+            else:
+                raise ValueError("y array must be 1D or 2D")
+        elif isinstance(y, list):
+            y_list = [_ensure_array(yi) for yi in y]
+        else:
+            raise TypeError("y must be ndarray or list of arrays")
+        
+        if len(x_list) != len(y_list):
+            raise ValueError(f"x and y must have same number of trajectories ({len(x_list)} vs {len(y_list)})")
+        
+        # Generate labels if not provided
+        if labels is None:
+            label_list = [f"traj{i}" for i in range(len(x_list))]
+        else:
+            label_list = list(labels)
+            if len(label_list) != len(x_list):
+                raise ValueError(f"labels length ({len(label_list)}) must match number of trajectories ({len(x_list)})")
+        
+        # Plot each trajectory
+        base_styles = styles or {}
+        for i, (x_vals, y_vals, label) in enumerate(zip(x_list, y_list, label_list)):
+            # Get style for this trajectory
+            style_dict = base_styles.get(label, {})
+            style_args = _style_from_mapping(style_dict)
+            plot_ax.plot(x_vals, y_vals, label=label, **style_args)
+        
+        # Mark equilibrium points if provided
+        if equil:
+            for ex, ey in equil:
+                plot_ax.plot(ex, ey, marker="o", linestyle="None", color="red", markersize=8, zorder=10)
+        
+        if legend:
+            plot_ax.legend()
+        
+        _apply_limits(plot_ax, xlim=xlim, ylim=ylim)
+        _apply_labels(
+            plot_ax, xlabel=xlabel, ylabel=ylabel, title=title,
+            xpad=xpad, ypad=ypad, titlepad=titlepad,
+            xlabel_fs=xlabel_fs, ylabel_fs=ylabel_fs, title_fs=title_fs,
+        )
+        _apply_tick_rotation(plot_ax, xlabel_rot=xlabel_rot, ylabel_rot=ylabel_rot, theme=_theme)
+        _apply_tick_fontsizes(plot_ax, xtick_fs=xtick_fs, ytick_fs=ytick_fs)
+        return plot_ax
+
     def return_map(
         self,
         *,
