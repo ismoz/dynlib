@@ -35,6 +35,7 @@ class BDF2AdaptiveJITSpec(ConfigMixin):
         newton_tol: float = 1e-8
         newton_max_iter: int = 50
         jac_eps: float = 1e-8
+        dt_max: float = np.inf
 
     class Workspace(NamedTuple):
         y_nm1: np.ndarray          
@@ -103,6 +104,7 @@ class BDF2AdaptiveJITSpec(ConfigMixin):
         default_newton_tol = default_cfg.newton_tol
         default_newton_max_iter = default_cfg.newton_max_iter
         default_jac_eps = default_cfg.jac_eps
+        default_dt_max = default_cfg.dt_max
 
         def bdf2a_stepper(
             t,
@@ -137,7 +139,7 @@ class BDF2AdaptiveJITSpec(ConfigMixin):
             # it will point to an intermediate half-step state.
             y_back = y_curr
             
-            if stepper_config.size >= 10:
+            if stepper_config.size >= 11:
                 atol = stepper_config[0]
                 rtol = stepper_config[1]
                 safety = stepper_config[2]
@@ -148,6 +150,7 @@ class BDF2AdaptiveJITSpec(ConfigMixin):
                 newton_tol = stepper_config[7]
                 newton_max_iter = int(stepper_config[8])
                 jac_eps = stepper_config[9]
+                dt_max = stepper_config[10]
             else:
                 atol = default_atol
                 rtol = default_rtol
@@ -159,11 +162,14 @@ class BDF2AdaptiveJITSpec(ConfigMixin):
                 newton_tol = default_newton_tol
                 newton_max_iter = default_newton_max_iter
                 jac_eps = default_jac_eps
+                dt_max = default_dt_max
 
             if max_tries < 1: max_tries = 1
             if newton_max_iter < 1: newton_max_iter = 1
 
             h = dt
+            if h > dt_max:
+                h = dt_max
             error = float("inf")
 
             # --- Newton Solver with Variable Coefficients ---
@@ -456,7 +462,6 @@ class BDF2AdaptiveJITSpec(ConfigMixin):
                         err_est[0] = error
 
                         if error > 0.0:
-                            # Same order-2 vs order-1 logic as main BDF2 branch
                             factor = safety * math.sqrt(1.0 / error)
                             if factor < min_factor:
                                 factor = min_factor
@@ -465,6 +470,10 @@ class BDF2AdaptiveJITSpec(ConfigMixin):
                             dt_next[0] = h * factor
                         else:
                             dt_next[0] = h * max_factor
+                        
+                        # Cap at dt_max
+                        if dt_next[0] > dt_max:
+                            dt_next[0] = dt_max
 
                         step_idx_arr[0] = 1
                         dt_nm1_arr[0] = h  # Save dt for next (BDF2) step
@@ -573,6 +582,10 @@ class BDF2AdaptiveJITSpec(ConfigMixin):
                         dt_next[0] = h * factor
                     else:
                         dt_next[0] = h * max_factor
+                    
+                    # Cap at dt_max
+                    if dt_next[0] > dt_max:
+                        dt_next[0] = dt_max
                     
                     step_idx_arr[0] = step_idx + 1
                     dt_nm1_arr[0] = h # Update history dt

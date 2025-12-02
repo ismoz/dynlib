@@ -114,6 +114,16 @@ def make_wrms_config_from_stepper(
         return None
 
     order = int(meta.order)
+    
+    # If dt_max is specified in stepper config, use it (override max_dt parameter)
+    dt_max_raw = _config_value(config_obj, "dt_max")
+    if dt_max_raw is not None:
+        try:
+            dt_max_from_config = float(dt_max_raw)
+            if np.isfinite(dt_max_from_config):
+                max_dt = dt_max_from_config
+        except (TypeError, ValueError):
+            pass
 
     return WRMSConfig(
         atol=atol,

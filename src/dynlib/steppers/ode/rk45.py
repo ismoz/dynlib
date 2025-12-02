@@ -49,6 +49,7 @@ class RK45Spec(ConfigMixin):
         max_factor: float = 5.0
         max_tries: int = 10
         min_step: float = 1e-12
+        dt_max: float = np.inf
     
     def __init__(self, meta: StepperMeta | None = None):
         if meta is None:
@@ -110,6 +111,7 @@ class RK45Spec(ConfigMixin):
         default_max_factor = default_cfg.max_factor
         default_max_tries = default_cfg.max_tries
         default_min_step = default_cfg.min_step
+        default_dt_max = default_cfg.dt_max
         
         # Dormand-Prince coefficients
         # Butcher tableau for DOPRI5(4)
@@ -186,8 +188,8 @@ class RK45Spec(ConfigMixin):
             y_stage = ws.y_stage
             
             # Read runtime config with fallback to defaults
-            # Config array format: [atol, rtol, safety, min_factor, max_factor, max_tries, min_step]
-            if stepper_config.size >= 7:
+            # Config array format: [atol, rtol, safety, min_factor, max_factor, max_tries, min_step, dt_max]
+            if stepper_config.size >= 8:
                 atol = stepper_config[0]
                 rtol = stepper_config[1]
                 safety = stepper_config[2]
@@ -195,6 +197,7 @@ class RK45Spec(ConfigMixin):
                 max_factor = stepper_config[4]
                 max_tries = int(stepper_config[5])
                 min_step = stepper_config[6]
+                dt_max = stepper_config[7]
             else:
                 # Fallback to closure defaults
                 atol = default_atol
@@ -204,6 +207,7 @@ class RK45Spec(ConfigMixin):
                 max_factor = default_max_factor
                 max_tries = default_max_tries
                 min_step = default_min_step
+                dt_max = default_dt_max
             
             if max_tries < 1:
                 max_tries = 1
@@ -219,6 +223,8 @@ class RK45Spec(ConfigMixin):
 
             # Adaptive loop: keep trying until accept or fail
             h = dt
+            if h > dt_max:
+                h = dt_max
             error = float("inf")
             
             for attempt in range(max_tries):
@@ -364,6 +370,10 @@ class RK45Spec(ConfigMixin):
                         dt_next[0] = h * factor
                     else:
                         dt_next[0] = h * max_factor
+                    
+                    # Cap at dt_max
+                    if dt_next[0] > dt_max:
+                        dt_next[0] = dt_max
 
                     return OK
 

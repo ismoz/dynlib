@@ -609,7 +609,7 @@ def validate_identifiers_resolved(normal: Dict[str, Any]) -> None:
         "in_interval", "enters_interval", "leaves_interval",
         "increasing", "decreasing",
         # Builtins used in comprehensions/aggregations
-        "sum", "range", "int", "float", "bool", "len",
+        "sum", "prod", "range", "int", "float", "bool", "len",
         # Module prefixes allowed in user expressions
         "math",
     }

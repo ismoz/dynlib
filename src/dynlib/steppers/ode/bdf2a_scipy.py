@@ -141,17 +141,30 @@ class BDF2AdaptiveScipySpec(ConfigMixin):
 
             # --- Unpack config (packed float64 array) ---
             # Order must match Config dataclass fields
-            atol = float(stepper_config[0]) if stepper_config.size >= 1 else 1e-8
-            rtol = float(stepper_config[1]) if stepper_config.size >= 2 else 1e-5
-            safety = float(stepper_config[2]) if stepper_config.size >= 3 else 0.9
-            min_factor = float(stepper_config[3]) if stepper_config.size >= 4 else 0.2
-            max_factor = float(stepper_config[4]) if stepper_config.size >= 5 else 10.0
-            max_tries = int(stepper_config[5]) if stepper_config.size >= 6 else 8
-            min_step = float(stepper_config[6]) if stepper_config.size >= 7 else 1e-12
-            root_tol = float(stepper_config[7]) if stepper_config.size >= 8 else 1e-8
-            max_iter = int(stepper_config[8]) if stepper_config.size >= 9 else 50
-
-            method_id = int(stepper_config[9]) if stepper_config.size >= 10 else 0
+            if stepper_config.size >= 11:
+                atol = float(stepper_config[0])
+                rtol = float(stepper_config[1])
+                safety = float(stepper_config[2])
+                min_factor = float(stepper_config[3])
+                max_factor = float(stepper_config[4])
+                max_tries = int(stepper_config[5])
+                min_step = float(stepper_config[6])
+                root_tol = float(stepper_config[7])
+                max_iter = int(stepper_config[8])
+                method_id = int(stepper_config[9])
+                dt_max = float(stepper_config[10])
+            else:
+                atol = 1e-6
+                rtol = 1e-5
+                safety = 0.9
+                min_factor = 0.2
+                max_factor = 10.0
+                max_tries = 8
+                min_step = 1e-12
+                root_tol = 1e-8
+                max_iter = 50
+                method_id = 0
+                dt_max = np.inf
             if method_id == 0:
                 method = "hybr"
             elif method_id == 1:
@@ -163,6 +176,8 @@ class BDF2AdaptiveScipySpec(ConfigMixin):
 
             # Ensure positive initial step guess
             h = float(dt)
+            if h > dt_max:
+                h = dt_max
             if not np.isfinite(h) or h <= 0.0:
                 h = min_step
 
@@ -269,6 +284,10 @@ class BDF2AdaptiveScipySpec(ConfigMixin):
                             factor_next = safety * err_norm ** (-0.5)
                             factor_next = max(min_factor, min(max_factor, factor_next))
                         dt_next[0] = h * factor_next
+                        
+                        # Cap at dt_max
+                        if dt_next[0] > dt_max:
+                            dt_next[0] = dt_max
 
                         # Initialize history for multistep
                         y_nm1[:] = y_curr[:]
@@ -341,6 +360,10 @@ class BDF2AdaptiveScipySpec(ConfigMixin):
                         factor_next = max(min_factor, min(max_factor, factor_next))
 
                     dt_next[0] = h * factor_next
+                    
+                    # Cap at dt_max
+                    if dt_next[0] > dt_max:
+                        dt_next[0] = dt_max
 
                     # Update history for multistep
                     y_nm1[:] = y_curr[:]

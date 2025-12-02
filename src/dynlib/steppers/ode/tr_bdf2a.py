@@ -56,6 +56,7 @@ class TRBDF2AdaptiveJITSpec(ConfigMixin):
         newton_tol: float = 1e-8
         newton_max_iter: int = 50
         jac_eps: float = 1e-8
+        dt_max: float = np.inf
 
     class Workspace(NamedTuple):
         # Step counter (kept for symmetry with bdf2a, though not strictly needed)
@@ -150,6 +151,7 @@ class TRBDF2AdaptiveJITSpec(ConfigMixin):
         default_newton_tol = default_cfg.newton_tol
         default_newton_max_iter = default_cfg.newton_max_iter
         default_jac_eps = default_cfg.jac_eps
+        default_dt_max = default_cfg.dt_max
 
         # TR-BDF2 parameter (L-stable choice)
         gamma = 2.0 - math.sqrt(2.0)
@@ -191,7 +193,7 @@ class TRBDF2AdaptiveJITSpec(ConfigMixin):
             step_idx = int(step_idx_arr[0])
 
             # Read runtime config if provided (same layout as bdf2a)
-            if stepper_config.size >= 10:
+            if stepper_config.size >= 11:
                 atol = stepper_config[0]
                 rtol = stepper_config[1]
                 safety = stepper_config[2]
@@ -202,6 +204,7 @@ class TRBDF2AdaptiveJITSpec(ConfigMixin):
                 newton_tol = stepper_config[7]
                 newton_max_iter = int(stepper_config[8])
                 jac_eps = stepper_config[9]
+                dt_max = stepper_config[10]
             else:
                 atol = default_atol
                 rtol = default_rtol
@@ -213,6 +216,7 @@ class TRBDF2AdaptiveJITSpec(ConfigMixin):
                 newton_tol = default_newton_tol
                 newton_max_iter = default_newton_max_iter
                 jac_eps = default_jac_eps
+                dt_max = default_dt_max
 
             if max_tries < 1:
                 max_tries = 1
@@ -220,6 +224,8 @@ class TRBDF2AdaptiveJITSpec(ConfigMixin):
                 newton_max_iter = 1
 
             h = dt
+            if h > dt_max:
+                h = dt_max
             error = float("inf")
 
             # mode:
@@ -562,6 +568,10 @@ class TRBDF2AdaptiveJITSpec(ConfigMixin):
                         dt_next[0] = h * factor
                     else:
                         dt_next[0] = h * max_factor
+                    
+                    # Cap at dt_max
+                    if dt_next[0] > dt_max:
+                        dt_next[0] = dt_max
 
                     step_idx_arr[0] = step_idx + 1
                     return OK

@@ -2,6 +2,18 @@
 
 ---
 
+## [2.30.9] – 2025-12-02
+### Added
+- Added `dt_max` parameter to adaptive ODE steppers (RK45, BDF2, BDF2A_scipy, TR-BDF2A) to limit maximum step size 
+  during step size calculation.
+- Added `inf` and `nan` imports to generated stepper modules for proper numba caching.
+
+### Changed
+- Enhanced initial step size selection to respect `dt_max` configuration from stepper configs.
+- Listed `prod()` DSL expression as builtin (it was implemented but not defined).
+
+---
+
 ## [2.30.8] – 2025-12-02
 ### Added
 - Added `phase.multi()` function to plot multiple 2D phase trajectories on the same axes, useful for showing how 
