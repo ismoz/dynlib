@@ -4,6 +4,70 @@ import numpy as np
 from dynlib.runtime.sim import Sim
 from dynlib.runtime.results_api import ResultsView
 
+
+class SweepRun:
+    """Single run from a parameter sweep with convenient access to time and variables.
+    
+    Attributes:
+        param_value: The parameter value for this run
+        t: Time array for this run
+        
+    Access variables by name:
+        run["x"]          -> 1D array of x values
+        run[["x", "y"]]   -> 2D array (N, 2) with x and y columns
+    """
+    
+    def __init__(self, param_value: float, t: np.ndarray, data: np.ndarray, 
+                 var_index: dict[str, int], record_vars: tuple[str, ...]):
+        self.param_value = param_value
+        self.t = t
+        self._data = data
+        self._var_index = var_index
+        self._record_vars = record_vars
+    
+    def __getitem__(self, key: str | Sequence[str]) -> np.ndarray:
+        """Access trajectory data by variable name(s)."""
+        names = (key,) if isinstance(key, str) else tuple(key)
+        missing = [nm for nm in names if nm not in self._var_index]
+        if missing:
+            raise KeyError(f"Unknown variable(s) {missing}; available: {self._record_vars}")
+        
+        cols = [self._var_index[nm] for nm in names]
+        if len(cols) == 1:
+            return self._data[:, cols[0]]
+        return self._data[:, cols]
+    
+    def __repr__(self) -> str:
+        return f"SweepRun(param={self.param_value}, t={self.t.shape[0]} points, vars={self._record_vars})"
+
+
+class SweepRunsView:
+    """List-like view of all runs in a parameter sweep."""
+    
+    def __init__(self, parent: 'ParamSweepTrajResult'):
+        self._parent = parent
+    
+    def __len__(self) -> int:
+        return len(self._parent.values)
+    
+    def __getitem__(self, idx: int) -> SweepRun:
+        if idx < 0 or idx >= len(self._parent.values):
+            raise IndexError(f"Run index {idx} out of range [0, {len(self._parent.values)})")
+        return SweepRun(
+            param_value=float(self._parent.values[idx]),
+            t=self._parent.t_runs[idx],
+            data=self._parent.data[idx],
+            var_index=self._parent._var_index,
+            record_vars=self._parent.record_vars
+        )
+    
+    def __iter__(self):
+        for i in range(len(self)):
+            yield self[i]
+    
+    def __repr__(self) -> str:
+        return f"SweepRunsView({len(self)} runs)"
+
 @dataclass
 class ParamSweepScalarResult:
     """Result from a scalar parameter sweep.
@@ -114,6 +178,32 @@ class ParamSweepTrajResult:
     def t_all(self) -> list[np.ndarray]:
         """All per-run time axes (adaptive runs may differ)."""
         return self.t_runs
+
+    @property
+    def runs(self) -> SweepRunsView:
+        """Access individual sweep runs with convenient time and variable access.
+        
+        Each run provides:
+            - .param_value: The parameter value for this run
+            - .t: Time array for this run
+            - ["x"]: Access variable x as 1D array
+            - [["x", "y"]]: Access multiple variables as 2D array
+        
+        Examples:
+            >>> # Access specific run
+            >>> run = res.runs[0]
+            >>> plot(run.t, run["x"])
+            
+            >>> # Iterate over all runs
+            >>> for run in res.runs:
+            ...     plot(run.t, run["x"], label=f"a={run.param_value}")
+            
+            >>> # Multi-variable access
+            >>> run = res.runs[2]
+            >>> xy = run[["x", "y"]]  # shape (N, 2)
+            >>> plot(xy[:, 0], xy[:, 1])
+        """
+        return SweepRunsView(self)
 
 
 def _param_index(sim: Sim, name: str) -> int:

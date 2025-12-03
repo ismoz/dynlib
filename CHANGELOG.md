@@ -2,6 +2,20 @@
 
 ---
 
+## [2.30.10] – 2025-12-03
+### Added
+- Added iterable `.runs` property to `ParamSweepTrajResult` for intuitive access to individual sweep runs:
+  - `SweepRun` dataclass provides `.param_value`, `.t`, and `["var"]` access for each run
+  - `SweepRunsView` provides list-like interface supporting indexing, iteration, and length
+  - Consistent API: `run["x"]` works like `res["x"]` but for individual runs
+  - Example: `for run in res.runs: plot(run.t, run["x"])`
+
+### Changed
+- Removed redundant `.t_all` shortcut properties from `ParamSweepTrajResult` in favor of unified `.runs` interface. 
+  Now `res.t` is equivalent to `res.runs[0].t` as a shortcut.
+
+---
+
 ## [2.30.9] – 2025-12-02
 ### Added
 - Added `dt_max` parameter to adaptive ODE steppers (RK45, BDF2, BDF2A_scipy, TR-BDF2A) to limit maximum step size 
