@@ -2,6 +2,21 @@
 
 ---
 
+## [2.30.11] – 2025-12-10
+### Added
+- Added `TrajectoryAnalyzer`/`MultiVarAnalyzer` utilities under `dynlib.analysis` and exported them for easy 
+  imports.
+- Added `ResultsView.analyze()` helper that returns trajectory analyzers for recorded states/aux variables 
+  with stats, extrema, crossing detection, and time-above/below helpers. `summary()` call returns all trajectory 
+  analysis results.
+- Added `examples/analysis/demo_trajectory_analysis.py` showing analyzer usage on a damped oscillator run.
+
+### Tests
+- Added unit tests covering analyzer selection (states vs aux), percentile validation, crossing/time-above 
+  calculations, and analyzer caching for multi-var cases.
+
+---
+
 ## [2.30.10] – 2025-12-03
 ### Added
 - Added iterable `.runs` property to `ParamSweepTrajResult` for intuitive access to individual sweep runs:

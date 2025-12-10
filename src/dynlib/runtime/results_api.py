@@ -173,6 +173,59 @@ class ResultsView:
             raise _friendly_key_error("tag", tag, self._tag_index.keys())
         return self._tag_index[tag]
 
+    # ---- trajectory analysis ----
+    def analyze(self, var: Union[str, Sequence[str], None] = None):
+        """Get analyzer for trajectory variable(s).
+        
+        Returns a TrajectoryAnalyzer (for single variable) or MultiVarAnalyzer
+        (for multiple variables) providing statistical and temporal analysis
+        methods like max, min, argmax, crossings, etc.
+        
+        Args:
+            var: Variable name, list of names, or None for recorded variables
+                 (prefers states, falls back to recorded aux)
+        
+        Returns:
+            TrajectoryAnalyzer or MultiVarAnalyzer instance
+        
+        Examples:
+            >>> # Analyze single variable
+            >>> res.analyze("x").max()
+            3.14
+            >>> res.analyze("x").argmax()
+            (45.2, 3.14)
+            
+            >>> # Analyze multiple variables
+            >>> res.analyze(["x", "y"]).max()
+            {'x': 3.14, 'y': 2.71}
+            
+            >>> # Analyze recorded variables (states if present, else aux)
+            >>> res.analyze().summary()
+            {'x': {'min': -1.0, 'max': 3.14, ...}, 'y': {...}}
+            
+            >>> # Find crossings
+            >>> res.analyze("x").crossing_times(threshold=0.5, direction="up")
+            array([12.3, 24.7, 36.1])
+        """
+        from dynlib.analysis.trajectory import TrajectoryAnalyzer, MultiVarAnalyzer
+        
+        if var is None:
+            # Prefer recorded states; if none, fall back to recorded aux
+            var_names: Tuple[str, ...] = self.state_names or self.aux_names
+            if not var_names:
+                raise ValueError("No recorded variables available to analyze (record_vars=[]).")
+            data = self[list(var_names)]
+            return MultiVarAnalyzer(self, var_names, data, self.t)
+        elif isinstance(var, str):
+            # Single variable
+            data = self[var]
+            return TrajectoryAnalyzer(self, var, data, self.t)
+        else:
+            # Multiple variables
+            var_names = tuple(var)
+            data = self[list(var_names)]
+            return MultiVarAnalyzer(self, var_names, data, self.t)
+
     # Internal helpers for EventAccessor
     # ----------------------------------
     def _event_code_for(self, name: str) -> int:
