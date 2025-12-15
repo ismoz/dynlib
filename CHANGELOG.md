@@ -2,6 +2,19 @@
 
 ---
 
+## [2.31.1] – 2025-12-15
+### Added
+- Interactive vector field plots respond to clicks by simulating trajectories from that point using the compiled 
+  model’s stepper, while nullclines can be toggled without recomputation (key `N`) and trajectories can be cleared 
+  via keyboard shortcuts (key `C`).
+- Vector field plotting now accepts a `stepper` override when compiling from URIs/ModelSpecs and exposes `T`/`dt` 
+  arguments of the stepper.
+
+### Tests
+- Added coverage for stepper overrides in vector field plotting and interactive trajectory handling.
+
+---
+
 ## [2.31.0] – 2025-12-15
 ### Added
 - Added vector field plotting functions for ODE models into `plot/vectorfield.py`. It creates quiver plots and 

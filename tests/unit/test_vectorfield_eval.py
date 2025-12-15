@@ -124,3 +124,66 @@ def test_nullclines_use_dense_grid_and_straight_lines():
 def test_map_model_rejected():
     with pytest.raises(TypeError):
         eval_vectorfield("tests/data/models/logistic_map.toml", grid=(5, 5))
+
+
+def test_toggle_nullclines_reuses_cached_values():
+    model = _linear_model()
+    ax = plt.axes()
+    handle = vectorfield(model, ax=ax, nullclines=True)
+    cached_u = handle.nullcline_U
+    cached_v = handle.nullcline_V
+    handle.toggle_nullclines()  # disable
+    assert not handle.nullclines_enabled
+    handle.toggle_nullclines()  # enable, should reuse cached grid/values
+    assert handle.nullclines_enabled
+    assert handle.nullcline_U is cached_u
+    assert handle.nullcline_V is cached_v
+    assert len(handle.nullcline_artists) == 2
+    plt.close(ax.figure)
+
+
+def test_interactive_click_runs_simulation_and_can_clear():
+    model = _linear_model()
+    ax = plt.axes()
+    handle = vectorfield(model, ax=ax, xlim=(-1, 1), ylim=(-1, 1))
+    initial_lines = len(ax.lines)
+    line = handle.simulate_at(0.25, -0.5, T=0.5)
+    assert line in handle.traj_lines
+    assert len(ax.lines) == initial_lines + 1
+    xdata = line.get_xdata()
+    ydata = line.get_ydata()
+    assert pytest.approx(xdata[0]) == 0.25
+    assert pytest.approx(ydata[0]) == -0.5
+    handle.clear_trajectories()
+    assert len(handle.traj_lines) == 0
+    assert len(ax.lines) == initial_lines
+    plt.close(ax.figure)
+
+
+def test_stepper_override_used_when_building_model():
+    inline_model = """
+inline:
+[model]
+type = "ode"
+stepper = "rk4"
+
+[sim]
+t0 = 0.0
+dt = 0.1
+t_end = 0.5
+
+[states]
+x = 0.0
+y = 0.0
+
+[params]
+a = 1.0
+
+[equations.rhs]
+x = "a * x - y"
+y = "x + a * y"
+"""
+    ax = plt.axes()
+    handle = vectorfield(inline_model, ax=ax, stepper="euler", interactive=False)
+    assert getattr(handle.model, "stepper_name", None) == "euler"
+    plt.close(ax.figure)

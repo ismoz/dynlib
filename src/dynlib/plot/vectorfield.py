@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Sequence
+import warnings
 
 import numpy as np
 
 from dynlib import build
+from dynlib import Sim
 from dynlib.dsl.spec import ModelSpec
 from dynlib.runtime.workspace import (
     initialize_lag_runtime_workspace,
@@ -30,7 +32,7 @@ def _clone_runtime_workspace(template):
     )
 
 
-def _resolve_model(model_or_sim, *, jit: bool, disk_cache: bool):
+def _resolve_model(model_or_sim, *, stepper: str | None, jit: bool, disk_cache: bool):
     """
     Accept Sim, compiled model, ModelSpec, or URI and return
     (model, base_state, base_params, t0, lag_state_info).
@@ -39,6 +41,8 @@ def _resolve_model(model_or_sim, *, jit: bool, disk_cache: bool):
     sim = getattr(model_or_sim, "model", None)
     if sim is not None and hasattr(model_or_sim, "state_vector"):
         model = sim
+        if stepper is not None and getattr(model.spec.sim, "stepper", None) != stepper:
+            warnings.warn("stepper override ignored when passing an existing Sim.", stacklevel=2)
         base_state = np.asarray(model_or_sim.state_vector(copy=True), dtype=model.dtype)
         base_params = np.asarray(model_or_sim.param_vector(copy=True), dtype=model.dtype)
         t0 = float(getattr(getattr(model_or_sim, "_session_state", None), "t_curr", model.spec.sim.t0))
@@ -48,6 +52,8 @@ def _resolve_model(model_or_sim, *, jit: bool, disk_cache: bool):
     # Already-compiled model
     if hasattr(model_or_sim, "spec") and hasattr(model_or_sim, "rhs"):
         model = model_or_sim
+        if stepper is not None and getattr(model.spec.sim, "stepper", None) != stepper:
+            warnings.warn("stepper override ignored for an already-compiled model.", stacklevel=2)
         base_state = np.asarray(model.spec.state_ic, dtype=model.dtype)
         base_params = np.asarray(model.spec.param_vals, dtype=model.dtype)
         t0 = float(model.spec.sim.t0)
@@ -56,7 +62,7 @@ def _resolve_model(model_or_sim, *, jit: bool, disk_cache: bool):
 
     # URI / ModelSpec
     if isinstance(model_or_sim, (str, ModelSpec)):
-        model = build(model_or_sim, jit=jit, disk_cache=disk_cache)
+        model = build(model_or_sim, stepper=stepper, jit=jit, disk_cache=disk_cache)
         base_state = np.asarray(model.spec.state_ic, dtype=model.dtype)
         base_params = np.asarray(model.spec.param_vals, dtype=model.dtype)
         t0 = float(model.spec.sim.t0)
@@ -115,6 +121,12 @@ def _coerce_grid(grid: tuple[int, int] | int) -> tuple[int, int]:
     return (int(gx), int(gy))
 
 
+def _normalize_overrides(mapping: Mapping[str, float] | None) -> dict[str, float]:
+    if mapping is None:
+        return {}
+    return {k: float(v) for k, v in mapping.items()}
+
+
 def _default_nullcline_grid(grid: tuple[int, int]) -> tuple[int, int]:
     """
     Use a denser grid for nullcline computation to reduce numerical wobble.
@@ -124,6 +136,23 @@ def _default_nullcline_grid(grid: tuple[int, int]) -> tuple[int, int]:
     dense_x = max(gx, min(max(gx * 2, 40), 120))
     dense_y = max(gy, min(max(gy * 2, 40), 120))
     return dense_x, dense_y
+
+
+def _build_state_and_params(
+    *,
+    base_state_template: np.ndarray,
+    base_params_template: np.ndarray,
+    fixed: Mapping[str, float],
+    params: Mapping[str, float],
+    state_index: Mapping[str, int],
+    param_index: Mapping[str, int],
+    var_indices: tuple[int, int],
+) -> tuple[np.ndarray, np.ndarray]:
+    state = np.array(base_state_template, copy=True)
+    params_vec = np.array(base_params_template, copy=True)
+    _apply_state_overrides(state, fixed, state_index=state_index, skip=var_indices)
+    _apply_param_overrides(params_vec, params, param_index=param_index)
+    return state, params_vec
 
 
 def _evaluate_field(
@@ -171,13 +200,14 @@ def eval_vectorfield(
     ylim: tuple[float, float] = (-1, 1),
     grid: tuple[int, int] = (20, 20),
     normalize: bool = False,
+    stepper: str | None = None,
     jit: bool = False,
     disk_cache: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Evaluate a 2D vector field on a grid and return X, Y, U, V arrays.
     """
-    model, base_state, base_params, t0, lag_state_info = _resolve_model(model_or_sim, jit=jit, disk_cache=disk_cache)
+    model, base_state, base_params, t0, lag_state_info = _resolve_model(model_or_sim, stepper=stepper, jit=jit, disk_cache=disk_cache)
     spec = getattr(model, "spec", None)
     if spec is None or getattr(spec, "kind", None) != "ode":
         raise TypeError("vectorfield requires an ODE model (spec.kind == 'ode').")
@@ -247,6 +277,8 @@ class VectorFieldHandle:
     var_indices: tuple[int, int]
     state_names: tuple[str, ...]
     param_names: tuple[str, ...]
+    state_index: Mapping[str, int]
+    param_index: Mapping[str, int]
     base_state_template: np.ndarray
     base_params_template: np.ndarray
     X: np.ndarray
@@ -263,6 +295,22 @@ class VectorFieldHandle:
     nullcline_Y: np.ndarray | None
     nullcline_U: np.ndarray | None
     nullcline_V: np.ndarray | None
+    nullcline_cache_valid: bool
+    xlim: tuple[float, float]
+    ylim: tuple[float, float]
+    grid: tuple[int, int]
+    nullcline_grid: tuple[int, int]
+    last_fixed: dict[str, float]
+    last_params: dict[str, float]
+    traj_lines: list[Any]
+    traj_style: dict[str, Any]
+    interactive: bool
+    run_T: float
+    run_dt: float | None
+    sim_record_vars: tuple[str, str]
+    sim: Any | None
+    _cid_click: Any
+    _cid_keypress: Any
 
     def update(
         self,
@@ -273,12 +321,16 @@ class VectorFieldHandle:
         redraw: bool = True,
     ) -> None:
         """Re-evaluate U,V on cached X,Y and update artists in-place."""
-        state_index = {n: i for i, n in enumerate(self.state_names)}
-        param_index = {n: i for i, n in enumerate(self.param_names)}
-        base_state = np.array(self.base_state_template, copy=True)
-        base_params = np.array(self.base_params_template, copy=True)
-        _apply_state_overrides(base_state, fixed, state_index=state_index, skip=self.var_indices)
-        _apply_param_overrides(base_params, params, param_index=param_index)
+        new_fixed, new_params, overrides_changed = self._resolve_overrides(fixed, params)
+        base_state, base_params = _build_state_and_params(
+            base_state_template=self.base_state_template,
+            base_params_template=self.base_params_template,
+            fixed=new_fixed,
+            params=new_params,
+            state_index=self.state_index,
+            param_index=self.param_index,
+            var_indices=self.var_indices,
+        )
 
         U_new, V_new = _evaluate_field(
             rhs=self.rhs,
@@ -306,29 +358,150 @@ class VectorFieldHandle:
         if redraw:
             self.quiver.set_UVC(self.U, self.V)
             if self.nullclines_enabled:
-                if self.nullcline_X is not None and self.nullcline_Y is not None and self.nullcline_U is not None and self.nullcline_V is not None:
-                    U_nc, V_nc = _evaluate_field(
-                        rhs=self.rhs,
-                        t0=self.t0,
-                        X=self.nullcline_X,
-                        Y=self.nullcline_Y,
-                        base_state=base_state,
-                        base_params=base_params,
-                        var_indices=self.var_indices,
-                        runtime_ws_template=self.runtime_ws_template,
-                        lag_state_info=self.lag_state_info,
-                    )
-                    self.nullcline_U[:, :] = U_nc
-                    self.nullcline_V[:, :] = V_nc
-                for artist in self.nullcline_artists:
-                    artist.remove()
-                self.nullcline_artists.clear()
-                X_nc = self.nullcline_X if self.nullcline_X is not None else self.X
-                Y_nc = self.nullcline_Y if self.nullcline_Y is not None else self.Y
-                U_nc = self.nullcline_U if self.nullcline_U is not None else self.U
-                V_nc = self.nullcline_V if self.nullcline_V is not None else self.V
-                self.nullcline_artists.extend(_draw_nullclines(self.ax, X_nc, Y_nc, U_nc, V_nc, self.nullcline_style))
+                self._ensure_nullclines(base_state, base_params, force=overrides_changed or not self.nullcline_cache_valid)
+                self._redraw_nullclines()
+            elif overrides_changed:
+                self.nullcline_cache_valid = False
             self.ax.figure.canvas.draw_idle()
+
+    def _resolve_overrides(
+        self,
+        fixed: Mapping[str, float] | None,
+        params: Mapping[str, float] | None,
+    ) -> tuple[dict[str, float], dict[str, float], bool]:
+        fixed_norm = _normalize_overrides(self.last_fixed if fixed is None else fixed)
+        params_norm = _normalize_overrides(self.last_params if params is None else params)
+        changed = fixed_norm != self.last_fixed or params_norm != self.last_params
+        self.last_fixed = fixed_norm
+        self.last_params = params_norm
+        return fixed_norm, params_norm, changed
+
+    def _ensure_nullcline_grid(self) -> None:
+        if self.nullcline_X is not None and self.nullcline_Y is not None:
+            return
+        resolved_nc_grid = self.nullcline_grid
+        use_same_grid = resolved_nc_grid == self.grid and not self.normalize
+        if use_same_grid:
+            self.nullcline_X, self.nullcline_Y = self.X, self.Y
+            self.nullcline_U = np.array(self.U, copy=True)
+            self.nullcline_V = np.array(self.V, copy=True)
+        else:
+            self.nullcline_X, self.nullcline_Y = _make_meshgrid(
+                self.xlim,
+                self.ylim,
+                resolved_nc_grid,
+                dtype=self.model.dtype,
+            )
+            self.nullcline_U = np.zeros_like(self.nullcline_X, dtype=self.model.dtype)
+            self.nullcline_V = np.zeros_like(self.nullcline_Y, dtype=self.model.dtype)
+
+    def _ensure_nullclines(self, base_state: np.ndarray, base_params: np.ndarray, *, force: bool = False) -> None:
+        if self.nullcline_cache_valid and not force and self.nullcline_X is not None and self.nullcline_Y is not None:
+            return
+        self._ensure_nullcline_grid()
+        self.nullcline_U[:, :], self.nullcline_V[:, :] = _evaluate_field(
+            rhs=self.rhs,
+            t0=self.t0,
+            X=self.nullcline_X,
+            Y=self.nullcline_Y,
+            base_state=base_state,
+            base_params=base_params,
+            var_indices=self.var_indices,
+            runtime_ws_template=self.runtime_ws_template,
+            lag_state_info=self.lag_state_info,
+        )
+        self.nullcline_cache_valid = True
+
+    def _redraw_nullclines(self) -> None:
+        for artist in self.nullcline_artists:
+            try:
+                artist.remove()
+            except ValueError:
+                pass
+        self.nullcline_artists.clear()
+        X_nc = self.nullcline_X if self.nullcline_X is not None else self.X
+        Y_nc = self.nullcline_Y if self.nullcline_Y is not None else self.Y
+        U_nc = self.nullcline_U if self.nullcline_U is not None else self.U
+        V_nc = self.nullcline_V if self.nullcline_V is not None else self.V
+        self.nullcline_artists.extend(_draw_nullclines(self.ax, X_nc, Y_nc, U_nc, V_nc, self.nullcline_style))
+        self.nullclines_enabled = True
+
+    def toggle_nullclines(self) -> None:
+        if self.nullclines_enabled:
+            for artist in self.nullcline_artists:
+                try:
+                    artist.remove()
+                except ValueError:
+                    pass
+            self.nullcline_artists.clear()
+            self.nullclines_enabled = False
+            self.ax.figure.canvas.draw_idle()
+            return
+
+        base_state, base_params = _build_state_and_params(
+            base_state_template=self.base_state_template,
+            base_params_template=self.base_params_template,
+            fixed=self.last_fixed,
+            params=self.last_params,
+            state_index=self.state_index,
+            param_index=self.param_index,
+            var_indices=self.var_indices,
+        )
+        self._ensure_nullclines(base_state, base_params, force=not self.nullcline_cache_valid)
+        self._redraw_nullclines()
+        self.ax.figure.canvas.draw_idle()
+
+    def clear_trajectories(self) -> None:
+        for line in self.traj_lines:
+            try:
+                line.remove()
+            except ValueError:
+                pass
+        self.traj_lines.clear()
+        self.ax.figure.canvas.draw_idle()
+
+    def _ensure_sim(self):
+        if self.sim is None:
+            raise RuntimeError("Interactive simulation is not enabled for this vector field.")
+        self.sim.reset()
+        return self.sim
+
+    def simulate_at(self, x0: float, y0: float, *, T: float | None = None) -> Any:
+        if not self.interactive:
+            raise RuntimeError("Interactive simulation is disabled; pass interactive=True to vectorfield().")
+        sim = self._ensure_sim()
+        base_state, base_params = _build_state_and_params(
+            base_state_template=self.base_state_template,
+            base_params_template=self.base_params_template,
+            fixed=self.last_fixed,
+            params=self.last_params,
+            state_index=self.state_index,
+            param_index=self.param_index,
+            var_indices=self.var_indices,
+        )
+        base_state[self.var_indices[0]] = float(x0)
+        base_state[self.var_indices[1]] = float(y0)
+        run_kwargs = {
+            "T": self.run_T if T is None else float(T),
+            "ic": base_state,
+            "params": base_params,
+            "record": True,
+            "record_vars": list(self.sim_record_vars),
+        }
+        if self.run_dt is not None:
+            run_kwargs["dt"] = float(self.run_dt)
+        try:
+            sim.run(**run_kwargs)
+            res = sim.results()
+            traj_x = res[self.var_names[0]]
+            traj_y = res[self.var_names[1]]
+            line, = self.ax.plot(traj_x, traj_y, **self.traj_style)
+            self.traj_lines.append(line)
+            self.ax.figure.canvas.draw_idle()
+            return line
+        except Exception as exc:  # pragma: no cover
+            warnings.warn(f"Failed to simulate trajectory from ({x0:.3f}, {y0:.3f}): {exc}", stacklevel=2)
+            return None
 
 
 def _draw_nullclines(ax, X, Y, U, V, style: Mapping[str, Any] | None):
@@ -358,6 +531,11 @@ def vectorfield(
     nullclines: bool = False,
     nullcline_grid: tuple[int, int] | int | None = None,
     nullcline_style: Mapping[str, Any] | None = None,
+    interactive: bool = True,
+    T: float | None = None,
+    dt: float | None = None,
+    trajectory_style: Mapping[str, Any] | None = None,
+    stepper: str | None = None,
     jit: bool = False,
     disk_cache: bool = False,
 ) -> "VectorFieldHandle":
@@ -366,6 +544,18 @@ def vectorfield(
 
     Nullclines are evaluated on a denser, always-un-normalized grid by default to avoid
     visual wobble; override with nullcline_grid to control the density.
+
+    Interactive controls:
+      - Click anywhere on the axes to launch a trajectory from that point (uses the model's
+        sim.t_end by default, override with T).
+      - Press "N" to toggle nullclines on/off (cached values are reused after disabling).
+      - Press "C" to clear trajectories drawn via clicks.
+
+    Args:
+        stepper: Optional stepper override used when compiling from a URI/ModelSpec/string.
+                 Ignored when an existing Sim or compiled model is passed.
+        T: Trajectory duration for interactive runs (defaults to model sim.t_end).
+        dt: Optional fixed dt override for interactive runs.
     """
     X, Y, U, V = eval_vectorfield(
         model_or_sim,
@@ -376,25 +566,31 @@ def vectorfield(
         ylim=ylim,
         grid=grid,
         normalize=normalize,
+        stepper=stepper,
         jit=jit,
         disk_cache=disk_cache,
     )
 
     grid = _coerce_grid(grid)
-    model, base_state, base_params, t0, lag_state_info = _resolve_model(model_or_sim, jit=jit, disk_cache=disk_cache)
+    resolved_nc_grid = _coerce_grid(nullcline_grid) if nullcline_grid is not None else _default_nullcline_grid(grid)
+    model, base_state, base_params, t0, lag_state_info = _resolve_model(model_or_sim, stepper=stepper, jit=jit, disk_cache=disk_cache)
     spec = model.spec
     state_names = tuple(spec.states)
     param_names = tuple(spec.params)
     state_index = {name: idx for idx, name in enumerate(state_names)}
+    param_index = {name: idx for idx, name in enumerate(param_names)}
 
     if vars is None:
         vars = (state_names[0], state_names[1])
     var_indices = (state_index[vars[0]], state_index[vars[1]])
+    vars = (str(vars[0]), str(vars[1]))
 
     base_state_template = np.array(base_state, copy=True)
     base_params_template = np.array(base_params, copy=True)
-    _apply_state_overrides(base_state_template, fixed, state_index=state_index, skip=var_indices)
-    _apply_param_overrides(base_params_template, params, param_index={n: i for i, n in enumerate(param_names)})
+    last_fixed = _normalize_overrides(fixed)
+    last_params = _normalize_overrides(params)
+    _apply_state_overrides(base_state_template, last_fixed, state_index=state_index, skip=var_indices)
+    _apply_param_overrides(base_params_template, last_params, param_index=param_index)
 
     runtime_ws_template = make_runtime_workspace(
         lag_state_info=_lag_state_info_from_spec(model, lag_state_info),
@@ -422,8 +618,8 @@ def vectorfield(
     nullcline_Y = None
     nullcline_U = None
     nullcline_V = None
+    nullcline_cache_valid = False
     if nullclines:
-        resolved_nc_grid = _coerce_grid(nullcline_grid) if nullcline_grid is not None else _default_nullcline_grid(grid)
         use_same_grid = resolved_nc_grid == grid and not normalize
         if use_same_grid:
             nullcline_X, nullcline_Y = X, Y
@@ -432,8 +628,8 @@ def vectorfield(
             nullcline_X, nullcline_Y, nullcline_U, nullcline_V = eval_vectorfield(
                 model_or_sim,
                 vars=vars,
-                fixed=fixed,
-                params=params,
+                fixed=last_fixed,
+                params=last_params,
                 xlim=xlim,
                 ylim=ylim,
                 grid=resolved_nc_grid,
@@ -442,6 +638,14 @@ def vectorfield(
                 disk_cache=disk_cache,
             )
         nullcline_artists = _draw_nullclines(plot_ax, nullcline_X, nullcline_Y, nullcline_U, nullcline_V, nullcline_style)
+        nullcline_cache_valid = True
+
+    traj_style = {"lw": 1.6, "alpha": 0.85}
+    if trajectory_style:
+        traj_style.update(dict(trajectory_style))
+    run_T = float(T) if T is not None else float(spec.sim.t_end)
+    run_dt_resolved = float(dt) if dt is not None else None
+    sim_instance = Sim(model) if interactive else None
 
     handle = VectorFieldHandle(
         ax=plot_ax,
@@ -453,6 +657,8 @@ def vectorfield(
         var_indices=var_indices,
         state_names=state_names,
         param_names=param_names,
+        state_index=state_index,
+        param_index=param_index,
         base_state_template=base_state_template,
         base_params_template=base_params_template,
         X=X,
@@ -469,5 +675,41 @@ def vectorfield(
         nullcline_Y=nullcline_Y,
         nullcline_U=nullcline_U,
         nullcline_V=nullcline_V,
+        nullcline_cache_valid=nullcline_cache_valid,
+        xlim=(float(xlim[0]), float(xlim[1])),
+        ylim=(float(ylim[0]), float(ylim[1])),
+        grid=grid,
+        nullcline_grid=resolved_nc_grid,
+        last_fixed=last_fixed,
+        last_params=last_params,
+        traj_lines=[],
+        traj_style=traj_style,
+        interactive=bool(interactive),
+        run_T=run_T,
+        run_dt=run_dt_resolved,
+        sim_record_vars=vars,
+        sim=sim_instance,
+        _cid_click=None,
+        _cid_keypress=None,
     )
+
+    if interactive:
+        canvas = plot_ax.figure.canvas
+
+        def _on_click(event):
+            if event.inaxes is not plot_ax:
+                return
+            if event.xdata is None or event.ydata is None:
+                return
+            handle.simulate_at(event.xdata, event.ydata)
+
+        def _on_key(event):
+            key = (event.key or "").lower()
+            if key == "n":
+                handle.toggle_nullclines()
+            elif key == "c":
+                handle.clear_trajectories()
+
+        handle._cid_click = canvas.mpl_connect("button_press_event", _on_click)
+        handle._cid_keypress = canvas.mpl_connect("key_press_event", _on_key)
     return handle
