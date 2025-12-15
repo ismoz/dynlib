@@ -2,6 +2,13 @@
 
 ---
 
+## [2.31.3] – 2025-12-15
+### Added
+- Vector field plotting now supports a streamlines mode via `mode="stream"` with kwargs forwarded to 
+  `matplotlib.streamplot()`.
+
+---
+
 ## [2.31.2] – 2025-12-15
 ### Added
 - Vectorfield plot demo `vectorfield_highdim_demo.py` for demonstrating vector fields of 2D slices of higher

@@ -285,7 +285,11 @@ class VectorFieldHandle:
     Y: np.ndarray
     U: np.ndarray
     V: np.ndarray
-    quiver: Any
+    mode: str
+    quiver: Any | None
+    stream: Any | None
+    quiver_kwargs: dict[str, Any]
+    stream_kwargs: dict[str, Any]
     normalize: bool
     nullclines_enabled: bool
     nullcline_artists: list[Any]
@@ -356,13 +360,40 @@ class VectorFieldHandle:
         self.normalize = new_normalize
 
         if redraw:
-            self.quiver.set_UVC(self.U, self.V)
+            self._redraw_field()
             if self.nullclines_enabled:
                 self._ensure_nullclines(base_state, base_params, force=overrides_changed or not self.nullcline_cache_valid)
                 self._redraw_nullclines()
             elif overrides_changed:
                 self.nullcline_cache_valid = False
             self.ax.figure.canvas.draw_idle()
+
+    def _redraw_field(self) -> None:
+        if self.mode == "quiver":
+            if self.quiver is None:
+                self.quiver = self.ax.quiver(self.X, self.Y, self.U, self.V, pivot="mid", angles="xy", **self.quiver_kwargs)
+            else:
+                self.quiver.set_UVC(self.U, self.V)
+            return
+
+        if self.mode == "stream":
+            self._redraw_streamplot()
+            return
+
+        raise ValueError(f"Unknown vectorfield mode '{self.mode}'.")
+
+    def _redraw_streamplot(self) -> None:
+        if self.stream is not None:
+            for artist in (getattr(self.stream, "lines", None), getattr(self.stream, "arrows", None)):
+                try:
+                    if artist is not None:
+                        artist.remove()
+                except (ValueError, NotImplementedError):
+                    try:
+                        artist.set_visible(False)
+                    except AttributeError:
+                        pass
+        self.stream = self.ax.streamplot(self.X, self.Y, self.U, self.V, **self.stream_kwargs)
 
     def _resolve_overrides(
         self,
@@ -528,6 +559,8 @@ def vectorfield(
     grid=(20, 20),
     normalize: bool = False,
     color: str | None = None,
+    mode: str = "quiver",
+    stream_kwargs: Mapping[str, Any] | None = None,
     nullclines: bool = False,
     nullcline_grid: tuple[int, int] | int | None = None,
     nullcline_style: Mapping[str, Any] | None = None,
@@ -540,7 +573,7 @@ def vectorfield(
     disk_cache: bool = False,
 ) -> "VectorFieldHandle":
     """
-    Draw a quiver plot (and optional numerical nullclines) and return a handle with .update().
+    Draw a quiver or streamline plot (and optional numerical nullclines) and return a handle with .update().
 
     Nullclines are evaluated on a denser, always-un-normalized grid by default to avoid
     visual wobble; override with nullcline_grid to control the density.
@@ -556,7 +589,17 @@ def vectorfield(
                  Ignored when an existing Sim or compiled model is passed.
         T: Trajectory duration for interactive runs (defaults to model sim.t_end).
         dt: Optional fixed dt override for interactive runs.
+        mode: "quiver" (default) for arrows, "stream" for matplotlib.streamplot().
+        stream_kwargs: Extra keyword arguments forwarded to matplotlib.streamplot() when mode="stream".
     """
+    mode_norm = str(mode or "quiver").lower()
+    if mode_norm in ("quiver", "arrow", "arrows"):
+        mode_norm = "quiver"
+    elif mode_norm in ("stream", "streamplot", "streamline", "streamlines"):
+        mode_norm = "stream"
+    else:
+        raise ValueError("mode must be 'quiver' or 'stream'.")
+
     X, Y, U, V = eval_vectorfield(
         model_or_sim,
         vars=vars,
@@ -600,7 +643,18 @@ def vectorfield(
 
     plot_ax = _get_ax(ax)
     color_kw = {} if color is None else {"color": color}
-    quiver = plot_ax.quiver(X, Y, U, V, pivot="mid", angles="xy", **color_kw)
+    quiver_kwargs = dict(color_kw)
+    stream_kwargs_resolved = dict(stream_kwargs or {})
+    if color is not None and "color" not in stream_kwargs_resolved:
+        stream_kwargs_resolved["color"] = color
+
+    quiver = None
+    stream = None
+    if mode_norm == "quiver":
+        quiver = plot_ax.quiver(X, Y, U, V, pivot="mid", angles="xy", **quiver_kwargs)
+    else:
+        stream = plot_ax.streamplot(X, Y, U, V, **stream_kwargs_resolved)
+
     _apply_limits(plot_ax, xlim=xlim, ylim=ylim)
     _apply_labels(
         plot_ax,
@@ -665,7 +719,11 @@ def vectorfield(
         Y=Y,
         U=U,
         V=V,
+        mode=mode_norm,
         quiver=quiver,
+        stream=stream,
+        quiver_kwargs=quiver_kwargs,
+        stream_kwargs=stream_kwargs_resolved,
         normalize=normalize,
         nullclines_enabled=bool(nullclines),
         nullcline_artists=list(nullcline_artists),

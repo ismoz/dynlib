@@ -84,6 +84,30 @@ def test_vectorfield_handle_update_recomputes():
     plt.close(ax.figure)
 
 
+def test_vectorfield_stream_mode_draws_and_updates():
+    model = _linear_model()
+    ax = plt.axes()
+    handle = vectorfield(
+        model,
+        ax=ax,
+        grid=(5, 5),
+        mode="stream",
+        stream_kwargs={"density": 1.0},
+        interactive=False,
+    )
+    assert handle.mode == "stream"
+    assert handle.quiver is None
+    assert handle.stream is not None
+    first_stream = handle.stream
+    first_lines = first_stream.lines
+
+    handle.update(params={"a": 2.5})
+    assert handle.stream is not None
+    assert handle.stream is not first_stream
+    assert handle.stream.lines is not first_lines
+    plt.close(ax.figure)
+
+
 def _flatten_contour_segments(cs):
     segs = cs.allsegs[0]
     if not segs:
