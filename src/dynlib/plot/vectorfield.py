@@ -5,6 +5,8 @@ from typing import Any, Callable, Mapping, Sequence
 import warnings
 
 import numpy as np
+from matplotlib import colors as mcolors
+from matplotlib import animation
 
 from dynlib import build
 from dynlib import Sim
@@ -15,9 +17,17 @@ from dynlib.runtime.workspace import (
 )
 
 from ._primitives import _get_ax, _apply_limits, _apply_labels
-from . import _theme
+from . import _theme, _fig
 
-__all__ = ["eval_vectorfield", "vectorfield", "VectorFieldHandle"]
+__all__ = [
+    "eval_vectorfield",
+    "vectorfield",
+    "VectorFieldHandle",
+    "vectorfield_sweep",
+    "VectorFieldSweep",
+    "vectorfield_animate",
+    "VectorFieldAnimation",
+]
 
 
 def _clone_runtime_workspace(template):
@@ -125,6 +135,186 @@ def _normalize_overrides(mapping: Mapping[str, float] | None) -> dict[str, float
     if mapping is None:
         return {}
     return {k: float(v) for k, v in mapping.items()}
+
+
+@dataclass(frozen=True)
+class _FacetSlice:
+    key: Any
+    params: dict[str, float]
+    fixed: dict[str, float]
+    value: Any | None = None
+
+
+@dataclass(frozen=True)
+class _FrameSpec:
+    idx: int
+    value: Any
+    params: dict[str, float]
+    fixed: dict[str, float]
+    title: str | None
+
+
+def _build_param_value_slices(param: str, values, *, target: str) -> list[_FacetSlice]:
+    entries: list[_FacetSlice] = []
+    if isinstance(values, Mapping):
+        items = list(values.items())
+    else:
+        items = [(v, v) for v in values]
+
+    for key, val in items:
+        norm_val = float(val)
+        if target == "params":
+            entries.append(_FacetSlice(key=key, value=norm_val, params={param: norm_val}, fixed={}))
+        else:
+            entries.append(_FacetSlice(key=key, value=norm_val, params={}, fixed={param: norm_val}))
+    if not entries:
+        raise ValueError("values cannot be empty for a sweep.")
+    return entries
+
+
+def _build_custom_slices(sweep) -> list[_FacetSlice]:
+    if isinstance(sweep, Mapping):
+        items = list(sweep.items())
+    else:
+        if isinstance(sweep, (str, bytes)):
+            raise TypeError("sweep must be a mapping or sequence of (key, overrides) pairs.")
+        items = list(sweep)
+    entries: list[_FacetSlice] = []
+    for pair in items:
+        if not isinstance(pair, (tuple, list)) or len(pair) != 2:
+            raise TypeError("Each sweep entry must be a (key, overrides) pair.")
+        key, overrides = pair
+        if not isinstance(overrides, Mapping):
+            raise TypeError("sweep overrides must be a mapping with optional 'params'/'fixed' keys.")
+        params_override = _normalize_overrides(overrides.get("params"))
+        fixed_override = _normalize_overrides(overrides.get("fixed"))
+        entries.append(_FacetSlice(key=key, params=params_override, fixed=fixed_override))
+    if not entries:
+        raise ValueError("sweep must define at least one facet entry.")
+    return entries
+
+
+def _resolve_sweep_entries(
+    *,
+    sweep,
+    param: str | None,
+    values,
+    target: str,
+) -> list[_FacetSlice]:
+    target_norm = str(target or "params").lower()
+    if target_norm not in {"params", "fixed"}:
+        raise ValueError("target must be 'params' or 'fixed'.")
+
+    if sweep is not None and (param is not None or values is not None):
+        raise ValueError("Pass either sweep or param/values, not both.")
+
+    if sweep is not None:
+        return _build_custom_slices(sweep)
+
+    if param is None or values is None:
+        raise ValueError("param and values are required when sweep is not provided.")
+    return _build_param_value_slices(str(param), values, target=target_norm)
+
+
+def _resolve_titles(facet_titles, *, default_template: str | None, key: Any, value: Any, idx: int) -> str | None:
+    if facet_titles is None:
+        if default_template is None:
+            return None
+        try:
+            return default_template.format(key=key, value=value, idx=idx)
+        except Exception:
+            return default_template
+
+    if callable(facet_titles):
+        return str(facet_titles(key))
+
+    if isinstance(facet_titles, Mapping):
+        if key in facet_titles:
+            return str(facet_titles[key])
+        return None
+
+    if isinstance(facet_titles, (list, tuple)):
+        if idx < len(facet_titles):
+            return str(facet_titles[idx])
+        return None
+
+    if isinstance(facet_titles, str):
+        try:
+            return facet_titles.format(key=key, value=value, idx=idx)
+        except Exception:
+            return facet_titles
+
+    return None
+
+
+def _flatten_axes(grid_axes) -> list[Any]:
+    return [ax for row in grid_axes for ax in row]
+
+
+def _compute_shared_speed_norm(
+    slices: Sequence[_FacetSlice],
+    *,
+    speed_norm,
+    share_speed_norm: bool,
+    speed_color: bool,
+    model_or_sim,
+    vars,
+    xlim,
+    ylim,
+    grid,
+    normalize,
+    stepper,
+    jit: bool,
+    disk_cache: bool,
+) -> Any | None:
+    if not speed_color:
+        return None
+    if speed_norm is not None:
+        return speed_norm
+    if not share_speed_norm:
+        return None
+
+    max_speed = 0.0
+    has_speed = False
+    for sl in slices:
+        _, _, _, _, speed = eval_vectorfield(
+            model_or_sim,
+            vars=vars,
+            fixed=sl.fixed,
+            params=sl.params,
+            xlim=xlim,
+            ylim=ylim,
+            grid=grid,
+            normalize=normalize,
+            return_speed=True,
+            stepper=stepper,
+            jit=jit,
+            disk_cache=disk_cache,
+        )
+        if speed is None or speed.size == 0:
+            continue
+        local_max = float(np.nanmax(speed))
+        if np.isfinite(local_max) and local_max > max_speed:
+            max_speed = local_max
+            has_speed = True
+    if not has_speed or max_speed <= 0:
+        return None
+    return mcolors.Normalize(vmin=0.0, vmax=max_speed)
+
+
+def _call_frame_fn(fn: Callable, frame_value: Any, idx: int):
+    try:
+        return fn(frame_value, idx)
+    except TypeError:
+        return fn(frame_value)
+
+
+def _speed_mappable(handle: "VectorFieldHandle"):
+    if handle.mode == "quiver":
+        return handle.quiver
+    if handle.mode == "stream" and handle.stream is not None:
+        return getattr(handle.stream, "lines", None)
+    return None
 
 
 def _default_nullcline_grid(grid: tuple[int, int]) -> tuple[int, int]:
@@ -711,6 +901,11 @@ def vectorfield(
             quiver_kwargs.setdefault("cmap", speed_cmap)
         if speed_norm is not None:
             quiver_kwargs.setdefault("norm", speed_norm)
+    # When normalize=True, ensure quiver respects data-units so the unit vectors are visible
+    # as-is instead of being auto-rescaled relative to the axes width.
+    if normalize:
+        quiver_kwargs.setdefault("scale_units", "xy")
+        quiver_kwargs.setdefault("scale", 1.0)
 
     stream_kwargs_resolved = dict(stream_kwargs or {})
     if speed_color:
@@ -850,3 +1045,451 @@ def vectorfield(
         handle._cid_click = canvas.mpl_connect("button_press_event", _on_click)
         handle._cid_keypress = canvas.mpl_connect("key_press_event", _on_key)
     return handle
+
+
+@dataclass
+class VectorFieldSweep:
+    handles: tuple[VectorFieldHandle, ...]
+    axes: tuple[Any, ...]
+    sweep_keys: tuple[Any, ...]
+    colorbar: Any | None
+    speed_norm: Any | None
+
+    @property
+    def figure(self):
+        if not self.axes:
+            return None
+        return self.axes[0].figure
+
+
+@dataclass
+class VectorFieldAnimation:
+    handle: VectorFieldHandle
+    animation: Any
+    frames: tuple[_FrameSpec, ...]
+
+    @property
+    def ax(self):
+        return self.handle.ax
+
+    @property
+    def figure(self):
+        return self.handle.ax.figure
+
+    def save(self, path, **kwargs):
+        """
+        Save the underlying matplotlib animation.
+
+        Examples:
+            anim.save(\"out.gif\", writer=\"pillow\")  # respects fps/interval from construction
+        """
+        self.animation.save(path, **kwargs)
+        return path
+
+
+def vectorfield_sweep(
+    model_or_sim,
+    *,
+    param: str | None = None,
+    values=None,
+    sweep=None,
+    target: str = "params",
+    vars: tuple[str, str] | None = None,
+    fixed: Mapping[str, float] | None = None,
+    params: Mapping[str, float] | None = None,
+    xlim: tuple[float, float] = (-1, 1),
+    ylim: tuple[float, float] = (-1, 1),
+    grid: tuple[int, int] | int = (20, 20),
+    normalize: bool = False,
+    color: str | None = None,
+    speed_color: bool = False,
+    speed_cmap: Any | None = None,
+    speed_norm: Any | None = None,
+    share_speed_norm: bool = True,
+    mode: str = "quiver",
+    stream_kwargs: Mapping[str, Any] | None = None,
+    nullclines: bool = False,
+    nullcline_grid: tuple[int, int] | int | None = None,
+    nullcline_style: Mapping[str, Any] | None = None,
+    interactive: bool = False,
+    T: float | None = None,
+    dt: float | None = None,
+    trajectory_style: Mapping[str, Any] | None = None,
+    cols: int = 3,
+    sharex: bool | str = True,
+    sharey: bool | str = True,
+    title: str | None = None,
+    facet_titles=None,
+    size: tuple[float, float] | None = None,
+    scale: float | None = None,
+    add_colorbar: bool = True,
+    stepper: str | None = None,
+    jit: bool = False,
+    disk_cache: bool = False,
+) -> VectorFieldSweep:
+    """
+    Draw a grid of vector fields for a 1D sweep (parameter or state overrides).
+
+    You can either provide ``param`` + ``values`` for a simple sweep, or pass
+    ``sweep`` as a mapping/sequence of ``(key, {"params": {...}, "fixed": {...}})``
+    to fully control overrides per facet.
+
+    Args:
+        param: Name of the parameter/state being swept when ``values`` is used.
+        values: Iterable or mapping of sweep values (keys in the mapping become facet keys).
+        sweep: Explicit facet definitions as ``{key: {"params": {...}, "fixed": {...}}}``.
+        target: ``"params"`` (default) or ``"fixed"`` when using ``param``/``values``.
+        cols: Number of columns in the wrapped grid.
+        share_speed_norm: If True, compute a shared Normalize from all facets when coloring by speed.
+        facet_titles: Optional mapping/sequence/formatter for per-facet titles.
+        add_colorbar: Add a shared colorbar when speed coloring is enabled and a shared norm is used.
+    """
+
+    base_params = _normalize_overrides(params)
+    base_fixed = _normalize_overrides(fixed)
+
+    raw_slices = _resolve_sweep_entries(sweep=sweep, param=param, values=values, target=target)
+    resolved_slices: list[_FacetSlice] = []
+    for sl in raw_slices:
+        merged_params = dict(base_params)
+        merged_params.update(sl.params)
+        merged_fixed = dict(base_fixed)
+        merged_fixed.update(sl.fixed)
+        resolved_slices.append(_FacetSlice(key=sl.key, params=merged_params, fixed=merged_fixed, value=sl.value))
+
+    if not resolved_slices:
+        raise ValueError("vectorfield_sweep needs at least one facet entry.")
+
+    axes_grid = _fig.wrap(
+        n=len(resolved_slices),
+        cols=int(cols),
+        title=title,
+        size=size,
+        scale=scale,
+        sharex=sharex,
+        sharey=sharey,
+    )
+    flat_axes = _flatten_axes(axes_grid)
+
+    shared_norm = _compute_shared_speed_norm(
+        resolved_slices,
+        speed_norm=speed_norm,
+        share_speed_norm=share_speed_norm,
+        speed_color=speed_color,
+        model_or_sim=model_or_sim,
+        vars=vars,
+        xlim=xlim,
+        ylim=ylim,
+        grid=grid,
+        normalize=normalize,
+        stepper=stepper,
+        jit=jit,
+        disk_cache=disk_cache,
+    )
+    norm_to_use = shared_norm if shared_norm is not None else speed_norm
+
+    default_template = None
+    if facet_titles is None:
+        if param is not None:
+            default_template = f"{param}={{value}}"
+        else:
+            default_template = "{key}"
+
+    handles: list[VectorFieldHandle] = []
+    for idx, (ax, sl) in enumerate(zip(flat_axes, resolved_slices)):
+        handle = vectorfield(
+            model_or_sim,
+            ax=ax,
+            vars=vars,
+            fixed=sl.fixed,
+            params=sl.params,
+            xlim=xlim,
+            ylim=ylim,
+            grid=grid,
+            normalize=normalize,
+            color=color,
+            speed_color=speed_color,
+            speed_cmap=speed_cmap,
+            speed_norm=norm_to_use,
+            mode=mode,
+            stream_kwargs=stream_kwargs,
+            nullclines=nullclines,
+            nullcline_grid=nullcline_grid,
+            nullcline_style=nullcline_style,
+            interactive=interactive,
+            T=T,
+            dt=dt,
+            trajectory_style=trajectory_style,
+            stepper=stepper,
+            jit=jit,
+            disk_cache=disk_cache,
+        )
+        title_text = _resolve_titles(
+            facet_titles,
+            default_template=default_template,
+            key=sl.key,
+            value=sl.value if sl.value is not None else sl.key,
+            idx=idx,
+        )
+        if title_text:
+            ax.set_title(title_text)
+        handles.append(handle)
+
+    colorbar = None
+    if speed_color and add_colorbar and norm_to_use is not None:
+        mappable = _speed_mappable(handles[0]) if handles else None
+        if mappable is not None:
+            fig = handles[0].ax.figure
+            colorbar = fig.colorbar(mappable, ax=flat_axes)
+
+    return VectorFieldSweep(
+        handles=tuple(handles),
+        axes=tuple(flat_axes),
+        sweep_keys=tuple(sl.key for sl in resolved_slices),
+        colorbar=colorbar,
+        speed_norm=norm_to_use,
+    )
+
+
+# Backward compatibility shim (not exported in __all__).
+vectorfield_facet_sweep = vectorfield_sweep
+
+
+def _prepare_frame_specs(
+    *,
+    frames,
+    param: str | None,
+    values,
+    params_func: Callable | None,
+    fixed_func: Callable | None,
+    title_func: Callable | None,
+    base_params: Mapping[str, float],
+    base_fixed: Mapping[str, float],
+) -> list[_FrameSpec]:
+    values_list = None
+    if values is not None:
+        values_list = list(values)
+
+    if values is not None and params_func is not None:
+        raise ValueError("Cannot mix values with params_func; choose one animation mode.")
+
+    if frames is None:
+        if values_list is not None:
+            frames_list = list(values_list)
+        else:
+            raise ValueError("frames, values, or duration must be provided for animation.")
+    elif isinstance(frames, int):
+        if frames <= 0:
+            raise ValueError("frames must be a positive integer.")
+        frames_list = list(range(int(frames)))
+        if values_list is not None and len(values_list) != len(frames_list):
+            raise ValueError("Length of values must match frames.")
+    else:
+        frames_list = list(frames)
+        if not frames_list:
+            raise ValueError("frames iterable is empty.")
+        if values_list is not None:
+            raise ValueError("Cannot supply both frames iterable and values.")
+
+    if (params_func or fixed_func or title_func) and frames is None and values is None:
+        raise ValueError("frames or values are required when using custom frame functions.")
+
+    if values_list is not None and param is None:
+        raise ValueError("param must be provided when supplying values.")
+
+    base_params_norm = _normalize_overrides(base_params)
+    base_fixed_norm = _normalize_overrides(base_fixed)
+
+    specs: list[_FrameSpec] = []
+    for idx, frame_val in enumerate(frames_list):
+        params_override = dict(base_params_norm)
+        fixed_override = dict(base_fixed_norm)
+
+        if param is not None:
+            if values_list is not None:
+                params_override[param] = float(frame_val)
+            elif not isinstance(frame_val, Mapping):
+                params_override[param] = float(frame_val)
+
+        if isinstance(frame_val, Mapping):
+            params_override.update(_normalize_overrides(frame_val.get("params")))
+            fixed_override.update(_normalize_overrides(frame_val.get("fixed")))
+
+        if params_func is not None:
+            extra_params = _call_frame_fn(params_func, frame_val, idx)
+            params_override.update(_normalize_overrides(extra_params))
+        if fixed_func is not None:
+            extra_fixed = _call_frame_fn(fixed_func, frame_val, idx)
+            fixed_override.update(_normalize_overrides(extra_fixed))
+
+        title_val = None
+        if title_func is not None:
+            res = _call_frame_fn(title_func, frame_val, idx)
+            if res is not None:
+                title_val = str(res)
+
+        specs.append(_FrameSpec(idx=idx, value=frame_val, params=params_override, fixed=fixed_override, title=title_val))
+
+    if not specs:
+        raise ValueError("No frames prepared for animation.")
+    return specs
+
+
+def vectorfield_animate(
+    model_or_sim,
+    *,
+    ax=None,
+    frames=None,
+    duration: float | None = None,
+    fps: float = 15.0,
+    interval: float | None = None,
+    repeat: bool = True,
+    repeat_delay: float | None = None,
+    param: str | None = None,
+    values=None,
+    params_func: Callable | None = None,
+    fixed_func: Callable | None = None,
+    title: str | None = None,
+    title_func: Callable | None = None,
+    vars: tuple[str, str] | None = None,
+    fixed: Mapping[str, float] | None = None,
+    params: Mapping[str, float] | None = None,
+    xlim=(-1, 1),
+    ylim=(-1, 1),
+    grid=(20, 20),
+    normalize: bool = False,
+    color: str | None = None,
+    speed_color: bool = False,
+    speed_cmap: Any | None = None,
+    speed_norm: Any | None = None,
+    share_speed_norm: bool = True,
+    mode: str = "quiver",
+    stream_kwargs: Mapping[str, Any] | None = None,
+    nullclines: bool = False,
+    nullcline_grid: tuple[int, int] | int | None = None,
+    nullcline_style: Mapping[str, Any] | None = None,
+    interactive: bool = False,
+    T: float | None = None,
+    dt: float | None = None,
+    trajectory_style: Mapping[str, Any] | None = None,
+    stepper: str | None = None,
+    jit: bool = False,
+    disk_cache: bool = False,
+    blit: bool = False,
+) -> VectorFieldAnimation:
+    """
+    Animate a vector field by updating a single VectorFieldHandle across frames.
+
+    Provide either ``values`` (and ``param``) for a simple sweep, or ``frames`` with
+    optional ``params_func``/``fixed_func`` to customize per-frame overrides. When
+    ``duration`` is given without frames/values, frames are derived from ``fps``.
+    """
+
+    if frames is None and values is None and duration is not None:
+        if fps <= 0:
+            raise ValueError("fps must be positive when using duration.")
+        frames = int(round(float(duration) * float(fps)))
+
+    frame_specs = _prepare_frame_specs(
+        frames=frames,
+        param=param,
+        values=values,
+        params_func=params_func,
+        fixed_func=fixed_func,
+        title_func=title_func,
+        base_params=params or {},
+        base_fixed=fixed or {},
+    )
+
+    # Shared speed normalization for consistent coloring.
+    slices = [_FacetSlice(key=fs.idx, params=fs.params, fixed=fs.fixed, value=fs.value) for fs in frame_specs]
+    shared_norm = _compute_shared_speed_norm(
+        slices,
+        speed_norm=speed_norm,
+        share_speed_norm=share_speed_norm,
+        speed_color=speed_color,
+        model_or_sim=model_or_sim,
+        vars=vars,
+        xlim=xlim,
+        ylim=ylim,
+        grid=grid,
+        normalize=normalize,
+        stepper=stepper,
+        jit=jit,
+        disk_cache=disk_cache,
+    )
+    norm_to_use = shared_norm if shared_norm is not None else speed_norm
+
+    first = frame_specs[0]
+    handle = vectorfield(
+        model_or_sim,
+        ax=ax,
+        vars=vars,
+        fixed=first.fixed,
+        params=first.params,
+        xlim=xlim,
+        ylim=ylim,
+        grid=grid,
+        normalize=normalize,
+        color=color,
+        speed_color=speed_color,
+        speed_cmap=speed_cmap,
+        speed_norm=norm_to_use,
+        mode=mode,
+        stream_kwargs=stream_kwargs,
+        nullclines=nullclines,
+        nullcline_grid=nullcline_grid,
+        nullcline_style=nullcline_style,
+        interactive=interactive,
+        T=T,
+        dt=dt,
+        trajectory_style=trajectory_style,
+        stepper=stepper,
+        jit=jit,
+        disk_cache=disk_cache,
+    )
+
+    if title:
+        handle.ax.set_title(title)
+    elif first.title:
+        handle.ax.set_title(first.title)
+
+    _in_update = False
+
+    def _update(frame_spec: _FrameSpec):
+        nonlocal _in_update
+        if _in_update:
+            return []
+        _in_update = True
+        try:
+            handle.update(params=frame_spec.params, fixed=frame_spec.fixed, redraw=True)
+        finally:
+            _in_update = False
+        if frame_spec.title is not None:
+            handle.ax.set_title(frame_spec.title)
+        elif title:
+            handle.ax.set_title(title)
+        return []
+
+    interval_ms = interval if interval is not None else 1000.0 / float(fps)
+    repeat_delay_ms = None if repeat_delay is None else float(repeat_delay)
+
+    anim = animation.FuncAnimation(
+        handle.ax.figure,
+        _update,
+        frames=frame_specs,
+        interval=interval_ms,
+        repeat=repeat,
+        repeat_delay=repeat_delay_ms,
+        blit=blit,
+    )
+    # We intentionally manage the animation object ourselves (e.g. in tests) without
+    # ever calling `save`/`show`, so mark it as started to suppress Matplotlib's
+    # "Animation was deleted without rendering" warning when it is GC'd.
+    anim._draw_was_started = True
+    anim.save_count = len(frame_specs)
+    anim.repeat = bool(repeat)
+    if repeat_delay_ms is not None:
+        anim.repeat_delay = repeat_delay_ms
+
+    return VectorFieldAnimation(handle=handle, animation=anim, frames=tuple(frame_specs))

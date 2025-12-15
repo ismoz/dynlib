@@ -2,6 +2,27 @@
 
 ---
 
+## [2.31.5] – 2025-12-15
+### Added
+- Vector field plots can now create animations across parameter sweeps via `vectorfield_animate()` with configurable 
+  frame rates, repeat settings, and custom update functions for parameters and fixed states.
+- Vector field plots support multi-panel parameter sweeps via `vectorfield_sweep()` with shared or independent 
+  colormaps, custom titles, and flexible grid layouts.
+- Added examples `vectorfield_sweep_demo.py`, `vectorfield_animate_demo.py`, and `vectorfield_animation.py` to 
+  demonstrate the new features.
+
+### Changed
+- When `normalize=True` in vector field plots, quiver arrows now use data-unit scaling to show unit vectors at 
+  their true size instead of being auto-rescaled.
+
+### Tests
+- Added unit tests for vector field animations covering parameter sweeps, custom functions, frame control, and 
+  animation properties.
+- Added unit tests for vector field sweep functionality including shared speed normalization, custom sweep 
+  definitions, and facet titles.
+
+---
+
 ## [2.31.4] – 2025-12-15
 ### Added
 - Vector field plots can color arrows and streamlines by speed magnitude via `speed_color=True`, with optional
