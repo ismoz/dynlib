@@ -563,45 +563,45 @@ def _apply_tick_rotation(ax: plt.Axes, *, xlabel_rot: float | None, ylabel_rot: 
 
 
 def _coerce_series(
-    series: Mapping[str, Any] | list[tuple[Any, ...]] | np.ndarray | list[np.ndarray],
+    y: Mapping[str, Any] | list[tuple[Any, ...]] | np.ndarray | list[np.ndarray],
     names: Sequence[str] | None = None,
 ) -> list[tuple[str, Any, Mapping[str, Any]]]:
     # 1) Mapping: existing behaviour
-    if isinstance(series, Mapping):
-        return [(name, values, {}) for name, values in series.items()]
+    if isinstance(y, Mapping):
+        return [(name, values, {}) for name, values in y.items()]
 
     # 2) ndarray: new path
-    if isinstance(series, np.ndarray):
-        arr = np.asarray(series)
+    if isinstance(y, np.ndarray):
+        arr = np.asarray(y)
         if arr.ndim == 1:
             name = names[0] if names else "y"
             return [(name, arr, {})]
         if arr.ndim == 2:
             M, K = arr.shape
             if names is not None and len(names) != K:
-                raise ValueError(f"names length ({len(names)}) must match series.shape[1] ({K})")
+                raise ValueError(f"names length ({len(names)}) must match y.shape[1] ({K})")
             result: list[tuple[str, Any, Mapping[str, Any]]] = []
             for j in range(K):
                 name = names[j] if names is not None else f"y{j}"
                 result.append((name, arr[:, j], {}))
             return result
-        raise ValueError("ndarray series must be 1D or 2D")
+        raise ValueError("ndarray y must be 1D or 2D")
 
     # 3) list of ndarrays: new path
-    if isinstance(series, list) and series and isinstance(series[0], np.ndarray):
-        if names is not None and len(names) != len(series):
-            raise ValueError(f"names length ({len(names)}) must match number of series ({len(series)})")
+    if isinstance(y, list) and y and isinstance(y[0], np.ndarray):
+        if names is not None and len(names) != len(y):
+            raise ValueError(f"names length ({len(names)}) must match number of y ({len(y)})")
         result: list[tuple[str, Any, Mapping[str, Any]]] = []
-        for i, arr in enumerate(series):
-            name = names[i] if names is not None else f"series{i}"
+        for i, arr in enumerate(y):
+            name = names[i] if names is not None else f"y{i}"
             result.append((name, arr, {}))
         return result
 
     # 4) list-of-tuples: existing behaviour
     normalized: list[tuple[str, Any, Mapping[str, Any]]] = []
-    for entry in series:
+    for entry in y:
         if not isinstance(entry, tuple):
-            raise TypeError("Series entries must be tuples.")
+            raise TypeError("Y entries must be tuples.")
         if len(entry) == 2:
             name, values = entry
             style: Mapping[str, Any] = {}
@@ -610,7 +610,7 @@ def _coerce_series(
             if not isinstance(style, Mapping):
                 raise TypeError("Style entries must be mappings.")
         else:
-            raise ValueError("Series tuples must have 2 or 3 elements.")
+            raise ValueError("Y tuples must have 2 or 3 elements.")
         normalized.append((name, values, style))
     return normalized
 
@@ -954,7 +954,7 @@ class _SeriesPlot:
         self,
         *,
         x,
-        series: Mapping[str, Any] | list[tuple[Any, ...]] | np.ndarray | list[np.ndarray],
+        y: Mapping[str, Any] | list[tuple[Any, ...]] | np.ndarray | list[np.ndarray],
         names: Sequence[str] | None = None,
         styles: Mapping[str, Mapping[str, Any]] | None = None,
         xlim: tuple[float | None, float | None] | None = None,
@@ -986,9 +986,9 @@ class _SeriesPlot:
         
         Args:
             x: Time or independent variable array (shared by all series)
-            series: Either a dict {name: values}, list of (name, values) or
+            y: Either a dict {name: values}, list of (name, values) or
                    (name, values, style_dict) tuples, a numpy ndarray, or list of ndarrays
-            names: Optional sequence of names for ndarray series columns
+            names: Optional sequence of names for ndarray y columns
             styles: Optional dict mapping series names to style dicts
             xlim: X-axis limits as (min, max)
             ylim: Y-axis limits as (min, max)
@@ -1018,7 +1018,7 @@ class _SeriesPlot:
         x_vals = _resolve_time(x)
         plot_ax = _get_ax(ax)
         base_styles = styles or {}
-        for name, values, inline_style in _coerce_series(series, names=names):
+        for name, values, inline_style in _coerce_series(y, names=names):
             y_vals = _resolve_value(values)
             combined_style: dict[str, Any] = {}
             if name in base_styles:

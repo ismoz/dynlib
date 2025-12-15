@@ -27,7 +27,7 @@ values = np.arange(-5.0, -1.0, 1.0)
 res=sweep.traj(sim, param="a", record_vars=["x"], values=values, T=5)
 
 # Plot all trajectories at once (stacked access)
-series.multi(x=res.t, series=res["x"], legend=False)
+series.multi(x=res.t, y=res["x"], legend=False)
 export.show()
 
 # Access individual runs for custom processing

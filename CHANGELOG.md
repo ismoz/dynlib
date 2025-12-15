@@ -2,6 +2,16 @@
 
 ---
 
+## [2.31.2] – 2025-12-15
+### Added
+- Vectorfield plot demo `vectorfield_highdim_demo.py` for demonstrating vector fields of 2D slices of higher
+  dimensional systems.
+
+### Changed
+- Renamed `series.multi()` `series` argument to `y` for API consistency.
+
+---
+
 ## [2.31.1] – 2025-12-15
 ### Added
 - Interactive vector field plots respond to clicks by simulating trajectories from that point using the compiled 
