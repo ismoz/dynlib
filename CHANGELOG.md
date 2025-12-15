@@ -2,6 +2,17 @@
 
 ---
 
+## [2.31.0] – 2025-12-15
+### Added
+- Added vector field plotting functions for ODE models into `plot/vectorfield.py`. It creates quiver plots and 
+  can calculate nullclines numerically. 
+- Added demo example for vector field plotting.
+
+### Tests
+- Added unit tests for vector field evaluation and plotting in `tests/unit/test_vectorfield_eval.py`.
+
+---
+
 ## [2.30.11] – 2025-12-10
 ### Added
 - Added `TrajectoryAnalyzer`/`MultiVarAnalyzer` utilities under `dynlib.analysis` and exported them for easy 

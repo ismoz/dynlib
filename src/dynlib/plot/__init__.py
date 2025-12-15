@@ -8,6 +8,7 @@ from . import _fig as fig
 from ._primitives import series, phase, analysis, utils
 from ._facet import wrap as facet_wrap
 from . import _export as export
+from .vectorfield import vectorfield, eval_vectorfield, VectorFieldHandle
 
 if TYPE_CHECKING:
     # Expose the concrete type of the instances to type-checkers/editors
@@ -32,6 +33,9 @@ __all__ = [
     "utils",
     "facet",
     "export",
+    "vectorfield",
+    "eval_vectorfield",
+    "VectorFieldHandle",
 ]
 
 
