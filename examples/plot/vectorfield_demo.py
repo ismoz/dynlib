@@ -49,6 +49,8 @@ def main() -> None:
         ylim=(-2, 2),
         grid=(25, 25),
         normalize=True,
+        speed_color=True,
+        speed_cmap="plasma",
         nullclines=True,
         nullcline_style={"colors": ["#333333"], "linewidths": 1.2, "alpha": 0.6},
     )

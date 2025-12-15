@@ -2,6 +2,13 @@
 
 ---
 
+## [2.31.4] – 2025-12-15
+### Added
+- Vector field plots can color arrows and streamlines by speed magnitude via `speed_color=True`, with optional
+  `speed_cmap`/`speed_norm` forwarded to Matplotlib.
+
+---
+
 ## [2.31.3] – 2025-12-15
 ### Added
 - Vector field plotting now supports a streamlines mode via `mode="stream"` with kwargs forwarded to 

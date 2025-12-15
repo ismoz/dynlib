@@ -200,12 +200,13 @@ def eval_vectorfield(
     ylim: tuple[float, float] = (-1, 1),
     grid: tuple[int, int] = (20, 20),
     normalize: bool = False,
+    return_speed: bool = False,
     stepper: str | None = None,
     jit: bool = False,
     disk_cache: bool = False,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Evaluate a 2D vector field on a grid and return X, Y, U, V arrays.
+    Evaluate a 2D vector field on a grid and return X, Y, U, V arrays (and optionally speed).
     """
     model, base_state, base_params, t0, lag_state_info = _resolve_model(model_or_sim, stepper=stepper, jit=jit, disk_cache=disk_cache)
     spec = getattr(model, "spec", None)
@@ -255,14 +256,22 @@ def eval_vectorfield(
         lag_state_info=lag_state_info_tuple,
     )
 
-    if normalize:
+    speed = None
+    norm = None
+    if normalize or return_speed:
         norm = np.hypot(U, V)
+    if normalize:
         mask = norm > 0
         U = U.copy()
         V = V.copy()
         U[mask] /= norm[mask]
         V[mask] /= norm[mask]
 
+    if return_speed:
+        speed = norm
+
+    if return_speed:
+        return X, Y, U, V, speed
     return X, Y, U, V
 
 
@@ -285,12 +294,14 @@ class VectorFieldHandle:
     Y: np.ndarray
     U: np.ndarray
     V: np.ndarray
+    speed: np.ndarray | None
     mode: str
     quiver: Any | None
     stream: Any | None
     quiver_kwargs: dict[str, Any]
     stream_kwargs: dict[str, Any]
     normalize: bool
+    speed_color: bool
     nullclines_enabled: bool
     nullcline_artists: list[Any]
     nullcline_style: dict
@@ -348,15 +359,21 @@ class VectorFieldHandle:
             lag_state_info=self.lag_state_info,
         )
 
+        speed_new = np.hypot(U_new, V_new) if self.speed_color else None
         new_normalize = self.normalize if normalize is None else bool(normalize)
         if new_normalize:
-            norm = np.hypot(U_new, V_new)
+            norm = speed_new if speed_new is not None else np.hypot(U_new, V_new)
             mask = norm > 0
             U_new[mask] /= norm[mask]
             V_new[mask] /= norm[mask]
 
         self.U[:, :] = U_new
         self.V[:, :] = V_new
+        if self.speed_color and speed_new is not None:
+            if self.speed is None or self.speed.shape != speed_new.shape:
+                self.speed = np.array(speed_new, copy=True)
+            else:
+                self.speed[:, :] = speed_new
         self.normalize = new_normalize
 
         if redraw:
@@ -371,9 +388,24 @@ class VectorFieldHandle:
     def _redraw_field(self) -> None:
         if self.mode == "quiver":
             if self.quiver is None:
-                self.quiver = self.ax.quiver(self.X, self.Y, self.U, self.V, pivot="mid", angles="xy", **self.quiver_kwargs)
+                if self.speed_color:
+                    self.quiver = self.ax.quiver(
+                        self.X,
+                        self.Y,
+                        self.U,
+                        self.V,
+                        self.speed,
+                        pivot="mid",
+                        angles="xy",
+                        **self.quiver_kwargs,
+                    )
+                else:
+                    self.quiver = self.ax.quiver(self.X, self.Y, self.U, self.V, pivot="mid", angles="xy", **self.quiver_kwargs)
             else:
-                self.quiver.set_UVC(self.U, self.V)
+                if self.speed_color:
+                    self.quiver.set_UVC(self.U, self.V, self.speed)
+                else:
+                    self.quiver.set_UVC(self.U, self.V)
             return
 
         if self.mode == "stream":
@@ -383,6 +415,8 @@ class VectorFieldHandle:
         raise ValueError(f"Unknown vectorfield mode '{self.mode}'.")
 
     def _redraw_streamplot(self) -> None:
+        if self.speed_color:
+            self.stream_kwargs["color"] = self.speed
         if self.stream is not None:
             for artist in (getattr(self.stream, "lines", None), getattr(self.stream, "arrows", None)):
                 try:
@@ -559,6 +593,9 @@ def vectorfield(
     grid=(20, 20),
     normalize: bool = False,
     color: str | None = None,
+    speed_color: bool = False,
+    speed_cmap: Any | None = None,
+    speed_norm: Any | None = None,
     mode: str = "quiver",
     stream_kwargs: Mapping[str, Any] | None = None,
     nullclines: bool = False,
@@ -591,6 +628,9 @@ def vectorfield(
         dt: Optional fixed dt override for interactive runs.
         mode: "quiver" (default) for arrows, "stream" for matplotlib.streamplot().
         stream_kwargs: Extra keyword arguments forwarded to matplotlib.streamplot() when mode="stream".
+        speed_color: If True, color arrows/streamlines by speed magnitude instead of a single color.
+        speed_cmap: Optional colormap used when speed_color=True (forwarded to quiver/streamplot).
+        speed_norm: Optional matplotlib norm used when speed_color=True.
     """
     mode_norm = str(mode or "quiver").lower()
     if mode_norm in ("quiver", "arrow", "arrows"):
@@ -600,19 +640,36 @@ def vectorfield(
     else:
         raise ValueError("mode must be 'quiver' or 'stream'.")
 
-    X, Y, U, V = eval_vectorfield(
-        model_or_sim,
-        vars=vars,
-        fixed=fixed,
-        params=params,
-        xlim=xlim,
-        ylim=ylim,
-        grid=grid,
-        normalize=normalize,
-        stepper=stepper,
-        jit=jit,
-        disk_cache=disk_cache,
-    )
+    if speed_color:
+        X, Y, U, V, speed = eval_vectorfield(
+            model_or_sim,
+            vars=vars,
+            fixed=fixed,
+            params=params,
+            xlim=xlim,
+            ylim=ylim,
+            grid=grid,
+            normalize=normalize,
+            return_speed=True,
+            stepper=stepper,
+            jit=jit,
+            disk_cache=disk_cache,
+        )
+    else:
+        X, Y, U, V = eval_vectorfield(
+            model_or_sim,
+            vars=vars,
+            fixed=fixed,
+            params=params,
+            xlim=xlim,
+            ylim=ylim,
+            grid=grid,
+            normalize=normalize,
+            stepper=stepper,
+            jit=jit,
+            disk_cache=disk_cache,
+        )
+        speed = None
 
     grid = _coerce_grid(grid)
     resolved_nc_grid = _coerce_grid(nullcline_grid) if nullcline_grid is not None else _default_nullcline_grid(grid)
@@ -642,16 +699,36 @@ def vectorfield(
     )
 
     plot_ax = _get_ax(ax)
-    color_kw = {} if color is None else {"color": color}
+    color_kw: dict[str, Any] = {}
+    if speed_color and color is not None:
+        warnings.warn("color is ignored when speed_color=True.", stacklevel=2)
+    elif color is not None:
+        color_kw = {"color": color}
+
     quiver_kwargs = dict(color_kw)
+    if speed_color:
+        if speed_cmap is not None:
+            quiver_kwargs.setdefault("cmap", speed_cmap)
+        if speed_norm is not None:
+            quiver_kwargs.setdefault("norm", speed_norm)
+
     stream_kwargs_resolved = dict(stream_kwargs or {})
-    if color is not None and "color" not in stream_kwargs_resolved:
+    if speed_color:
+        stream_kwargs_resolved["color"] = speed
+        if speed_cmap is not None:
+            stream_kwargs_resolved.setdefault("cmap", speed_cmap)
+        if speed_norm is not None:
+            stream_kwargs_resolved.setdefault("norm", speed_norm)
+    elif color is not None and "color" not in stream_kwargs_resolved:
         stream_kwargs_resolved["color"] = color
 
     quiver = None
     stream = None
     if mode_norm == "quiver":
-        quiver = plot_ax.quiver(X, Y, U, V, pivot="mid", angles="xy", **quiver_kwargs)
+        if speed_color:
+            quiver = plot_ax.quiver(X, Y, U, V, speed, pivot="mid", angles="xy", **quiver_kwargs)
+        else:
+            quiver = plot_ax.quiver(X, Y, U, V, pivot="mid", angles="xy", **quiver_kwargs)
     else:
         stream = plot_ax.streamplot(X, Y, U, V, **stream_kwargs_resolved)
 
@@ -719,12 +796,14 @@ def vectorfield(
         Y=Y,
         U=U,
         V=V,
+        speed=speed if speed_color else None,
         mode=mode_norm,
         quiver=quiver,
         stream=stream,
         quiver_kwargs=quiver_kwargs,
         stream_kwargs=stream_kwargs_resolved,
         normalize=normalize,
+        speed_color=bool(speed_color),
         nullclines_enabled=bool(nullclines),
         nullcline_artists=list(nullcline_artists),
         nullcline_style=dict(nullcline_style or {}),

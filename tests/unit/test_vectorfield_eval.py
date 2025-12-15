@@ -62,6 +62,39 @@ def test_eval_vectorfield_values_change_with_params_and_fixed():
     np.testing.assert_allclose(V, expected_V)
 
 
+def test_eval_vectorfield_can_return_speed():
+    model = _linear_model()
+    X, Y, U, V, speed = eval_vectorfield(model, xlim=(-1, 1), ylim=(0, 1), grid=(3, 2), return_speed=True)
+    xs = np.linspace(-1, 1, 3, dtype=model.dtype)
+    ys = np.linspace(0, 1, 2, dtype=model.dtype)
+    expected_U = np.vstack([xs + 1.0 for _ in ys])
+    expected_V = np.vstack([np.full_like(xs, 2.0 * y) for y in ys])
+    np.testing.assert_allclose(speed, np.hypot(expected_U, expected_V))
+    np.testing.assert_allclose(U, expected_U)
+    np.testing.assert_allclose(V, expected_V)
+
+
+def test_return_speed_uses_pre_normalization_magnitude():
+    model = _linear_model()
+    X, Y, U, V, speed = eval_vectorfield(
+        model,
+        xlim=(-1, 1),
+        ylim=(-1, 1),
+        grid=(2, 2),
+        normalize=True,
+        return_speed=True,
+    )
+    xs = np.linspace(-1, 1, 2, dtype=model.dtype)
+    ys = np.linspace(-1, 1, 2, dtype=model.dtype)
+    expected_U = np.vstack([xs + 1.0 for _ in ys])
+    expected_V = np.vstack([np.full_like(xs, 2.0 * y) for y in ys])
+    expected_speed = np.hypot(expected_U, expected_V)
+    norms = np.hypot(U, V)
+    mask = expected_speed > 0
+    np.testing.assert_allclose(speed, expected_speed)
+    np.testing.assert_allclose(norms[mask], np.ones_like(norms[mask]))
+
+
 def test_vectorfield_handle_update_recomputes():
     model = _linear_model()
     ax = plt.axes()
@@ -106,6 +139,49 @@ def test_vectorfield_stream_mode_draws_and_updates():
     assert handle.stream is not first_stream
     assert handle.stream.lines is not first_lines
     plt.close(ax.figure)
+
+
+def test_speed_coloring_updates_quiver_and_stream():
+    model = _linear_model()
+    ax_q = plt.axes()
+    quiver_handle = vectorfield(
+        model,
+        ax=ax_q,
+        grid=(3, 2),
+        normalize=True,
+        speed_color=True,
+        speed_cmap="plasma",
+        interactive=False,
+    )
+    assert quiver_handle.speed_color
+    assert quiver_handle.speed is not None
+    quiver = quiver_handle.quiver
+    np.testing.assert_allclose(quiver.get_array(), quiver_handle.speed.ravel())
+
+    first_speed = quiver_handle.speed.copy()
+    quiver_handle.update(params={"a": 2.5})
+    assert quiver_handle.quiver is quiver
+    np.testing.assert_allclose(quiver_handle.quiver.get_array(), quiver_handle.speed.ravel())
+    assert not np.allclose(quiver_handle.speed, first_speed)
+    plt.close(ax_q.figure)
+
+    ax_s = plt.axes()
+    stream_handle = vectorfield(
+        model,
+        ax=ax_s,
+        grid=(4, 3),
+        speed_color=True,
+        mode="stream",
+        stream_kwargs={"density": 1.0},
+        interactive=False,
+    )
+    assert stream_handle.stream is not None
+    assert stream_handle.stream_kwargs.get("color") is stream_handle.speed
+    first_stream = stream_handle.stream
+    stream_handle.update(params={"a": 1.5})
+    assert stream_handle.stream is not first_stream
+    assert stream_handle.stream_kwargs.get("color") is stream_handle.speed
+    plt.close(ax_s.figure)
 
 
 def _flatten_contour_segments(cs):
