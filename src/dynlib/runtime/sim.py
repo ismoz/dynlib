@@ -730,6 +730,94 @@ class Sim:
             self._pending_run_cfg_hash = None
         self._publish_results(recorded_result)
 
+    def fastpath(
+        self,
+        *,
+        plan=None,
+        t0: Optional[float] = None,
+        T: Optional[float] = None,
+        N: Optional[int] = None,
+        dt: Optional[float] = None,
+        record_vars: list[str] | None = None,
+        transient: Optional[float] = None,
+        record_interval: Optional[int] = None,
+        max_steps: Optional[int] = None,
+        ic: Optional[np.ndarray] = None,
+        params: Optional[np.ndarray] = None,
+    ):
+        """
+        Run the model via the fastpath backend when supported.
+
+        This does not mutate the Sim session state or history. Falls back to a
+        clear error when the capability gate rejects the request.
+        """
+        from dynlib.runtime.fastpath import FixedStridePlan
+        from dynlib.runtime.fastpath.runner import fastpath_for_sim
+        from dynlib.runtime.fastpath.capability import assess_capability
+
+        sim_defaults = self.model.spec.sim
+        record_interval_use = (
+            int(record_interval)
+            if record_interval is not None
+            else int(self._run_defaults.record_interval)
+            if self._run_defaults.record_interval is not None
+            else 1
+        )
+        max_steps_use = (
+            int(max_steps)
+            if max_steps is not None
+            else int(self._run_defaults.max_steps)
+            if self._run_defaults.max_steps is not None
+            else int(sim_defaults.max_steps)
+        )
+        dt_use = (
+            float(dt)
+            if dt is not None
+            else float(self._nominal_dt if self._nominal_dt is not None else sim_defaults.dt)
+        )
+        transient_use = float(transient) if transient is not None else 0.0
+
+        plan_use = plan if plan is not None else FixedStridePlan(stride=record_interval_use)
+
+        # Prepare ic/params without mutating session state
+        ic_vec = np.array(ic, copy=True) if ic is not None else self.state_vector(source="session", copy=True)
+        params_vec = (
+            np.array(params, copy=True) if params is not None else self.param_vector(source="session", copy=True)
+        )
+
+        stepper_spec = self._stepper_spec
+        adaptive = getattr(stepper_spec.meta, "time_control", "fixed") == "adaptive"
+        support = assess_capability(
+            self,
+            plan=plan_use,
+            record_vars=record_vars,
+            dt=dt_use,
+            transient=transient_use,
+            adaptive=adaptive,
+        )
+        if not support.ok:
+            reason = support.reason or "unsupported configuration"
+            raise RuntimeError(f"Fastpath unavailable: {reason}")
+
+        res = fastpath_for_sim(
+            self,
+            plan=plan_use,
+            t0=t0,
+            T=T,
+            N=N,
+            dt=dt_use,
+            record_vars=record_vars,
+            transient=transient_use,
+            record_interval=record_interval_use,
+            max_steps=max_steps_use,
+            ic=ic_vec,
+            params=params_vec,
+            support=support,
+        )
+        if res is None:
+            raise RuntimeError("Fastpath unavailable")
+        return res
+
     def raw_results(self) -> Results:
         """Return the stitched raw results façade (raises if run() not yet called)."""
         if self._raw_results is None:

@@ -1,8 +1,10 @@
 from dataclasses import dataclass, field
-from typing import Literal, Sequence
+from typing import Iterable, Literal, Sequence
+import warnings
 import numpy as np
 from dynlib.runtime.sim import Sim
 from dynlib.runtime.results_api import ResultsView
+from dynlib.runtime.fastpath import FixedStridePlan, fastpath_for_sim, fastpath_batch_for_sim
 
 
 class SweepRun:
@@ -216,6 +218,58 @@ def _param_index(sim: Sim, name: str) -> int:
         ) from None
 
 
+def _run_batch_fast(
+    sim: Sim,
+    *,
+    param_idx: int,
+    values: np.ndarray,
+    base_states: np.ndarray,
+    base_params: np.ndarray,
+    record_vars: list[str],
+    t0: float | None,
+    T: float | None,
+    N: float | None,
+    dt: float | None,
+    transient: float | None,
+    record_interval: int | None,
+    max_steps: int | None,
+    parallel_mode: str = "auto",
+    max_workers: int | None = None,
+) -> list[ResultsView] | None:
+    stride = int(record_interval) if record_interval is not None else 1
+    plan = FixedStridePlan(stride=stride)
+
+    ic_stack = np.repeat(base_states[np.newaxis, :], values.size, axis=0)
+    params_stack = np.repeat(base_params[np.newaxis, :], values.size, axis=0)
+    params_stack[:, param_idx] = values
+
+    result = fastpath_batch_for_sim(
+        sim,
+        plan=plan,
+        t0=t0,
+        T=T,
+        N=int(N) if N is not None else None,
+        dt=dt,
+        record_vars=record_vars,
+        transient=transient,
+        record_interval=record_interval,
+        max_steps=max_steps,
+        ic=ic_stack,
+        params=params_stack,
+        parallel_mode=parallel_mode,  # type: ignore[arg-type]
+        max_workers=max_workers,
+    )
+    
+    if result is None:
+        warnings.warn(
+            "Parameter sweep falling back to Sim.run() (fast-path unavailable). "
+            "For better performance, use jit=True with fixed-step steppers and explicit dt.",
+            stacklevel=3
+        )
+    
+    return result
+
+
 def _run_one(
     sim: Sim,
     *,
@@ -256,6 +310,31 @@ def _run_one(
     if max_steps is not None:
         kwargs["max_steps"] = int(max_steps)
 
+    # Try fastpath runner when eligible; fall back to full Sim.run otherwise.
+    stride = int(record_interval) if record_interval is not None else 1
+    plan = FixedStridePlan(stride=stride)
+    fast_res = fastpath_for_sim(
+        sim,
+        plan=plan,
+        t0=t0,
+        T=T,
+        N=N,
+        dt=dt,
+        record_vars=record_vars,
+        transient=transient,
+        record_interval=record_interval,
+        max_steps=max_steps,
+        ic=ic,
+        params=params,
+    )
+    if fast_res is not None:
+        return fast_res
+
+    warnings.warn(
+        "Sweep iteration falling back to Sim.run() (fast-path unavailable). "
+        "For better performance, use jit=True with fixed-step steppers and explicit dt.",
+        stacklevel=2
+    )
     sim.run(ic=ic, params=params, **kwargs)
     return sim.results()
 
@@ -319,24 +398,47 @@ def scalar(
 
     out = np.zeros(M, dtype=float)
 
-    for i, v in enumerate(vals):
-        res = _run_one(
-            sim,
-            param_idx=p_idx,
-            param_value=float(v),
-            base_states=base_states,
-            base_params=base_params,
-            record_vars=[var],
-            t0=t0,
-            T=T,
-            N=N,
-            dt=dt,
-            transient=transient,
-            record_interval=record_interval,
-            max_steps=max_steps,
+    batch_views = _run_batch_fast(
+        sim,
+        param_idx=p_idx,
+        values=vals,
+        base_states=base_states,
+        base_params=base_params,
+        record_vars=[var],
+        t0=t0,
+        T=T,
+        N=N,
+        dt=dt,
+        transient=transient,
+        record_interval=record_interval,
+        max_steps=max_steps,
+    )
+
+    if batch_views is not None:
+        runs_iter: Iterable[ResultsView] = batch_views
+    else:
+        runs_iter = (
+            _run_one(
+                sim,
+                param_idx=p_idx,
+                param_value=float(v),
+                base_states=base_states,
+                base_params=base_params,
+                record_vars=[var],
+                t0=t0,
+                T=T,
+                N=N,
+                dt=dt,
+                transient=transient,
+                record_interval=record_interval,
+                max_steps=max_steps,
+            )
+            for v in vals
         )
-        seg = res.segment[-1]    # isolate this run's samples
-        series = seg[var]        # 1D (n,)
+
+    for i, res in enumerate(runs_iter):
+        seg = res.segment[-1]  # isolate this run's samples
+        series = seg[var]  # 1D (n,)
         if series.size == 0:
             raise RuntimeError("No samples recorded; adjust T/N/record_interval.")
         if mode == "final":
@@ -438,28 +540,51 @@ def traj(
 
     record_vars_list = list(record_vars)
 
-    for v in vals:
-        res = _run_one(
-            sim,
-            param_idx=p_idx,
-            param_value=float(v),
-            base_states=base_states,
-            base_params=base_params,
-            record_vars=record_vars_list,
-            t0=t0,
-            T=T,
-            N=N,
-            dt=dt,
-            transient=transient,
-            record_interval=record_interval,
-            max_steps=max_steps,
+    batch_views = _run_batch_fast(
+        sim,
+        param_idx=p_idx,
+        values=vals,
+        base_states=base_states,
+        base_params=base_params,
+        record_vars=record_vars_list,
+        t0=t0,
+        T=T,
+        N=N,
+        dt=dt,
+        transient=transient,
+        record_interval=record_interval,
+        max_steps=max_steps,
+    )
+
+    run_iter: Iterable[ResultsView]
+    if batch_views is not None:
+        run_iter = batch_views
+    else:
+        run_iter = (
+            _run_one(
+                sim,
+                param_idx=p_idx,
+                param_value=float(v),
+                base_states=base_states,
+                base_params=base_params,
+                record_vars=record_vars_list,
+                t0=t0,
+                T=T,
+                N=N,
+                dt=dt,
+                transient=transient,
+                record_interval=record_interval,
+                max_steps=max_steps,
+            )
+            for v in vals
         )
 
-        seg = res.segment[-1]      # isolate this run's samples
-        t_full = seg.t             # 1D (n,)
+    for res in run_iter:
+        seg = res.segment[-1]  # isolate this run's samples
+        t_full = seg.t  # 1D (n,)
         if t_full.size == 0:
             raise RuntimeError("No samples recorded; adjust T/N/record_interval.")
-        series = seg[list(record_vars_tuple)]   # 2D (n, len(record_vars))
+        series = seg[list(record_vars_tuple)]  # 2D (n, len(record_vars))
 
         t_list.append(t_full)
         data_list.append(series)

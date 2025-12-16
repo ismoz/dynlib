@@ -2,10 +2,49 @@
 
 ---
 
+## [2.32.0] – 2025-12-16
+### Added
+- Introduced a fast-path analysis runner (`dynlib.runtime.fastpath`) optimized for parameter sweeps and 
+  batch simulations:
+  - **Recording plans**: `FixedStridePlan` and `TailWindowPlan` pre-allocate buffers to avoid dynamic growth
+  - **Capability gating**: Automatic validation ensures fast-path constraints are met before execution
+  - **Stateless execution**: Runs don't mutate `Sim` session state, enabling safe parallel execution
+  - **Three-level API hierarchy**:
+    - Low-level: `run_single_fastpath()`, `run_batch_fastpath()` for raw model arrays
+    - High-level standalone: `fastpath_for_sim()`, `fastpath_batch_for_sim()` for `Sim` objects
+    - User-facing method: `Sim.fastpath()` for ergonomic one-off executions
+  - **Parallel execution modes**:
+    - `parallel_mode="auto"`: Automatically selects optimal strategy (default)
+    - `parallel_mode="threads"`: ThreadPoolExecutor with GIL-free execution for JIT builds (~Nx speedup)
+    - `parallel_mode="none"`: Sequential execution for debugging
+    - `max_workers` parameter controls thread pool size
+  - **Transient warm-up**: Optional `transient` parameter discards initial samples before recording
+  - **Selective recording**: Compatible with `record_vars` for memory-efficient variable selection
+- Added `RecordingPlan` base class with `FixedStridePlan(stride)` for regular sampling and 
+  `TailWindowPlan(stride, window)` for keeping only last N samples.
+- Added `FastpathSupport` and `assess_capability()` for runtime validation of fast-path eligibility.
+
+### Changed
+- Parameter sweeps (`analysis.sweep.scalar()`, `analysis.sweep.traj()`) now attempt fast-path backend when 
+  eligible before falling back to `Sim.run()`, providing automatic optimization without user intervention.
+- Fast-path batch execution achieves near-linear speedup with JIT compilation (e.g., 8x on 8 cores) by 
+  leveraging Numba's GIL-free execution in threaded environments.
+- Sweep operations now emit a one-time warning when falling back to `Sim.run()`, helping users identify 
+  performance optimization opportunities without flooding output. Pure Python + threads: ~1.1-1.3x speedup 
+  (limited by GIL).
+
+### Known Issues
+- Fast-path requires fixed-step steppers (Euler, RK4, Map, etc.); adaptive steppers fall back to `Sim.run()`.
+- Event logging is unsupported (apply-only events work fine).
+- Lagged systems (`lag_x(k)`) currently disabled pending ring-buffer management improvements.
+- Recording interval must be positive and known in advance.
+
+---
+
 ## [2.31.5] – 2025-12-15
 ### Added
-- Vector field plots can now create animations across parameter sweeps via `vectorfield_animate()` with configurable 
-  frame rates, repeat settings, and custom update functions for parameters and fixed states.
+- Vector field plots can now create animations across parameter sweeps via `vectorfield_animate()` with 
+  configurable frame rates, repeat settings, and custom update functions for parameters and fixed states.
 - Vector field plots support multi-panel parameter sweeps via `vectorfield_sweep()` with shared or independent 
   colormaps, custom titles, and flexible grid layouts.
 - Added examples `vectorfield_sweep_demo.py`, `vectorfield_animate_demo.py`, and `vectorfield_animation.py` to 
