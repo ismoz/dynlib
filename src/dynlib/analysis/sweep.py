@@ -1,3 +1,4 @@
+# src/dynlib/analysis/sweep.py
 from dataclasses import dataclass, field
 from typing import Iterable, Literal, Sequence
 import warnings
@@ -5,6 +6,7 @@ import numpy as np
 from dynlib.runtime.sim import Sim
 from dynlib.runtime.results_api import ResultsView
 from dynlib.runtime.fastpath import FixedStridePlan, fastpath_for_sim, fastpath_batch_for_sim
+from dynlib.runtime.fastpath.capability import FastpathSupport, assess_capability
 
 
 class SweepRun:
@@ -218,6 +220,37 @@ def _param_index(sim: Sim, name: str) -> int:
         ) from None
 
 
+def _assess_fastpath_support(
+    sim: Sim,
+    *,
+    plan: FixedStridePlan,
+    record_vars: Sequence[str] | None,
+    dt: float | None,
+    transient: float | None,
+) -> FastpathSupport:
+    sim_defaults = sim.model.spec.sim
+    dt_use = float(dt if dt is not None else sim._nominal_dt if sim._nominal_dt else sim_defaults.dt)
+    transient_use = float(transient) if transient is not None else 0.0
+    adaptive = getattr(sim._stepper_spec.meta, "time_control", "fixed") == "adaptive"
+    return assess_capability(
+        sim,
+        plan=plan,
+        record_vars=record_vars,
+        dt=dt_use,
+        transient=transient_use,
+        adaptive=adaptive,
+    )
+
+
+def _warn_fastpath_fallback(support: FastpathSupport, *, stacklevel: int) -> None:
+    reason = f" ({support.reason})" if support.reason else ""
+    warnings.warn(
+        "Parameter sweep falling back to Sim.run() (fast-path unavailable"
+        f"{reason}). For better performance, use jit=True with fixed-step steppers and explicit dt.",
+        stacklevel=stacklevel,
+    )
+
+
 def _run_batch_fast(
     sim: Sim,
     *,
@@ -235,9 +268,16 @@ def _run_batch_fast(
     max_steps: int | None,
     parallel_mode: str = "auto",
     max_workers: int | None = None,
-) -> list[ResultsView] | None:
+) -> tuple[list[ResultsView] | None, FastpathSupport]:
     stride = int(record_interval) if record_interval is not None else 1
     plan = FixedStridePlan(stride=stride)
+    support = _assess_fastpath_support(
+        sim,
+        plan=plan,
+        record_vars=record_vars,
+        dt=dt,
+        transient=transient,
+    )
 
     ic_stack = np.repeat(base_states[np.newaxis, :], values.size, axis=0)
     params_stack = np.repeat(base_params[np.newaxis, :], values.size, axis=0)
@@ -260,14 +300,7 @@ def _run_batch_fast(
         max_workers=max_workers,
     )
     
-    if result is None:
-        warnings.warn(
-            "Parameter sweep falling back to Sim.run() (fast-path unavailable). "
-            "For better performance, use jit=True with fixed-step steppers and explicit dt.",
-            stacklevel=3
-        )
-    
-    return result
+    return result, support
 
 
 def _run_one(
@@ -285,6 +318,8 @@ def _run_one(
     transient: float | None,
     record_interval: int | None,
     max_steps: int | None,
+    fastpath_support: FastpathSupport | None = None,
+    warn_fallback: bool = True,
 ) -> ResultsView:
     # Build per-run ic/params
     ic = base_states.copy()
@@ -326,15 +361,17 @@ def _run_one(
         max_steps=max_steps,
         ic=ic,
         params=params,
+        support=fastpath_support,
     )
     if fast_res is not None:
         return fast_res
 
-    warnings.warn(
-        "Sweep iteration falling back to Sim.run() (fast-path unavailable). "
-        "For better performance, use jit=True with fixed-step steppers and explicit dt.",
-        stacklevel=2
-    )
+    if warn_fallback:
+        warnings.warn(
+            "Sweep iteration falling back to Sim.run() (fast-path unavailable). "
+            "For better performance, use jit=True with fixed-step steppers and explicit dt.",
+            stacklevel=2
+        )
     sim.run(ic=ic, params=params, **kwargs)
     return sim.results()
 
@@ -371,7 +408,7 @@ def scalar(
             - "max": Maximum value reached
             - "min": Minimum value reached
         t0: Initial time (default from sim config)
-        T: Integration time (continuous systems)
+        T: Absolute end time for continuous systems
         N: Number of iterations (discrete maps)
         dt: Time step (overrides stepper default)
         transient: Time/iterations to discard before recording (default from sim config)
@@ -398,7 +435,7 @@ def scalar(
 
     out = np.zeros(M, dtype=float)
 
-    batch_views = _run_batch_fast(
+    batch_views, batch_support = _run_batch_fast(
         sim,
         param_idx=p_idx,
         values=vals,
@@ -417,6 +454,7 @@ def scalar(
     if batch_views is not None:
         runs_iter: Iterable[ResultsView] = batch_views
     else:
+        _warn_fastpath_fallback(batch_support, stacklevel=2)
         runs_iter = (
             _run_one(
                 sim,
@@ -432,6 +470,8 @@ def scalar(
                 transient=transient,
                 record_interval=record_interval,
                 max_steps=max_steps,
+                fastpath_support=batch_support,
+                warn_fallback=False,
             )
             for v in vals
         )
@@ -499,7 +539,7 @@ def traj(
         record_vars: Sequence of state variable names to record (e.g., ["x", "y", "z"])
                      Can record multiple variables to capture full phase space
         t0: Initial time (default from sim config)
-        T: Integration time (continuous systems)
+        T: Absolute end time for continuous systems
         N: Number of iterations (discrete maps)
         dt: Time step (overrides stepper default)
         transient: Time/iterations to discard before recording (default from sim config)
@@ -540,7 +580,7 @@ def traj(
 
     record_vars_list = list(record_vars)
 
-    batch_views = _run_batch_fast(
+    batch_views, batch_support = _run_batch_fast(
         sim,
         param_idx=p_idx,
         values=vals,
@@ -560,6 +600,7 @@ def traj(
     if batch_views is not None:
         run_iter = batch_views
     else:
+        _warn_fastpath_fallback(batch_support, stacklevel=2)
         run_iter = (
             _run_one(
                 sim,
@@ -575,6 +616,8 @@ def traj(
                 transient=transient,
                 record_interval=record_interval,
                 max_steps=max_steps,
+                fastpath_support=batch_support,
+                warn_fallback=False,
             )
             for v in vals
         )

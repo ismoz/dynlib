@@ -1,3 +1,4 @@
+# src/dynlib/runtime/fastpath/runner.py
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
@@ -40,7 +41,9 @@ def _resolve_recording_selection(
         return state_indices, aux_indices, list(spec.states), []
 
     state_names = list(spec.states)
+    state_to_idx = {name: idx for idx, name in enumerate(state_names)}
     aux_names_all = list(spec.aux.keys()) if spec.aux else []
+    aux_to_idx = {name: idx for idx, name in enumerate(aux_names_all)}
 
     state_idx: list[int] = []
     aux_idx: list[int] = []
@@ -50,17 +53,20 @@ def _resolve_recording_selection(
     for name in record_vars:
         if name.startswith("aux."):
             key = name[4:]
-            if key not in aux_names_all:
+            aux_pos = aux_to_idx.get(key)
+            if aux_pos is None:
                 raise ValueError(f"Unknown aux variable: {key}")
-            aux_idx.append(aux_names_all.index(key))
+            aux_idx.append(aux_pos)
             sel_aux.append(key)
             continue
-        if name in state_names:
-            state_idx.append(state_names.index(name))
+        state_pos = state_to_idx.get(name)
+        if state_pos is not None:
+            state_idx.append(state_pos)
             sel_states.append(name)
             continue
-        if name in aux_names_all:
-            aux_idx.append(aux_names_all.index(name))
+        aux_pos = aux_to_idx.get(name)
+        if aux_pos is not None:
+            aux_idx.append(aux_pos)
             sel_aux.append(name)
             continue
         raise ValueError(
@@ -118,7 +124,8 @@ def _call_runner(
 
     rec_every = int(ctx.record_interval)
     total_steps = ctx.target_steps if ctx.target_steps is not None else math.ceil(max(0.0, ctx.t_end - ctx.t0) / ctx.dt)
-    cap_rec = 1 if rec_every <= 0 else max(1, int(plan.capacity(total_steps=total_steps)))
+    # Pad by one to avoid edge cases where endpoint snapping records an extra sample.
+    cap_rec = 1 if rec_every <= 0 else max(1, int(plan.capacity(total_steps=total_steps) + 1))
     max_log_width = _max_event_log_width(model.spec.events)
 
     # Buffers
@@ -273,7 +280,7 @@ def _normalize_batch_inputs(
         raise ValueError(f"Batch size mismatch: ic has {ic_arr.shape[0]}, params has {params_arr.shape[0]}")
 
     batch = ic_arr.shape[0]
-    return ic_arr, params_arr, batch
+    return np.ascontiguousarray(ic_arr), np.ascontiguousarray(params_arr), batch
 
 
 def run_single_fastpath(
@@ -299,6 +306,7 @@ def run_single_fastpath(
         stepper_config = np.array([], dtype=np.float64)
     dtype = model.dtype
     n_aux = len(model.spec.aux)
+    is_discrete = model.spec.kind == "map"
     runtime_ws = make_runtime_workspace(
         lag_state_info=model.lag_state_info,
         dtype=dtype,
@@ -308,10 +316,18 @@ def run_single_fastpath(
 
     # Optional transient warm-up (no recording)
     if transient > 0.0:
+        if is_discrete:
+            trans_steps = int(transient)
+            warm_t_end = float(t0 + trans_steps * dt)
+            warm_target_steps = trans_steps
+        else:
+            trans_steps = None
+            warm_t_end = float(t0 + transient) if t_end is not None else float(t0 + transient)
+            warm_target_steps = None
         warm_ctx = _RunContext(
             t0=float(t0),
-            t_end=float(t0 + transient) if t_end is not None else float(t0 + transient),
-            target_steps=int(transient) if target_steps is not None else None,
+            t_end=warm_t_end,
+            target_steps=warm_target_steps if target_steps is not None else None,
             dt=float(dt),
             max_steps=max_steps,
             transient=0.0,
@@ -333,7 +349,7 @@ def run_single_fastpath(
         )
         t0 = warm_ctx.t_end
         if target_steps is not None:
-            target_steps = max(0, target_steps - int(transient))
+            target_steps = max(0, target_steps - (trans_steps or 0))
         # Warm-up updates runtime_ws/stepper_ws in place; reuse them.
         ic = warm_result.final_state
         params = warm_result.final_params
@@ -496,19 +512,25 @@ def fastpath_for_sim(
     if not support.ok:
         return None
 
+    if record_interval is not None and record_interval != plan.record_interval():
+        raise ValueError(
+            f"record_interval ({record_interval}) must match plan stride ({plan.record_interval()}) for fast path"
+        )
+
     state_rec_indices, aux_rec_indices, state_names, aux_names = _resolve_recording_selection(
         spec=sim.model.spec,
         record_vars=record_vars,
     )
 
     stepper_cfg = sim._default_stepper_cfg
+    t0_use = float(t0) if t0 is not None else float(sim_defaults.t0)
 
     is_discrete = sim.model.spec.kind == "map"
     if is_discrete:
         if N is None:
             if T is None:
                 raise ValueError("Provide N or T for discrete systems on fast path.")
-            target_steps = int(round((float(T) - (t0 or sim_defaults.t0)) / dt_use))
+            target_steps = int(round((float(T) - t0_use) / dt_use))
         else:
             target_steps = int(N)
         horizon = None
@@ -519,7 +541,7 @@ def fastpath_for_sim(
     result = run_single_fastpath(
         model=sim.model,
         plan=plan,
-        t0=float(t0 if t0 is not None else sim_defaults.t0),
+        t0=t0_use,
         t_end=horizon,
         target_steps=target_steps,
         dt=dt_use,
@@ -541,7 +563,7 @@ def fastpath_for_sim(
         rec_len=int(result.n),
         evt_start=0,
         evt_len=int(result.m),
-        t_start=float(result.T[0]) if result.n > 0 else float(t0 or 0.0),
+        t_start=float(result.T[0]) if result.n > 0 else t0_use,
         t_end=float(result.t_final),
         step_start=0,
         step_end=int(result.step_count_final),
@@ -594,19 +616,25 @@ def fastpath_batch_for_sim(
     if not support.ok:
         return None
 
+    if record_interval is not None and record_interval != plan.record_interval():
+        raise ValueError(
+            f"record_interval ({record_interval}) must match plan stride ({plan.record_interval()}) for fast path"
+        )
+
     state_rec_indices, aux_rec_indices, state_names, aux_names = _resolve_recording_selection(
         spec=sim.model.spec,
         record_vars=record_vars,
     )
 
     stepper_cfg = sim._default_stepper_cfg
+    t0_use = float(t0) if t0 is not None else float(sim_defaults.t0)
 
     is_discrete = sim.model.spec.kind == "map"
     if is_discrete:
         if N is None:
             if T is None:
                 raise ValueError("Provide N or T for discrete systems on fast path.")
-            target_steps = int(round((float(T) - (t0 or sim_defaults.t0)) / dt_use))
+            target_steps = int(round((float(T) - t0_use) / dt_use))
         else:
             target_steps = int(N)
         horizon = None
@@ -617,7 +645,7 @@ def fastpath_batch_for_sim(
     batch_results = run_batch_fastpath(
         model=sim.model,
         plan=plan,
-        t0=float(t0 if t0 is not None else sim_defaults.t0),
+        t0=t0_use,
         t_end=horizon,
         target_steps=target_steps,
         dt=dt_use,
@@ -643,7 +671,7 @@ def fastpath_batch_for_sim(
             rec_len=int(result.n),
             evt_start=0,
             evt_len=int(result.m),
-            t_start=float(result.T[0]) if result.n > 0 else float(t0 or 0.0),
+            t_start=float(result.T[0]) if result.n > 0 else t0_use,
             t_end=float(result.t_final),
             step_start=0,
             step_end=int(result.step_count_final),

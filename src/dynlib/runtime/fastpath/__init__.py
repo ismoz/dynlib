@@ -1,3 +1,4 @@
+# src/dynlib/runtime/fastpath/__init__.py
 """
 Lightweight execution backends for analysis workloads.
 

@@ -1,8 +1,8 @@
+# src/dynlib/runtime/fastpath/capability.py
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional, Sequence
-import numpy as np
 
 from dynlib.runtime.fastpath.plans import RecordingPlan
 from dynlib.runtime.sim import Sim
@@ -66,10 +66,6 @@ def assess_capability(
     n_aux = len(spec.aux)
     if record_vars is None and n_state == 0:
         return FastpathSupport(False, "no states to record")
-
-    # Acceptable: empty record_vars means caller wants nothing recorded.
-    if record_vars is not None and len(record_vars) == 0:
-        return FastpathSupport(False, "record_vars cannot be empty for fast path")
 
     # Disallow lagged systems for now to avoid ring-buffer management drift.
     if getattr(spec, "uses_lag", False):

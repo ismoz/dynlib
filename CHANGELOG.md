@@ -2,6 +2,19 @@
 
 ---
 
+## [2.32.1] – 2025-12-16
+### Changed
+- Applied minor bug fixes to the new fast-path runner feature.
+- Centralized fast-path capability gating in `src/dynlib/analysis/sweep.py` by adding `_assess_fastpath_support`, 
+  reusing the same support for both batch and per-run fallbacks so we don’t re-evaluate or fabricate support 
+  objects.
+- `_run_batch_fast` now returns `(result, support)` without emitting its own warnings; batch callers warn once via
+  `_warn_fastpath_fallback`, including the capability reason when available.
+- Fallback runs reuse the same `FastpathSupport` and suppress per-run warnings, ensuring only a single, informative 
+  warning per sweep when fast-path is unavailable.
+
+---
+
 ## [2.32.0] – 2025-12-16
 ### Added
 - Introduced a fast-path analysis runner (`dynlib.runtime.fastpath`) optimized for parameter sweeps and 
