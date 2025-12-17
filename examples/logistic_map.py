@@ -1,5 +1,5 @@
 from dynlib import setup
-from dynlib.plot import series, phase, export, theme, fig, analysis
+from dynlib.plot import series, export, theme, fig, return_map, cobweb
 
 model = '''
 inline:
@@ -49,7 +49,7 @@ series.plot(
 )
 
 # Return map: x[n] vs x[n+1]
-phase.return_map(
+return_map(
     x=res["x"],
     step=1,
     style="scatter",
@@ -64,7 +64,7 @@ phase.return_map(
     ytick_fs=11,
 )
 
-analysis.cobweb(
+cobweb(
     f=sim.model,
     x0=0.1,
     xlim=(0, 1),

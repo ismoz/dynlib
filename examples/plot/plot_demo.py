@@ -5,7 +5,7 @@ Only the ones not used in other examples are shown here.
 """
 
 import numpy as np
-from dynlib.plot import fig, series, phase, analysis, export, theme
+from dynlib.plot import fig, series, phase, utils, export, theme
 
 
 def main() -> None:
@@ -59,14 +59,14 @@ def main() -> None:
         title="series.step: step plot",
     )
 
-    # Row 1, Col 0: analysis.hist
-    analysis.hist(
+    # Row 1, Col 0: utils.hist
+    utils.hist(
         y=y_hist,
         bins=30,
         density=False,
         ax=ax[1, 0],
         color="C2",
-        title="analysis.hist: histogram",
+        title="utils.hist: histogram",
         xlabel="$y$",
         ylabel="count",
     )

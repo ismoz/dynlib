@@ -15,6 +15,10 @@ from dynlib.analysis.trajectory import (
     TrajectoryAnalyzer,
     MultiVarAnalyzer,
 )
+from dynlib.analysis.bifurcation import (
+    BifurcationResult,
+    BifurcationExtractor,
+)
 
 __all__ = [
     # Parameter sweeps
@@ -22,6 +26,9 @@ __all__ = [
     "ParamSweepTrajResult",
     "scalar",
     "traj",
+    # Bifurcation diagrams
+    "BifurcationResult",
+    "BifurcationExtractor",
     # Trajectory analysis
     "TrajectoryAnalyzer",
     "MultiVarAnalyzer",

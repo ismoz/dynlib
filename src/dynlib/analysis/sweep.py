@@ -209,6 +209,20 @@ class ParamSweepTrajResult:
         """
         return SweepRunsView(self)
 
+    def bifurcation(self, var: str):
+        """Create a bifurcation extractor for a recorded variable.
+
+        This separates the parameter sweep runtime (``sweep.traj``) from
+        post-processing (tail/peaks/final extraction).
+
+        Example:
+            >>> res = sweep.traj(sim, param="r", values=r_values, record_vars=["x"], N=500)
+            >>> bif = res.bifurcation("x").tail(30)
+        """
+        from dynlib.analysis.bifurcation import BifurcationExtractor
+
+        return BifurcationExtractor(self, var)
+
 
 def _param_index(sim: Sim, name: str) -> int:
     params = list(sim.model.spec.params)
@@ -525,6 +539,8 @@ def traj(
     transient: float | None = None,
     record_interval: int | None = None,
     max_steps: int | None = None,
+    parallel_mode: Literal["auto", "threads", "none"] = "auto",
+    max_workers: int | None = None,
 ) -> ParamSweepTrajResult:
     """Sweep a parameter and collect full time-series trajectories for each run.
     
@@ -545,6 +561,8 @@ def traj(
         transient: Time/iterations to discard before recording (default from sim config)
         record_interval: Record every Nth step (memory optimization)
         max_steps: Safety limit on total steps
+        parallel_mode: Parallel execution mode for fast-path batch runs ("auto", "threads", "none")
+        max_workers: Maximum worker threads when parallel_mode uses threads (None = default)
     
     Returns:
         ParamSweepTrajResult with:
@@ -594,6 +612,8 @@ def traj(
         transient=transient,
         record_interval=record_interval,
         max_steps=max_steps,
+        parallel_mode=parallel_mode,
+        max_workers=max_workers,
     )
 
     run_iter: Iterable[ResultsView]
@@ -641,6 +661,8 @@ def traj(
         dt=dt,
         transient=transient,
         record_interval=record_interval,
+        parallel_mode=parallel_mode,
+        max_workers=max_workers,
     )
     return ParamSweepTrajResult(
         param_name=param,

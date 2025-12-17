@@ -182,3 +182,102 @@ def test_batch_fastpath_sim_param_variation(simple_sim):
     assert slow.shape == fast.shape
     # With larger decay, the second series should be smaller by the end
     assert fast[-1] < slow[-1]
+
+
+def test_fastpath_transient_with_N():
+    """Test that N specifies recorded steps AFTER transient, not total steps.
+    
+    Regression test for bug where transient was subtracted from N, causing
+    fewer points to be recorded than expected.
+    """
+    toml_str = """
+[model]
+type = "map"
+stepper = "map"
+
+[sim]
+t0 = 0.0
+dt = 1.0
+record = true
+
+[states]
+x = 0.5
+
+[params]
+r = 3.5
+
+[equations.rhs]
+x = "r * x * (1.0 - x)"
+"""
+    data = tomllib.loads(toml_str)
+    spec = build_spec(parse_model_v2(data))
+    full_model = build(spec, stepper=spec.sim.stepper, jit=True)
+    model = Model(
+        spec=full_model.spec,
+        stepper_name=full_model.stepper_name,
+        workspace_sig=full_model.workspace_sig,
+        rhs=full_model.rhs,
+        events_pre=full_model.events_pre,
+        events_post=full_model.events_post,
+        update_aux=full_model.update_aux,
+        stepper=full_model.stepper,
+        runner=full_model.runner,
+        spec_hash=full_model.spec_hash,
+        dtype=full_model.dtype,
+        rhs_source=full_model.rhs_source,
+        events_pre_source=full_model.events_pre_source,
+        events_post_source=full_model.events_post_source,
+        update_aux_source=full_model.update_aux_source,
+        stepper_source=full_model.stepper_source,
+        lag_state_info=full_model.lag_state_info,
+        uses_lag=full_model.uses_lag,
+        equations_use_lag=full_model.equations_use_lag,
+        make_stepper_workspace=full_model.make_stepper_workspace,
+    )
+    sim = Sim(model)
+    
+    plan = FixedStridePlan(stride=1)
+    ic = sim.state_vector(source="session", copy=True)
+    params = sim.param_vector(source="session", copy=True)
+    
+    # Test: N=100 with transient=50 should record 100+ points, not 50
+    res = fastpath_for_sim(
+        sim,
+        plan=plan,
+        t0=0.0,
+        T=None,
+        N=100,
+        dt=1.0,
+        record_vars=["x"],
+        transient=50.0,  # 50 warmup iterations
+        record_interval=1,
+        max_steps=1000,
+        ic=ic,
+        params=params,
+    )
+    
+    assert res is not None
+    recorded = res["x"]
+    # Should have ~100 recorded points (101 including t=0), not 50
+    assert len(recorded) >= 100, f"Expected ≥100 points after transient, got {len(recorded)}"
+    
+    # Test: N=500 with transient=1000 should record 500+ points
+    res2 = fastpath_for_sim(
+        sim,
+        plan=plan,
+        t0=0.0,
+        T=None,
+        N=500,
+        dt=1.0,
+        record_vars=["x"],
+        transient=1000.0,  # Large transient
+        record_interval=1,
+        max_steps=2000,
+        ic=ic,
+        params=params,
+    )
+    
+    assert res2 is not None
+    recorded2 = res2["x"]
+    # Should have ~500 recorded points, not 1
+    assert len(recorded2) >= 500, f"Expected ≥500 points after transient, got {len(recorded2)}"

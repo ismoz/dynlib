@@ -6,7 +6,7 @@ This script creates a sample figure for each preset and saves it as an image.
 """
 
 import numpy as np
-from dynlib.plot import fig, series, theme, export, analysis
+from dynlib.plot import fig, series, theme, export, utils
 
 
 def create_sample_figure():
@@ -37,7 +37,7 @@ def create_sample_figure():
 
     # Histogram
     data = np.random.normal(0, 1, 1000)
-    analysis.hist(y=data, ax=ax[1, 1], bins=30, xlabel="Value", ylabel="Frequency", title="Histogram")
+    utils.hist(y=data, ax=ax[1, 1], bins=30, xlabel="Value", ylabel="Frequency", title="Histogram")
 
     return ax[0, 0].figure
 

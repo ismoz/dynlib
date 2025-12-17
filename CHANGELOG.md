@@ -2,6 +2,45 @@
 
 ---
 
+## [2.33.0] – 2025-12-18
+### Added
+- Introduced comprehensive bifurcation analysis tools for exploring parameter-dependent dynamics:
+  - `BifurcationExtractor` class provides post-processing of trajectory sweeps into bifurcation scatter data
+  - Multiple extraction modes: `.all()` (all points), `.tail(n)` (attractor cloud), `.final()` (convergent 
+    states), `.peaks()` (local maxima)
+  - `BifurcationResult` dataclass holds bifurcation data with metadata for plotting
+  - `bifurcation_diagram()` plotting function with scatter-optimized defaults
+  - Convenient API: `sweep_result.bifurcation("x").tail(50)` extracts bifurcation data from parameter sweeps
+  - New module `dynlib.analysis.bifurcation` for bifurcation post-processing utilities
+  - New module `dynlib.plot.bifurcation` for bifurcation diagram plotting
+- Added three comprehensive bifurcation examples:
+  - `bifurcation_logistic_map.py`: Basic bifurcation diagram demonstration
+  - `bifurcation_logistic_map_annotated.py`: Advanced analysis with annotations and zoomed cascade views
+  - `bifurcation_logistic_map_comparison.py`: Comparison of different extraction modes (final/tail/peaks)
+- `sweep.traj()` now accepts `parallel_mode` and `max_workers` parameters for controlling fast-path batch 
+  execution parallelism.
+
+### Changed
+- Plot module has been reorganized for better API clarity and consistency:
+  - Moved `cobweb()` from `dynlib.plot.analysis` to `dynlib.plot.cobweb()`
+  - Moved `hist()` from `dynlib.plot.analysis` to `dynlib.plot.utils`
+  - Added top-level convenience function `return_map()` as alias for `phase.return_map()`
+  - Removed `dynlib.plot.analysis` module (replaced by domain-specific modules)
+  - Updated examples to use new plot API imports
+
+### Fixed
+- Fixed critical bug where `N` parameter was incorrectly reduced by transient steps, causing fewer points to 
+  be recorded than expected. Now `N` correctly specifies the number of recorded steps *after* transient warm
+  up completes.
+- Vector field `scale` parameter now properly applies only when `normalize=True` is set, fixing unintended 
+  scaling behavior.
+
+### Tests
+- Added comprehensive test coverage for bifurcation diagram functionality
+- Added regression test `test_fastpath_transient_with_N()` to prevent transient/N interaction bugs
+
+---
+
 ## [2.32.1] – 2025-12-16
 ### Changed
 - Applied minor bug fixes to the new fast-path runner feature.

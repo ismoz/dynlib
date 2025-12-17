@@ -1522,8 +1522,8 @@ class _PhasePlot:
         return plot_ax
 
 
-class _AnalysisPlot:
-    """Specialized analysis and diagnostic plots for dynamical systems."""
+class _UtilsPlot:
+    """General-purpose plotting utilities."""
     def hist(
         self,
         y,
@@ -1553,37 +1553,9 @@ class _AnalysisPlot:
     ) -> plt.Axes:
         """
         Histogram of data values showing distribution.
-        
+
         Useful for analyzing stationary distributions, invariant measures,
         and statistical properties of dynamical systems.
-        
-        Args:
-            y: Data array to histogram
-            bins: Number of histogram bins
-            density: If True, normalize to form probability density
-            label: Legend label for the histogram
-            color: Bar color
-            alpha: Transparency (0-1)
-            xlim: X-axis limits as (min, max)
-            ylim: Y-axis limits as (min, max)
-            xlabel: X-axis label
-            ylabel: Y-axis label (default: 'Density' if density=True, else 'Count')
-            title: Plot title
-            legend: Whether to show legend if label is provided
-            xlabel_rot: X-axis label rotation angle
-            ylabel_rot: Y-axis label rotation angle
-            ax: Existing axes to plot on
-            xpad: X-axis label padding
-            ypad: Y-axis label padding
-            titlepad: Title padding
-            xlabel_fs: X-axis label font size
-            ylabel_fs: Y-axis label font size
-            title_fs: Title font size
-            xtick_fs: X-axis tick label font size
-            ytick_fs: Y-axis tick label font size
-            
-        Returns:
-            Matplotlib axes object
         """
         data = _resolve_value(y)
         plot_ax = _get_ax(ax)
@@ -1595,194 +1567,27 @@ class _AnalysisPlot:
         if label is not None:
             hist_kwargs["label"] = label
         plot_ax.hist(data, **hist_kwargs)
-        
+
         if label and legend:
             plot_ax.legend()
-        
+
         _apply_limits(plot_ax, xlim=xlim, ylim=ylim)
         _apply_labels(
-            plot_ax, xlabel=xlabel, ylabel=ylabel, title=title,
-            xpad=xpad, ypad=ypad, titlepad=titlepad,
-            xlabel_fs=xlabel_fs, ylabel_fs=ylabel_fs, title_fs=title_fs,
+            plot_ax,
+            xlabel=xlabel,
+            ylabel=ylabel,
+            title=title,
+            xpad=xpad,
+            ypad=ypad,
+            titlepad=titlepad,
+            xlabel_fs=xlabel_fs,
+            ylabel_fs=ylabel_fs,
+            title_fs=title_fs,
         )
         _apply_tick_rotation(plot_ax, xlabel_rot=xlabel_rot, ylabel_rot=ylabel_rot, theme=_theme)
         _apply_tick_fontsizes(plot_ax, xtick_fs=xtick_fs, ytick_fs=ytick_fs)
         return plot_ax
 
-    def cobweb(
-        self,
-        *,
-        f,
-        x0: float,
-        steps: int = 50,
-        t0: float = 0.0,
-        dt: float = 1.0,
-        state: str | int | None = None,
-        fixed: dict[str, float] | None = None,
-        r: float | None = None,
-        xlim: tuple[float | None, float | None] | None = None,
-        ylim: tuple[float | None, float | None] | None = None,
-        ax=None,
-        # styling
-        color: str | None = None,
-        lw: float | None = None,
-        ls: str | None = None,
-        alpha: float | None = None,
-        # specific cobweb parts
-        identity_color: str | None = None,
-        stair_color: str | None = None,
-        stair_lw: float | None = 0.5,
-        stair_ls: str | None = None,
-        # labels
-        xlabel: str | None = "x",
-        ylabel: str | None = "f(x)",
-        title: str | None = None,
-        legend: bool = True,
-        xlabel_rot: float | None = None,
-        ylabel_rot: float | None = None,
-        xpad: float | None = None,
-        ypad: float | None = None,
-        titlepad: float | None = None,
-        xlabel_fs: float | None = None,
-        ylabel_fs: float | None = None,
-        title_fs: float | None = None,
-        xtick_fs: float | None = None,
-        ytick_fs: float | None = None,
-    ) -> plt.Axes:
-        """
-        Cobweb plot for analyzing 1D discrete map dynamics.
-        
-        Visualizes iteration trajectories by drawing vertical and horizontal
-        lines between the function curve and identity line. Useful for finding
-        fixed points, periodic orbits, and analyzing stability.
-        
-        Args:
-            f: Map function (callable or Model) to iterate
-            x0: Initial value
-            steps: Number of iterations to plot
-            t0: Initial time (for time-dependent maps)
-            dt: Time step (for time-dependent maps)
-            state: State variable name or index (for multi-dimensional models)
-            fixed: Dict of fixed parameter/state values
-            r: Parameter value (for maps with 'r' parameter)
-            xlim: X-axis limits as (min, max) (auto-computed if None)
-            ylim: Y-axis limits as (min, max) (defaults to xlim if None)
-            ax: Existing axes to plot on
-            color: Color for function curve
-            lw: Line width for function curve
-            ls: Line style for function curve
-            alpha: Transparency for function curve
-            identity_color: Color for identity line (y=x)
-            stair_color: Color for iteration staircase
-            stair_lw: Line width for staircase
-            stair_ls: Line style for staircase
-            xlabel: X-axis label
-            ylabel: Y-axis label
-            title: Plot title
-            legend: Whether to show legend
-            xlabel_rot: X-axis label rotation angle
-            ylabel_rot: Y-axis label rotation angle
-            xpad: X-axis label padding
-            ypad: Y-axis label padding
-            titlepad: Title padding
-            xlabel_fs: X-axis label font size
-            ylabel_fs: Y-axis label font size
-            title_fs: Title font size
-            xtick_fs: X-axis tick label font size
-            ytick_fs: Y-axis tick label font size
-            
-        Returns:
-            Matplotlib axes object
-        """
-        g = _resolve_unary_map_k(f, state=state, fixed=fixed, r=r, t0=t0, dt=dt)
-
-        # orbit
-        x = float(x0)
-        orbit = [x]
-        for k in range(steps):
-            x = g(k, x)
-            orbit.append(x)
-        orbit_arr = np.asarray(orbit, dtype=float)
-
-        # auto limits
-        lo = float(np.min(orbit_arr))
-        hi = float(np.max(orbit_arr))
-        pad = 0.05 * (hi - lo if hi > lo else 1.0)
-        auto_lim = (lo - pad, hi + pad)
-
-        # xlim
-        if xlim is None:
-            xlim_resolved = auto_lim
-        else:
-            xlim_resolved = (
-                xlim[0] if xlim[0] is not None else auto_lim[0],
-                xlim[1] if xlim[1] is not None else auto_lim[1],
-            )
-
-        # ylim
-        if ylim is None:
-            ylim_resolved = xlim_resolved
-        else:
-            ylim_resolved = (
-                ylim[0] if ylim[0] is not None else xlim_resolved[0],
-                ylim[1] if ylim[1] is not None else xlim_resolved[1],
-            )
-
-        # sample f at k=0 (t=t0)
-        xs = np.linspace(xlim_resolved[0], xlim_resolved[1], 400)
-        ys = np.asarray([g(0, x) for x in xs], dtype=float)
-
-        plot_ax = _get_ax(ax)
-        style_args = _style_kwargs(color=color, lw=lw, ls=ls, marker=None, ms=None, alpha=alpha)
-        plot_ax.plot(xs, ys, label="f(x)", **style_args)  # f(x)
-
-        # identity line
-        id_kw: dict[str, Any] = {"linestyle": "--"}
-        if identity_color is not None:
-            id_kw["color"] = identity_color
-        else:
-            id_kw.setdefault("color", "gray")
-        plot_ax.plot(xs, xs, label="y = x", **id_kw)
-
-        # staircase
-        stair_kw: dict[str, Any] = {}
-        if stair_color is not None:
-            stair_kw["color"] = stair_color
-        elif "color" in style_args:
-            stair_kw["color"] = style_args["color"]
-        else:
-            stair_kw.setdefault("color", "black")
-        if stair_lw is not None:
-            stair_kw["linewidth"] = float(stair_lw)
-        elif "linewidth" in style_args:
-            stair_kw["linewidth"] = style_args["linewidth"]
-        else:
-            stair_kw.setdefault("linewidth", 0.5)
-        if stair_ls is not None:
-            stair_kw["linestyle"] = stair_ls
-        elif "linestyle" in style_args:
-            stair_kw["linestyle"] = style_args["linestyle"]
-
-        for start, end in zip(orbit_arr[:-1], orbit_arr[1:]):
-            plot_ax.plot([start, start], [start, end], **stair_kw)
-            plot_ax.plot([start, end], [end, end], **stair_kw)
-
-        _apply_limits(plot_ax, xlim=xlim_resolved, ylim=ylim_resolved)
-        if legend:
-            plot_ax.legend()
-
-        _apply_labels(
-            plot_ax, xlabel=xlabel, ylabel=ylabel, title=title,
-            xpad=xpad, ypad=ypad, titlepad=titlepad,
-            xlabel_fs=xlabel_fs, ylabel_fs=ylabel_fs, title_fs=title_fs,
-        )
-        _apply_tick_rotation(plot_ax, xlabel_rot=xlabel_rot, ylabel_rot=ylabel_rot, theme=_theme)
-        _apply_tick_fontsizes(plot_ax, xtick_fs=xtick_fs, ytick_fs=ytick_fs)
-        return plot_ax
-
-
-class _UtilsPlot:
-    """General-purpose plotting utilities."""
     def image(
         self,
         Z,
@@ -1871,7 +1676,6 @@ class _UtilsPlot:
 # Create module-level instances
 series = _SeriesPlot()
 phase = _PhasePlot()
-analysis = _AnalysisPlot()
 utils = _UtilsPlot()
 
-__all__ = ["series", "phase", "analysis", "utils"]
+__all__ = ["series", "phase", "utils"]

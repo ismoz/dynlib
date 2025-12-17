@@ -347,9 +347,9 @@ def run_single_fastpath(
             runtime_ws=runtime_ws,
             stepper_ws=stepper_ws,
         )
-        t0 = warm_ctx.t_end
-        if target_steps is not None:
-            target_steps = max(0, target_steps - (trans_steps or 0))
+        t0 = warm_result.t_final
+        # Note: target_steps is the number of steps to RECORD after transient.
+        # Do NOT reduce it - the transient warm-up has already been performed.
         # Warm-up updates runtime_ws/stepper_ws in place; reuse them.
         ic = warm_result.final_state
         params = warm_result.final_params

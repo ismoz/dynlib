@@ -795,6 +795,7 @@ def vectorfield(
     T: float | None = None,
     dt: float | None = None,
     trajectory_style: Mapping[str, Any] | None = None,
+    scale: float | None = None,
     stepper: str | None = None,
     jit: bool = False,
     disk_cache: bool = False,
@@ -821,6 +822,8 @@ def vectorfield(
         speed_color: If True, color arrows/streamlines by speed magnitude instead of a single color.
         speed_cmap: Optional colormap used when speed_color=True (forwarded to quiver/streamplot).
         speed_norm: Optional matplotlib norm used when speed_color=True.
+        scale: Optional scale factor for arrow lengths when normalize=True. If None (default),
+               matplotlib's auto-scaling is used. Higher values make arrows shorter.
     """
     mode_norm = str(mode or "quiver").lower()
     if mode_norm in ("quiver", "arrow", "arrows"):
@@ -901,11 +904,11 @@ def vectorfield(
             quiver_kwargs.setdefault("cmap", speed_cmap)
         if speed_norm is not None:
             quiver_kwargs.setdefault("norm", speed_norm)
-    # When normalize=True, ensure quiver respects data-units so the unit vectors are visible
-    # as-is instead of being auto-rescaled relative to the axes width.
-    if normalize:
+    # When normalize=True and scale is provided, ensure quiver respects data-units so the unit
+    # vectors are visible as-is instead of being auto-rescaled relative to the axes width.
+    if normalize and scale is not None:
         quiver_kwargs.setdefault("scale_units", "xy")
-        quiver_kwargs.setdefault("scale", 1.0)
+        quiver_kwargs.setdefault("scale", scale)
 
     stream_kwargs_resolved = dict(stream_kwargs or {})
     if speed_color:
@@ -1372,6 +1375,7 @@ def vectorfield_animate(
     T: float | None = None,
     dt: float | None = None,
     trajectory_style: Mapping[str, Any] | None = None,
+    scale: float | None = None,
     stepper: str | None = None,
     jit: bool = False,
     disk_cache: bool = False,
@@ -1444,6 +1448,7 @@ def vectorfield_animate(
         T=T,
         dt=dt,
         trajectory_style=trajectory_style,
+        scale=scale,
         stepper=stepper,
         jit=jit,
         disk_cache=disk_cache,

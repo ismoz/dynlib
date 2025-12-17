@@ -5,9 +5,11 @@ from typing import TYPE_CHECKING
 
 from . import _theme as theme
 from . import _fig as fig
-from ._primitives import series, phase, analysis, utils
+from ._primitives import series, phase, utils
 from ._facet import wrap as facet_wrap
 from . import _export as export
+from .bifurcation import bifurcation_diagram
+from .dynamics import cobweb
 from .vectorfield import (
     vectorfield,
     eval_vectorfield,
@@ -24,12 +26,10 @@ if TYPE_CHECKING:
     # and won't affect runtime.
     from ._primitives import _SeriesPlot as _SeriesPlot  # type: ignore
     from ._primitives import _PhasePlot as _PhasePlot  # type: ignore
-    from ._primitives import _AnalysisPlot as _AnalysisPlot  # type: ignore
     from ._primitives import _UtilsPlot as _UtilsPlot  # type: ignore
 
     series: _SeriesPlot
     phase: _PhasePlot
-    analysis: _AnalysisPlot
     utils: _UtilsPlot
 
 __all__ = [
@@ -37,10 +37,12 @@ __all__ = [
     "fig",
     "series",
     "phase",
-    "analysis",
     "utils",
     "facet",
     "export",
+    "cobweb",
+    "bifurcation_diagram",
+    "return_map",
     "vectorfield",
     "eval_vectorfield",
     "VectorFieldHandle",
@@ -56,3 +58,7 @@ class _FacetModule:
 
 
 facet = _FacetModule()
+
+
+def return_map(*args, **kwargs):
+    return phase.return_map(*args, **kwargs)
