@@ -11,21 +11,22 @@ from __future__ import annotations
 import numpy as np
 from dynlib import setup
 from dynlib.analysis import sweep
-from dynlib.plot import export, theme, fig
+from dynlib.plot import export, theme, fig, bifurcation_diagram
+
 
 # Setup the builtin logistic map model
 sim = setup("builtin://map/logistic", stepper="map", jit=True, disk_cache=True)
 
-print("Computing full bifurcation diagram (r ∈ [0, 4])...")
+print("Computing full bifurcation diagram (r ∈ [2.5, 4])...")
 
 # Full diagram
-r_full = np.linspace(0.0, 4.0, 2500)
+r_full = np.linspace(2.5, 4.0, 2500)
 sweep_full = sweep.traj(
     sim,
     param="r",
     values=r_full,
     record_vars=["x"],
-    N=600,
+    N=100,
     transient=300,
 )
 result_full = sweep_full.bifurcation("x").tail(80)
@@ -39,10 +40,10 @@ sweep_zoom = sweep.traj(
     param="r",
     values=r_zoom,
     record_vars=["x"],
-    N=800,
+    N=200,
     transient=400,
 )
-result_zoom = sweep_zoom.bifurcation("x").tail(100)
+result_zoom = sweep_zoom.bifurcation("x")
 
 print("Creating visualization...")
 
@@ -51,20 +52,15 @@ theme.use("notebook")
 theme.update(grid=True)
 
 # Create 2-panel plot
-from dynlib.plot import bifurcation_diagram
-import matplotlib.pyplot as plt
-
 ax = fig.grid(rows=2, cols=1, size=(12, 10))
 
 # Panel 1: Full diagram with annotations
 bifurcation_diagram(
     result_full,
-    marker=".",
-    ms=0.25,
-    alpha=0.6,
+    alpha=1.0,
     color="black",
     ax=ax[0, 0],
-    xlim=(0, 4),
+    xlim=(2.5, 4),
     ylim=(0, 1),
     ylabel="x*",
     title="Bifurcation Diagram: Logistic Map (Full Range)",
@@ -87,8 +83,8 @@ ax[0, 0].text(3.57, 0.92, 'r≈3.57\n(chaos)', ha='center', fontsize=8, color='b
 bifurcation_diagram(
     result_zoom,
     marker=".",
-    ms=0.4,
-    alpha=0.6,
+    ms=1.0,
+    alpha=1.0,
     color="darkblue",
     ax=ax[1, 0],
     xlim=(3.4, 3.57),
@@ -107,8 +103,8 @@ ax[1, 0].text(3.5699, 0.32, 'Feigenbaum point\nr∞≈3.5699',
               ha='center', fontsize=9, color='red',
               bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
 
-plt.tight_layout()
 export.show()
+export.savefig(ax, "bifurcation_logistic_map_annotated.png", dpi=300)
 
 print("\nKey bifurcation points:")
 print("  r = 1.0    : Transcritical bifurcation (fixed point emerges)")

@@ -2,6 +2,17 @@
 
 ---
 
+## [2.33.1] – 2025-12-18
+### Changed
+- Fixed some minor plot related bugs. 
+- `export.savefig()` now can infer save format from the file extension of path. Otherwise `fmts` arg should 
+  be used. If `fmts` and a path with file extension are used together, then an error is raised.
+
+### Tests
+- Added unit tests for `savefig()` behavior.
+
+---
+
 ## [2.33.0] – 2025-12-18
 ### Added
 - Introduced comprehensive bifurcation analysis tools for exploring parameter-dependent dynamics:

@@ -73,7 +73,7 @@ def bifurcation_diagram(
     
     Bifurcation-specific defaults (can be overridden by explicit arguments):
     - marker: "," (pixel marker)
-    - marker_size: 0.5
+    - marker_size: 0.5 (does not matter for marker=",")
     - alpha: 0.5
     """
     p_vals, y_vals, xlabel, ylabel, title = _coerce_bifurcation_inputs(

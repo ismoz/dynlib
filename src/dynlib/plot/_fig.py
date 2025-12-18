@@ -9,6 +9,10 @@ from . import _theme
 _BASE_FIG_SIZE = (6.0, 4.0)
 
 class AxesGrid(List[List[plt.Axes]]):
+    def __init__(self, iterable=(), *, figure: plt.Figure | None = None):
+        super().__init__(iterable)
+        self.figure = figure
+
     def __getitem__(self, item):
         if isinstance(item, tuple):
             row, col = item
@@ -61,7 +65,10 @@ def grid(
     if title:
         fig.suptitle(title)
     axes_array = np.asarray(axes, dtype=object).reshape(rows, cols)
-    return AxesGrid([[axes_array[r, c] for c in range(cols)] for r in range(rows)])
+    return AxesGrid(
+        [[axes_array[r, c] for c in range(cols)] for r in range(rows)],
+        figure=fig,
+    )
 
 def wrap(
     *,
@@ -92,7 +99,7 @@ def wrap(
     if title:
         fig.suptitle(title)
 
-    grid_axes: AxesGrid = AxesGrid([])
+    grid_axes: AxesGrid = AxesGrid([], figure=fig)
     for r in range(rows):
         row_axes: list[plt.Axes] = []
         for c in range(cols):
