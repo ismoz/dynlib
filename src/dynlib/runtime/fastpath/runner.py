@@ -7,6 +7,7 @@ from typing import Iterable, Literal, Optional, Sequence
 import math
 import numpy as np
 
+from dynlib.analysis.runtime import AnalysisModule, analysis_noop_hook
 from dynlib.runtime.fastpath.plans import RecordingPlan
 from dynlib.runtime.fastpath.capability import assess_capability, FastpathSupport
 from dynlib.runtime.results import Results
@@ -115,6 +116,7 @@ def _call_runner(
     ic: np.ndarray,
     runtime_ws,
     stepper_ws,
+    analysis: AnalysisModule | None = None,
 ):
     dtype = model.dtype
     n_state = len(model.spec.states)
@@ -156,6 +158,46 @@ def _call_runner(
     step_out = np.zeros((1,), dtype=np.int64)
     t_out = np.zeros((1,), dtype=np.float64)
 
+    if analysis is not None:
+        analysis_kind = int(analysis.analysis_kind)
+        ws_size = int(analysis.workspace_size)
+        out_size = int(analysis.output_size)
+        analysis_ws = np.zeros((ws_size,), dtype=dtype) if ws_size > 0 else np.zeros((0,), dtype=dtype)
+        analysis_out = np.zeros((out_size,), dtype=dtype) if out_size > 0 else np.zeros((0,), dtype=dtype)
+
+        trace_width = analysis.trace.width if analysis.trace else 0
+        if trace_width > 0:
+            trace_cap = int(analysis.trace.capacity(total_steps=total_steps))
+            if trace_cap <= 0:
+                raise RuntimeError("TracePlan must provide positive capacity for fastpath analysis.")
+            analysis_trace = np.zeros((trace_cap, trace_width), dtype=dtype)
+            analysis_trace_cap = int(trace_cap)
+            analysis_trace_stride = int(analysis.trace.record_interval())
+        else:
+            analysis_trace = np.zeros((0, 0), dtype=dtype)
+            analysis_trace_cap = 0
+            analysis_trace_stride = 0
+        analysis_trace_count = np.zeros((1,), dtype=np.int64)
+        hooks = analysis.jit_hooks or analysis.python_hooks
+        noop_hook = analysis_noop_hook()
+        if hooks is not None:
+            analysis_dispatch_pre = hooks.pre_step or noop_hook
+            analysis_dispatch_post = hooks.post_step or noop_hook
+        else:
+            analysis_dispatch_pre = noop_hook
+            analysis_dispatch_post = noop_hook
+    else:
+        analysis_kind = 0
+        analysis_ws = np.zeros((0,), dtype=dtype)
+        analysis_out = np.zeros((0,), dtype=dtype)
+        analysis_trace = np.zeros((0, 0), dtype=dtype)
+        analysis_trace_count = np.zeros((1,), dtype=np.int64)
+        analysis_trace_cap = 0
+        analysis_trace_stride = 0
+        noop_hook = analysis_noop_hook()
+        analysis_dispatch_pre = noop_hook
+        analysis_dispatch_post = noop_hook
+
     status = model.runner(
         float(ctx.t0),
         float(ctx.target_steps if ctx.target_steps is not None else ctx.t_end),
@@ -182,6 +224,15 @@ def _call_runner(
         EVT_INDEX,
         EVT_LOG_DATA,
         evt_log_scratch,
+        analysis_ws,
+        analysis_out,
+        analysis_trace,
+        analysis_trace_count,
+        int(analysis_trace_cap),
+        int(analysis_trace_stride),
+        int(analysis_kind),
+        analysis_dispatch_pre,
+        analysis_dispatch_post,
         np.int64(0),
         np.int64(0),
         int(cap_rec),
@@ -211,6 +262,25 @@ def _call_runner(
         raise RuntimeError("Fastpath runner received unexpected event growth request.")
     if status != DONE:
         raise RuntimeError(f"Fastpath runner exited with status {int(status)}")
+
+    analysis_trace_view = None
+    analysis_trace_filled = None
+    analysis_out_payload = None
+    analysis_stride_payload = None
+    analysis_modules = None
+    if analysis is not None:
+        analysis_modules = tuple(getattr(analysis, "modules", (analysis,)))
+        analysis_out_payload = analysis_out if analysis_out.size > 0 else None
+        analysis_trace_filled = int(analysis_trace_count[0])
+        analysis_stride_payload = int(analysis_trace_stride) if analysis_trace_stride else None
+        if analysis_trace.shape[0] > 0:
+            trace_view = analysis_trace[:analysis_trace_filled, :]
+            if analysis.trace:
+                sl = analysis.finalize_trace(analysis_trace_filled)
+                if sl is not None:
+                    trace_view = trace_view[sl]
+                    analysis_trace_filled = trace_view.shape[0]
+            analysis_trace_view = trace_view
 
     # Optional tail trimming
     trim = plan.finalize_index(filled)
@@ -253,6 +323,11 @@ def _call_runner(
         final_workspace=final_ws,
         state_names=state_names,
         aux_names=aux_names,
+        analysis_out=analysis_out_payload,
+        analysis_trace=analysis_trace_view,
+        analysis_trace_filled=analysis_trace_filled,
+        analysis_trace_stride=analysis_stride_payload,
+        analysis_modules=analysis_modules,
     )
 
 
@@ -300,6 +375,7 @@ def run_single_fastpath(
     params: np.ndarray,
     ic: np.ndarray,
     stepper_config: np.ndarray | None = None,
+    analysis: AnalysisModule | None = None,
 ) -> Results:
     """Core fastpath execution using the compiled runner."""
     if stepper_config is None:
@@ -346,6 +422,7 @@ def run_single_fastpath(
             ic=ic,
             runtime_ws=runtime_ws,
             stepper_ws=stepper_ws,
+            analysis=None,
         )
         t0 = warm_result.t_final
         # Note: target_steps is the number of steps to RECORD after transient.
@@ -377,6 +454,7 @@ def run_single_fastpath(
         ic=ic,
         runtime_ws=runtime_ws,
         stepper_ws=stepper_ws,
+        analysis=analysis,
     )
 
 
@@ -399,6 +477,7 @@ def run_batch_fastpath(
     stepper_config: np.ndarray | None = None,
     parallel_mode: Literal["auto", "threads", "process", "none"] = "auto",
     max_workers: Optional[int] = None,
+    analysis: AnalysisModule | None = None,
 ) -> list[Results]:
     """
     Batch fastpath execution across multiple IC/parameter sets.
@@ -431,6 +510,7 @@ def run_batch_fastpath(
                 params=params_batch[0],
                 ic=ic_batch[0],
                 stepper_config=stepper_config,
+                analysis=analysis,
             )
         ]
 
@@ -456,6 +536,7 @@ def run_batch_fastpath(
             params=params_batch[idx],
             ic=ic_batch[idx],
             stepper_config=stepper_config,
+            analysis=analysis,
         )
 
     if backend == "none" or max_workers == 1:
@@ -487,6 +568,7 @@ def fastpath_for_sim(
     ic: np.ndarray,
     params: np.ndarray,
     support: FastpathSupport | None = None,
+    analysis: AnalysisModule | None = None,
 ) -> ResultsView | None:
     """
     Fastpath convenience entry point for :class:`Sim`.
@@ -508,6 +590,7 @@ def fastpath_for_sim(
         dt=dt_use,
         transient=transient_use,
         adaptive=adaptive,
+        analysis=analysis,
     )
     if not support.ok:
         return None
@@ -554,6 +637,7 @@ def fastpath_for_sim(
         params=params,
         ic=ic,
         stepper_config=stepper_cfg,
+        analysis=analysis,
     )
 
     seg = Segment(
@@ -590,6 +674,7 @@ def fastpath_batch_for_sim(
     support: FastpathSupport | None = None,
     parallel_mode: Literal["auto", "threads", "process", "none"] = "auto",
     max_workers: Optional[int] = None,
+    analysis: AnalysisModule | None = None,
 ) -> list[ResultsView] | None:
     """
     Batch fastpath entry point for :class:`Sim`.
@@ -612,6 +697,7 @@ def fastpath_batch_for_sim(
         dt=dt_use,
         transient=transient_use,
         adaptive=adaptive,
+        analysis=analysis,
     )
     if not support.ok:
         return None
@@ -660,6 +746,7 @@ def fastpath_batch_for_sim(
         stepper_config=stepper_cfg,
         parallel_mode=parallel_mode,
         max_workers=max_workers,
+        analysis=analysis,
     )
 
     views: list[ResultsView] = []

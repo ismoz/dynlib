@@ -24,6 +24,7 @@ class Model:
         update_aux: Compiled aux updater callable
         stepper: Compiled stepper callable
         runner: Compiled runner callable
+        jacobian: Optional Jacobian callable (analytic or compiled finite diff)
         spec_hash: Content hash of the spec
         dtype: NumPy dtype for the model
         rhs_source: Python source code for RHS function (if available)
@@ -31,6 +32,7 @@ class Model:
         events_post_source: Python source code for post-events function (if available)
         update_aux_source: Python source code for update_aux function (if available)
         stepper_source: Python source code for stepper function (if available)
+        jacobian_source: Python source code for Jacobian function (if available)
     """
     spec: ModelSpec
     stepper_name: str
@@ -43,11 +45,13 @@ class Model:
     runner: Callable
     spec_hash: str
     dtype: np.dtype
+    jacobian: Optional[Callable] = None
     rhs_source: Optional[str] = None
     events_pre_source: Optional[str] = None
     events_post_source: Optional[str] = None
     update_aux_source: Optional[str] = None
     stepper_source: Optional[str] = None
+    jacobian_source: Optional[str] = None
     lag_state_info: Optional[Tuple[Tuple[int, int, int, int], ...]] = None
     uses_lag: bool = False
     equations_use_lag: bool = False
@@ -84,6 +88,7 @@ class Model:
             ("events_post", self.events_post_source),
             ("update_aux", self.update_aux_source),
             ("stepper", self.stepper_source),
+            ("jacobian", self.jacobian_source),
         ]
         
         for name, source in components:

@@ -32,6 +32,8 @@ __all__ = [
     "gather_env_pins",
 ]
 
+_RUNNER_ABI_VERSION = 3
+
 
 @dataclass(frozen=True)
 class RunnerCacheRequest:
@@ -235,6 +237,7 @@ class RunnerDiskCache:
             "stepper": self.request.stepper_name,
             "structsig": [int(x) for x in self.request.structsig],
             "dtype": canonical_dtype_name(self.request.dtype),
+            "abi": _RUNNER_ABI_VERSION,
             "env": self.env_pins,
         }
 

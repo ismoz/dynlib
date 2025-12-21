@@ -54,6 +54,12 @@ class Results:
     # metadata for recorded variables
     state_names: list[str] # names of recorded states (ordered)
     aux_names: list[str]   # names of recorded aux (ordered, without "aux." prefix)
+    # optional analysis artifacts
+    analysis_out: np.ndarray | None = None
+    analysis_trace: np.ndarray | None = None
+    analysis_trace_filled: int | None = None
+    analysis_trace_stride: int | None = None
+    analysis_modules: tuple[object, ...] | None = None
 
     # ---------------- views ----------------
 
@@ -109,6 +115,50 @@ class Results:
     def final_stepper_ws(self) -> Mapping[str, object]:
         """Backward-compatible view of the stepper workspace snapshot."""
         return self.final_workspace.get("stepper", {})
+
+    @property
+    def analysis_out_view(self) -> np.ndarray | None:
+        """View of online analysis outputs, if provided."""
+        return self.analysis_out
+
+    @property
+    def analysis_trace_view(self) -> np.ndarray | None:
+        """View of filled analysis trace rows, if provided."""
+        if self.analysis_trace is None or self.analysis_trace_filled is None:
+            return None
+        filled = int(self.analysis_trace_filled)
+        return self.analysis_trace[:filled, :]
+
+    @property
+    def analysis(self) -> Mapping[str, Mapping[str, object]]:
+        """Runtime analysis outputs keyed by name."""
+        modules = self.analysis_modules
+        if not modules:
+            return {}
+        out = self.analysis_out_view
+        trace = self.analysis_trace_view
+        stride = self.analysis_trace_stride
+        result: dict[str, Mapping[str, object]] = {}
+        out_offset = 0
+        trace_offset = 0
+        for mod in modules:
+            out_slice = None
+            if out is not None and mod.output_size > 0:
+                out_slice = out[out_offset : out_offset + mod.output_size]
+            trace_slice = None
+            if trace is not None and mod.trace is not None and trace.size > 0:
+                trace_slice = trace[:, trace_offset : trace_offset + mod.trace.width]
+            result[mod.name] = {
+                "out": out_slice,
+                "trace": trace_slice,
+                "stride": int(stride) if stride is not None and mod.trace is not None else None,
+                "output_names": mod.output_names,
+                "trace_names": mod.trace_names,
+            }
+            out_offset += mod.output_size
+            if mod.trace is not None:
+                trace_offset += mod.trace.width
+        return result
 
     # --------------- helpers (out of hot path) ---------------
 

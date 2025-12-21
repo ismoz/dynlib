@@ -1,8 +1,8 @@
-# src/dynlib/analysis/bifurcation.py
+# src/dynlib/analysis/post/bifurcation.py
 """Bifurcation post-processing utilities.
 
 This module intentionally separates:
-- Runtime: generating trajectories via ``dynlib.analysis.sweep.traj``
+- Runtime: generating trajectories via ``dynlib.analysis.post.sweep.traj``
 - Post-processing: extracting bifurcation scatter points from the trajectories
 """
 
@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
-    from dynlib.analysis.sweep import ParamSweepTrajResult
+    from dynlib.analysis.post.sweep import ParamSweepTrajResult
 
 __all__ = ["BifurcationResult", "BifurcationExtractor"]
 

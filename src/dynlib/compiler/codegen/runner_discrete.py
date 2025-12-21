@@ -123,6 +123,11 @@ def runner_discrete(
     EVT_CODE, EVT_INDEX, EVT_LOG_DATA,
     # event log scratch (for writing log values before copying)
     evt_log_scratch,
+    # analysis buffers/dispatch
+    analysis_ws, analysis_out, analysis_trace,
+    analysis_trace_count, analysis_trace_cap, analysis_trace_stride,
+    analysis_kind,
+    analysis_dispatch_pre, analysis_dispatch_post,
     # cursors & caps
     i_start, step_start, cap_rec, cap_evt,
     # control/outs (len-1)
@@ -146,6 +151,11 @@ def runner_discrete(
     
     Returns status code (int32).
     """
+    has_analysis = analysis_kind != 0
+    pre_hook = analysis_dispatch_pre
+    post_hook = analysis_dispatch_post
+    trace_cap_int = int(analysis_trace_cap) if has_analysis else 0
+    trace_stride_int = int(analysis_trace_stride) if has_analysis else 0
     # Initialize loop state
     t = float(t0)
     dt = float(dt_init)
@@ -230,6 +240,15 @@ def runner_discrete(
             EVT_CODE[m] = event_code_pre
             EVT_INDEX[m] = (i - 1) if i > 0 else -1
             m += 1
+
+        if has_analysis:
+            pre_hook(
+                t, dt, step,
+                y_curr, y_prev, params,
+                runtime_ws,
+                analysis_ws, analysis_out, analysis_trace,
+                analysis_trace_count, trace_cap_int, trace_stride_int,
+            )
         
         # 2. NO dt clipping for discrete systems - dt is constant label spacing
         # Time is a derived label, not a termination criterion
@@ -320,6 +339,15 @@ def runner_discrete(
                     head = 0
                 lag_head[j] = head
                 lag_ring[offset + head] = y_curr[state_idx]
+
+        if has_analysis:
+            post_hook(
+                t, dt, step,
+                y_curr, y_prev, params,
+                runtime_ws,
+                analysis_ws, analysis_out, analysis_trace,
+                analysis_trace_count, trace_cap_int, trace_stride_int,
+            )
         
         # Compute time exactly (no accumulation) - KEY DIFFERENCE from continuous
         t = t_post

@@ -4,8 +4,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
+from typing import TYPE_CHECKING
+
 from dynlib.runtime.fastpath.plans import RecordingPlan
-from dynlib.runtime.sim import Sim
+
+if TYPE_CHECKING:
+    from dynlib.analysis.runtime import AnalysisModule
+    from dynlib.runtime.sim import Sim
 
 __all__ = ["FastpathSupport", "assess_capability"]
 
@@ -25,13 +30,14 @@ def _has_event_logs(spec) -> bool:
 
 
 def assess_capability(
-    sim: Sim,
+    sim: "Sim",
     *,
     plan: RecordingPlan,
     record_vars: Sequence[str] | None,
     dt: Optional[float],
     transient: float,
     adaptive: bool,
+    analysis: "AnalysisModule" | None = None,
 ) -> FastpathSupport:
     """
     Static gate to decide if the fastpath runner can be used.
@@ -42,6 +48,7 @@ def assess_capability(
       - Record interval must be positive and fixed
       - No resume / stitching / snapshots
       - Dtype and stepper config are known
+      - Optional analysis modules must provide JIT hooks and fixed trace plan
     """
     spec = sim.model.spec
     if _has_event_logs(spec):
@@ -70,5 +77,17 @@ def assess_capability(
     # Disallow lagged systems for now to avoid ring-buffer management drift.
     if getattr(spec, "uses_lag", False):
         return FastpathSupport(False, "lagged systems are not fast-path ready yet")
+
+    if analysis is not None:
+        has_jacobian = getattr(sim.model, "jacobian", None) is not None
+        ok, reason = analysis.supports_fastpath(
+            adaptive=adaptive,
+            has_event_logs=_has_event_logs(spec),
+            has_jacobian=has_jacobian,
+        )
+        if not ok:
+            return FastpathSupport(False, reason)
+        if analysis.needs_trace and analysis.trace is None:
+            return FastpathSupport(False, "analysis trace requires a TracePlan")
 
     return FastpathSupport(True, None)

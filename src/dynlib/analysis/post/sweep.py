@@ -1,9 +1,13 @@
-# src/dynlib/analysis/sweep.py
+# src/dynlib/analysis/post/sweep.py
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Iterable, Literal, Sequence
+from typing import Iterable, Literal, Sequence, TYPE_CHECKING
 import warnings
 import numpy as np
-from dynlib.runtime.sim import Sim
+
+if TYPE_CHECKING:
+    from dynlib.runtime.sim import Sim
 from dynlib.runtime.results_api import ResultsView
 from dynlib.runtime.fastpath import FixedStridePlan, fastpath_for_sim, fastpath_batch_for_sim
 from dynlib.runtime.fastpath.capability import FastpathSupport, assess_capability
@@ -219,7 +223,7 @@ class ParamSweepTrajResult:
             >>> res = sweep.traj(sim, param="r", values=r_values, record_vars=["x"], N=500)
             >>> bif = res.bifurcation("x").tail(30)
         """
-        from dynlib.analysis.bifurcation import BifurcationExtractor
+        from dynlib.analysis.post.bifurcation import BifurcationExtractor
 
         return BifurcationExtractor(self, var)
 

@@ -212,6 +212,11 @@ class _ResultAccumulator:
         workspace: WorkspaceSnapshot,
         state_names: list[str],
         aux_names: list[str],
+        analysis_out: np.ndarray | None = None,
+        analysis_trace: np.ndarray | None = None,
+        analysis_trace_filled: int | None = None,
+        analysis_trace_stride: int | None = None,
+        analysis_modules: tuple[object, ...] | None = None,
     ) -> Results:
         return Results(
             T=self.T,
@@ -233,6 +238,11 @@ class _ResultAccumulator:
             final_workspace=workspace,
             state_names=state_names,
             aux_names=aux_names,
+            analysis_out=analysis_out,
+            analysis_trace=analysis_trace,
+            analysis_trace_filled=analysis_trace_filled,
+            analysis_trace_stride=analysis_trace_stride,
+            analysis_modules=analysis_modules,
         )
 
     def assert_monotone_time(self) -> None:
@@ -365,6 +375,7 @@ class Sim:
         record: Optional[bool] = None,
         record_interval: Optional[int] = None,
         record_vars: list[str] | None = None,  # NEW: selective recording
+        analysis=None,
         ic: Optional[np.ndarray] = None,
         params: Optional[np.ndarray] = None,
         cap_rec: Optional[int] = None,
@@ -394,6 +405,7 @@ class Sim:
                 - Aux names with explicit prefix: "aux.energy", "aux.power"
                 - Can mix: ["x", "energy", "z"] or ["x", "aux.energy", "z"]
                 - Variables are auto-detected: states first, then aux
+            analysis: Optional runtime analysis module to run alongside integration
             ic: Initial conditions (default from model spec)
             params: Parameters (default from model spec)
             cap_rec: Initial recording buffer capacity
@@ -645,6 +657,7 @@ class Sim:
                 aux_rec_indices=np.array([], dtype=np.int32),
                 state_names=[],
                 aux_names=[],
+                analysis=analysis,
             )
             self._ensure_runner_done(warm_result, phase="transient warm-up")
             self._session_state = self._state_from_results(
@@ -704,6 +717,7 @@ class Sim:
             aux_rec_indices=aux_rec_indices,
             state_names=state_names,
             aux_names=aux_names,
+            analysis=analysis,
         )
         try:
             self._ensure_runner_done(recorded_result, phase="recorded run")
@@ -744,6 +758,7 @@ class Sim:
         max_steps: Optional[int] = None,
         ic: Optional[np.ndarray] = None,
         params: Optional[np.ndarray] = None,
+        analysis=None,
     ):
         """
         Run the model via the fastpath backend when supported.
@@ -794,6 +809,7 @@ class Sim:
             dt=dt_use,
             transient=transient_use,
             adaptive=adaptive,
+            analysis=analysis,
         )
         if not support.ok:
             reason = support.reason or "unsupported configuration"
@@ -813,6 +829,7 @@ class Sim:
             ic=ic_vec,
             params=params_vec,
             support=support,
+            analysis=analysis,
         )
         if res is None:
             raise RuntimeError("Fastpath unavailable")
@@ -2275,6 +2292,7 @@ class Sim:
         aux_rec_indices: np.ndarray,
         state_names: list[str],
         aux_names: list[str],
+        analysis=None,
     ) -> Results:
         return run_with_wrapper(
             runner=self.model.runner,
@@ -2308,6 +2326,7 @@ class Sim:
             lag_state_info=getattr(self.model, "lag_state_info", None),
             make_stepper_workspace=getattr(self.model, "make_stepper_workspace", None),
             wrms_cfg=wrms_cfg,
+            analysis=analysis,
             adaptive=adaptive,
         )
 
@@ -2450,6 +2469,11 @@ class Sim:
             workspace=_copy_workspace_dict(state.workspace),
             state_names=last_result.state_names,
             aux_names=last_result.aux_names,
+            analysis_out=last_result.analysis_out,
+            analysis_trace=last_result.analysis_trace,
+            analysis_trace_filled=last_result.analysis_trace_filled,
+            analysis_trace_stride=last_result.analysis_trace_stride,
+            analysis_modules=last_result.analysis_modules,
         )
         self._results_view = None
 

@@ -39,16 +39,12 @@ class _RunnerScript:
     def __call__(self, *args):
         self.calls += 1
         # Unpack outs (last group before function symbols)
-        # After adding 5 new args (AUX + 4 metadata), offsets shifted by 5
-        # Last 9 args are: stepper, rhs, events_pre, events_post, update_aux, 
-        #                  state_rec_indices, aux_rec_indices, n_rec_states, n_rec_aux
-        # So outs are 9 positions before end of non-function args
-        user_break_flag = args[-16]
-        status_out      = args[-15]
-        hint_out        = args[-14]
-        i_out           = args[-13]
-        step_out        = args[-12]
-        t_out           = args[-11]
+        user_break_flag = args[-15]
+        status_out      = args[-14]
+        hint_out        = args[-13]
+        i_out           = args[-12]
+        step_out        = args[-11]
+        t_out           = args[-10]
 
         if self.calls == 1:
             i_out[0] = 1
@@ -103,12 +99,12 @@ def test_wrapper_reentry_calls_and_cursors():
 
 class _FailingRunner:
     def __call__(self, *args):
-        user_break_flag = args[-16]
-        status_out = args[-15]
-        hint_out = args[-14]
-        i_out = args[-13]
-        step_out = args[-12]
-        t_out = args[-11]
+        user_break_flag = args[-15]
+        status_out = args[-14]
+        hint_out = args[-13]
+        i_out = args[-12]
+        step_out = args[-11]
+        t_out = args[-10]
 
         i_out[0] = 0
         step_out[0] = 0

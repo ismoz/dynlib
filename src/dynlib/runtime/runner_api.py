@@ -75,6 +75,17 @@ class RunnerABI:
     EVT_LOG_DATA: str = "dtype[:, :]"  # shape (cap_evt, max_log_width)
     evt_log_scratch: str = "dtype[:]"   # scratch buffer for log values
 
+    # Analysis buffers/dispatch
+    analysis_ws: str = "dtype[:]"
+    analysis_out: str = "dtype[:]"
+    analysis_trace: str = "dtype[:, :]"
+    analysis_trace_count: str = "int64[1]"
+    analysis_trace_cap: str = "int64"
+    analysis_trace_stride: str = "int64"
+    analysis_kind: str = "int32"
+    analysis_dispatch_pre: str = "callable"
+    analysis_dispatch_post: str = "callable"
+
     # Cursors & caps
     i_start: str = "int64"
     step_start: str = "int64"
@@ -119,6 +130,10 @@ runner(
   # event log
   EVT_CODE: int32[:], EVT_INDEX: int32[:], EVT_LOG_DATA: dtype[:, :],
   evt_log_scratch: dtype[:],
+  # analysis buffers/dispatch
+  analysis_ws: dtype[:], analysis_out: dtype[:], analysis_trace: dtype[:, :],
+  analysis_trace_count: int64[1], analysis_trace_cap: int64, analysis_trace_stride: int64,
+  analysis_kind: int32, analysis_dispatch_pre, analysis_dispatch_post,
   # cursors & caps
   i_start: int64, step_start: int64, cap_rec: int64, cap_evt: int64,
   # control/outs (len-1)
@@ -146,6 +161,9 @@ Rules:
 - runtime_ws: NamedTuple owned by the runner/DSL (e.g., lag buffers).
 - stepper_ws: NamedTuple owned by the stepper implementation.
 - t_prop is model dtype; committed t written to T as float64.
+- Analysis: analysis_kind==0 disables hooks. Dispatch runs pre_step after pre-events
+  (y_prev/y_curr ready) and post_step after commit + aux update. analysis_trace_count
+  tracks filled trace rows; hooks may set user_break_flag to stop the run.
 - Growth/resume: on GROW_REC/GROW_EVT wrapper reallocates & re-enters; runner resumes seamlessly.
 
 """

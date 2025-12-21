@@ -1,0 +1,209 @@
+"""
+Lyapunov exponent calculation for the logistic map.
+
+Demonstrates the runtime analysis system for computing maximum Lyapunov exponents (MLE)
+in discrete dynamical systems using the high-level Sim.run() API.
+
+The Lyapunov exponent λ characterizes divergence of nearby trajectories:
+    - λ > 0: Chaotic behavior 
+    - λ = 0: Periodic orbits
+    - λ < 0: Stable fixed points
+
+For the logistic map at r=4: λ = ln(2) ≈ 0.6931
+"""
+
+from __future__ import annotations
+import numpy as np
+from dynlib import setup
+from dynlib.analysis.runtime import lyapunov_mle
+from dynlib.runtime.fastpath.plans import FixedTracePlan
+from dynlib.plot import series, export, theme, fig
+
+try:
+    from numba import njit
+    NUMBA_AVAILABLE = True
+except ImportError:
+    NUMBA_AVAILABLE = False
+    njit = lambda f: f
+
+# Define the logistic map model
+model_toml = """
+inline:
+[model]
+type = "map"
+name = "Logistic Map"
+
+[sim]
+dt = 1.0
+record = true
+
+[states]
+x = 0.4
+
+[params]
+r = 4.0
+
+[equations.rhs]
+x = "r * x * (1 - x)"
+"""
+
+# Compile the model
+print("Compiling logistic map model...")
+sim = setup(model_toml, stepper="map", jit=False)
+model = sim.model  # keep dtype/params handy below
+
+# Define Jacobian for the logistic map: J = r * (1 - 2x)
+@njit
+def jacobian_fn(t, y, params):
+    """Jacobian of logistic map: ∂f/∂x = r(1 - 2x)"""
+    r = params[0]
+    x = y[0]
+    return np.array([[r * (1 - 2*x)]], dtype=np.float64)
+
+# Create Lyapunov runtime analysis
+print("Setting up Lyapunov analysis...")
+lyap_analysis = lyapunov_mle(
+    jacobian_fn=jacobian_fn,
+    n_state=1,
+    trace_plan=FixedTracePlan(stride=1)
+)
+
+# Run simulation using the high-level Sim API
+print("\nComputing Lyapunov exponent with Sim.run()...")
+print(f"  Parameter: r = 4.0")
+print(f"  Iterations: 5000")
+print(f"  Initial condition: x = 0.4")
+
+sim.run(
+    N=5000,
+    dt=1.0,
+    record=True,
+    record_interval=1,
+    cap_rec=8192,
+    cap_evt=1,
+    ic=np.array([0.4], dtype=model.dtype),
+    params=np.array([4.0], dtype=model.dtype),
+    analysis=lyap_analysis,
+)
+result_view = sim.results()
+
+# Extract runtime analysis results
+print("\n" + "="*60)
+print("RESULTS")
+print("="*60)
+
+lyap_data = result_view.analysis["lyapunov_mle"]
+log_growth = lyap_data["out"][0]
+n_steps = lyap_data["out"][1]
+mle = log_growth / n_steps
+
+theoretical_mle = np.log(2.0)
+
+print(f"Computed MLE:      {mle:.10f}")
+print(f"Theoretical MLE:   {theoretical_mle:.10f} (ln(2))")
+print(f"Relative error:    {abs(mle - theoretical_mle)/theoretical_mle * 100:.4f}%")
+print(f"Total iterations:  {int(n_steps)}")
+
+# Get trajectory and Lyapunov trace
+x_trajectory = result_view["x"]
+lyap_trace = lyap_data["trace"][:, 0]
+
+# Note: trace may have one less point than trajectory if recording starts at t0
+n_points = min(len(x_trajectory), len(lyap_trace))
+iterations = np.arange(n_points)
+
+# Visualize
+theme.use("notebook")
+theme.update(grid=True)
+
+fig_obj = fig.grid(rows=2, cols=1, size=(10, 8))
+
+# Plot trajectory (first 500 iterations)
+series.plot(
+    x=iterations[:500],
+    y=x_trajectory[:500],
+    style="line",
+    ax=fig_obj[0, 0],
+    xlabel="Iteration (n)",
+    ylabel="$x_n$",
+    title=f"Logistic Map Trajectory (r=4.0)",
+    lw=1.0,
+    color="C0",
+)
+
+# Plot Lyapunov exponent convergence
+series.plot(
+    x=iterations,
+    y=lyap_trace[:n_points],
+    style="line",
+    ax=fig_obj[1, 0],
+    xlabel="Iteration (n)",
+    ylabel="$\\lambda$ (MLE)",
+    title="Lyapunov Exponent Convergence",
+    lw=1.5,
+    color="C1",
+)
+
+# Add theoretical value
+fig_obj[1, 0].axhline(
+    y=theoretical_mle,
+    color='red',
+    linestyle='--',
+    linewidth=2,
+    label=f'Theoretical: λ = ln(2) ≈ {theoretical_mle:.4f}'
+)
+fig_obj[1, 0].legend(fontsize=10)
+
+# Annotate final value
+fig_obj[1, 0].text(
+    0.98, 0.05,
+    f'Computed: λ = {mle:.6f}',
+    transform=fig_obj[1, 0].transAxes,
+    fontsize=11,
+    verticalalignment='bottom',
+    horizontalalignment='right',
+    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+)
+
+export.show()
+
+print("\n" + "="*60)
+print("Parameter Scan")
+print("="*60)
+print(f"{'r':>6s} {'λ (MLE)':>12s} {'Regime':>15s}")
+print("-"*60)
+
+test_r_values = [2.5, 3.2, 3.5, 3.83, 4.0]
+scan_sim = setup(model_toml, stepper="map", jit=False)
+
+for r_test in test_r_values:
+    params_test = np.array([r_test], dtype=model.dtype)
+    scan_sim.run(
+        N=2000,
+        dt=1.0,
+        record=False,
+        record_interval=1,
+        max_steps=2000,
+        cap_rec=1,
+        cap_evt=1,
+        ic=np.array([0.4], dtype=model.dtype),
+        params=params_test,
+        analysis=lyapunov_mle(jacobian_fn=jacobian_fn, n_state=1, trace_plan=None),
+    )
+
+    lyap_out = scan_sim.results().analysis["lyapunov_mle"]["out"]
+    mle_test = lyap_out[0] / lyap_out[1]
+    
+    if mle_test < -0.01:
+        regime = "Stable"
+    elif abs(mle_test) < 0.01:
+        regime = "Periodic"
+    else:
+        regime = "Chaotic"
+    
+    print(f"{r_test:6.2f} {mle_test:12.6f} {regime:>15s}")
+    scan_sim.reset()
+
+print("="*60)
+print("\nThe logistic map exhibits the period-doubling route to chaos.")
+print("Chaos emerges around r ≈ 3.57, fully developed at r = 4.")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Callable, Mapping, Dict, Optional, Tuple
 import warnings
+import math
 import numpy as np
 
 from dynlib.runtime.runner_api import (
@@ -17,6 +18,7 @@ from dynlib.runtime.workspace import (
     restore_workspace,
 )
 from dynlib.runtime.initial_step import WRMSConfig, choose_initial_dt_wrms
+from dynlib.analysis.runtime import AnalysisModule, analysis_noop_hook
 
 __all__ = ["run_with_wrapper"]
 
@@ -60,6 +62,7 @@ def run_with_wrapper(
     lag_state_info: Tuple[Tuple[int, int, int, int], ...] | None = None,
     make_stepper_workspace: Callable[[], object] | None = None,
     wrms_cfg: WRMSConfig | None = None,
+    analysis: AnalysisModule | None = None,
     adaptive: bool = False,
 ) -> Results:
     """
@@ -73,9 +76,12 @@ def run_with_wrapper(
             runtime_ws, stepper_ws,
             stepper_config,
             y_prop, t_prop, dt_next, err_est,
-            T, Y, STEP, FLAGS,
+            T, Y, AUX, STEP, FLAGS,
             EVT_CODE, EVT_INDEX, EVT_LOG_DATA,
             evt_log_scratch,
+            analysis_ws, analysis_out, analysis_trace,
+            analysis_trace_count, analysis_trace_cap, analysis_trace_stride,
+            analysis_kind, analysis_dispatch_pre, analysis_dispatch_post,
             i_start, step_start, cap_rec, cap_evt,
             user_break_flag, status_out, hint_out,
             i_out, step_out, t_out,
@@ -90,6 +96,8 @@ def run_with_wrapper(
       - When ``discrete=True`` the runner horizon is interpreted as an iteration
         budget ``N`` (second argument). Otherwise it is ``t_end`` (continuous time).
       - state_rec_indices and aux_rec_indices control selective recording.
+      - analysis dispatch runs pre-step after pre-events and post-step after commit;
+        hooks may set user_break_flag to stop execution.
     """
     if discrete:
         if target_steps is None:
@@ -193,6 +201,58 @@ def run_with_wrapper(
             if dt_curr == 0.0:
                 dt_curr = 1e-6
 
+    # Analysis buffers (persist across re-entry)
+    if analysis is not None:
+        analysis_kind = int(analysis.analysis_kind)
+        ws_size = int(analysis.workspace_size)
+        out_size = int(analysis.output_size)
+        analysis_ws = np.zeros((ws_size,), dtype=dtype) if ws_size > 0 else np.zeros((0,), dtype=dtype)
+        analysis_out = np.zeros((out_size,), dtype=dtype) if out_size > 0 else np.zeros((0,), dtype=dtype)
+
+        trace_width = analysis.trace.width if analysis.trace else 0
+        if trace_width > 0:
+            if discrete and steps_horizon is not None:
+                est_steps = int(steps_horizon)
+            else:
+                # Fallback estimate for continuous/adaptive modes
+                horizon = float(t_end) if not discrete else float(t0)
+                est_steps = int(math.ceil(max(0.0, horizon - float(t0)) / max(float(dt_curr), 1e-12))) if not adaptive else int(max_steps)
+            trace_cap = max(1, analysis.trace.capacity(total_steps=est_steps))
+            analysis_trace = np.zeros((trace_cap, trace_width), dtype=dtype)
+            analysis_trace_cap = np.int64(trace_cap)
+            analysis_trace_stride = np.int64(analysis.trace.record_interval())
+        else:
+            analysis_trace = np.zeros((0, 0), dtype=dtype)
+            analysis_trace_cap = np.int64(0)
+            analysis_trace_stride = np.int64(0)
+        analysis_trace_count = np.zeros((1,), dtype=np.int64)
+        noop_hook = analysis_noop_hook()
+        analysis_dispatch_pre = analysis.python_hooks.pre_step or noop_hook
+        analysis_dispatch_post = analysis.python_hooks.post_step or noop_hook
+    else:
+        analysis_kind = 0
+        analysis_ws = np.zeros((0,), dtype=dtype)
+        analysis_out = np.zeros((0,), dtype=dtype)
+        analysis_trace = np.zeros((0, 0), dtype=dtype)
+        analysis_trace_count = np.zeros((1,), dtype=np.int64)
+        analysis_trace_cap = np.int64(0)
+        analysis_trace_stride = np.int64(0)
+        noop_hook = analysis_noop_hook()
+        analysis_dispatch_pre = noop_hook
+        analysis_dispatch_post = noop_hook
+
+    def _finalize_analysis_trace_view() -> tuple[np.ndarray | None, int | None]:
+        if analysis is None or analysis_trace.shape[0] == 0:
+            return None, None
+        filled = int(analysis_trace_count[0])
+        trace_view = analysis_trace[:filled, :]
+        if analysis.trace:
+            sl = analysis.finalize_trace(filled)
+            if sl is not None:
+                trace_view = trace_view[sl]
+                filled = trace_view.shape[0]
+        return trace_view, filled
+
     # Track the committed (t, dt) so re-entries resume from the correct point.
     t_curr = float(t0)
 
@@ -210,6 +270,10 @@ def run_with_wrapper(
             T, Y, AUX, STEP, FLAGS,
             EVT_CODE, EVT_INDEX, EVT_LOG_DATA,
             evt_log_scratch,
+            analysis_ws, analysis_out, analysis_trace,
+            analysis_trace_count, int(analysis_trace_cap), int(analysis_trace_stride),
+            int(analysis_kind),
+            analysis_dispatch_pre, analysis_dispatch_post,
             i_start, step_start, int(cap_rec), int(cap_evt),
             user_break_flag, status_out, hint_out,
             i_out, step_out, t_out,
@@ -233,6 +297,12 @@ def run_with_wrapper(
             }
             final_dt = float(dt_next[0]) if step_curr > 0 else float(dt_curr)
             t_final = float(t_out[0])
+            trace_view, trace_filled = _finalize_analysis_trace_view()
+            analysis_out_payload = analysis_out if (analysis is not None and analysis_out.size > 0) else None
+            analysis_stride_payload = int(analysis_trace_stride) if (analysis is not None and int(analysis_trace_stride) > 0) else None
+            analysis_modules = None
+            if analysis is not None:
+                analysis_modules = tuple(getattr(analysis, "modules", (analysis,)))
             return Results(
                 T=T, Y=Y, AUX=(AUX if n_rec_aux > 0 else None), 
                 STEP=STEP, FLAGS=FLAGS,
@@ -248,6 +318,11 @@ def run_with_wrapper(
                 final_workspace=final_ws,
                 state_names=state_names,
                 aux_names=aux_names,
+                analysis_out=analysis_out_payload,
+                analysis_trace=trace_view,
+                analysis_trace_filled=trace_filled,
+                analysis_trace_stride=analysis_stride_payload,
+                analysis_modules=analysis_modules,
             )
 
         if status_value == GROW_REC:
@@ -334,8 +409,14 @@ def run_with_wrapper(
                 "runtime": snapshot_workspace(runtime_ws),
             }
             final_dt = float(dt_next[0]) if step_curr > 0 else float(dt_curr)
+            trace_view, trace_filled = _finalize_analysis_trace_view()
+            analysis_out_payload = analysis_out if (analysis is not None and analysis_out.size > 0) else None
+            analysis_stride_payload = int(analysis_trace_stride) if (analysis is not None and int(analysis_trace_stride) > 0) else None
+            analysis_modules = None
+            if analysis is not None:
+                analysis_modules = tuple(getattr(analysis, "modules", (analysis,)))
             return Results(
-                T=T, Y=Y, AUX=(AUX if n_rec_aux > 0 else None),
+                T=T, Y=Y, AUX=(AUX if n_rec_aux > 0 else None), 
                 STEP=STEP, FLAGS=FLAGS,
                 EVT_CODE=EVT_CODE, EVT_INDEX=EVT_INDEX,
                 EVT_LOG_DATA=EVT_LOG_DATA,
@@ -348,6 +429,11 @@ def run_with_wrapper(
                 final_workspace=final_ws,
                 state_names=state_names,
                 aux_names=aux_names,
+                analysis_out=analysis_out_payload,
+                analysis_trace=trace_view,
+                analysis_trace_filled=trace_filled,
+                analysis_trace_stride=analysis_stride_payload,
+                analysis_modules=analysis_modules,
             )
 
         # Any other code is unexpected in wrapper-level exit contract.

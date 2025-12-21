@@ -2,6 +2,42 @@
 
 ---
 
+## [2.34.0] – 2025-12-21
+### Added
+- Runtime analysis system for computing diagnostics during simulation execution:
+  - New `dynlib.analysis.runtime` module with `AnalysisModule`, `AnalysisHooks`, and `TraceSpec` for building 
+    analysis pipelines.
+  - `lyapunov_mle()` function computes maximum Lyapunov exponents for detecting chaos in discrete and continuous 
+    systems.
+  - Analysis modules can run alongside integration via `Sim.run(analysis=...)` parameter.
+  - Support for both Python and JIT-compiled analysis hooks for performance.
+  - Trace buffers allow sampling analysis results at configurable intervals during runs.
+  - Fast-path integration now supports analysis modules when JIT hooks are provided.
+- New Lyapunov example (`lyapunov_logistic_map_demo.py`) demonstrating chaos detection in the logistic map.
+
+### Changed
+- Reorganized analysis tools into two submodules for clarity:
+  - `dynlib.analysis.post`: Post-run analysis (sweeps, bifurcations, trajectory statistics) - moved from 
+    `dynlib.analysis`.
+  - `dynlib.analysis.runtime`: During-run analysis (Lyapunov, online diagnostics).
+- Enhanced `Results` and `ResultsView` with `.analysis` property for accessing runtime analysis outputs.
+- Analysis module imports updated: use `from dynlib.analysis.post import sweep, traj` instead of 
+  `from dynlib.analysis import .sweep, traj`
+- Runner ABI version incremented to 3 to accommodate analysis buffer arguments
+- All runners (continuous/discrete) now accept analysis workspace, output, trace buffers, and dispatch hooks.
+- Fast-path capability checking now validates analysis module requirements (fixed-step, Jacobian, event 
+  compatibility).
+
+### Tests
+- Added comprehensive tests for runtime analysis infrastructure (`test_analysis_runtime.py`).
+
+### Known Issues
+- Numba option will not work for runtime analysis modules. There are lots of problems for numba compatibility.
+- Jacobian equation definitions are very crude and creates numba compatibility issues. TOML DSL definition would 
+  be better.
+
+---
+
 ## [2.33.1] – 2025-12-18
 ### Changed
 - Fixed some minor plot related bugs. 

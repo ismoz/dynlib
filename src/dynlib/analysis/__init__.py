@@ -1,35 +1,46 @@
-"""Analysis tools for dynamical systems.
+"""Unified analysis namespace for dynlib (online + post-run)."""
 
-This module provides:
-- Parameter sweep utilities (scalar and trajectory)
-- Trajectory analysis (statistics, extrema, crossings)
-"""
+import importlib
 
-from dynlib.analysis.sweep import (
-    ParamSweepScalarResult,
-    ParamSweepTrajResult,
-    scalar,
-    traj,
-)
-from dynlib.analysis.trajectory import (
-    TrajectoryAnalyzer,
-    MultiVarAnalyzer,
-)
-from dynlib.analysis.bifurcation import (
-    BifurcationResult,
-    BifurcationExtractor,
+from dynlib.analysis.runtime import (
+    AnalysisHooks,
+    AnalysisModule,
+    AnalysisRequirements,
+    CombinedAnalysis,
+    TraceSpec,
+    analysis_noop_hook,
+    lyapunov_mle,
 )
 
-__all__ = [
-    # Parameter sweeps
+_POST_EXPORTS = {
     "ParamSweepScalarResult",
     "ParamSweepTrajResult",
     "scalar",
     "traj",
-    # Bifurcation diagrams
     "BifurcationResult",
     "BifurcationExtractor",
-    # Trajectory analysis
     "TrajectoryAnalyzer",
     "MultiVarAnalyzer",
+}
+
+__all__ = [
+    # Runtime analysis
+    "AnalysisHooks",
+    "AnalysisModule",
+    "AnalysisRequirements",
+    "CombinedAnalysis",
+    "TraceSpec",
+    "analysis_noop_hook",
+    "lyapunov_mle",
+    # Post-run analysis
+    *_POST_EXPORTS,
 ]
+
+
+def __getattr__(name):
+    if name in _POST_EXPORTS:
+        module = importlib.import_module("dynlib.analysis.post")
+        value = getattr(module, name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module 'dynlib.analysis' has no attribute '{name}'")

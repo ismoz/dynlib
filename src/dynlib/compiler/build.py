@@ -128,12 +128,14 @@ class FullModel:
     runner: Callable
     spec_hash: str
     dtype: np.dtype
+    jacobian: Optional[Callable] = None
     guards: Optional[Tuple[Callable, Callable]] = None  # (allfinite1d, allfinite_scalar)
     rhs_source: Optional[str] = None
     events_pre_source: Optional[str] = None
     events_post_source: Optional[str] = None
     update_aux_source: Optional[str] = None
     stepper_source: Optional[str] = None
+    jacobian_source: Optional[str] = None
     lag_state_info: Optional[Tuple[Tuple[int, int, int, int], ...]] = None
     uses_lag: bool = False
     equations_use_lag: bool = False
@@ -371,6 +373,7 @@ def _warmup_jit_runner(
     are called by the runner, ensuring everything is warmed up.
     """
     from dynlib.runtime.buffers import allocate_pools
+    from dynlib.analysis.runtime import analysis_noop_hook
     
     dtype_np = np.dtype(dtype)
     n_state = len(spec.states)
@@ -413,7 +416,18 @@ def _warmup_jit_runner(
     t_prop = np.zeros((1,), dtype=np.float64)
     dt_next = np.zeros((1,), dtype=np.float64)
     err_est = np.zeros((1,), dtype=np.float64)
-    evt_log_scratch = np.zeros((1,), dtype=dtype_np)
+    evt_log_scratch = np.zeros((max(1, max_log_width),), dtype=dtype_np)
+    
+    # Analysis placeholders (warm-up runs without analysis)
+    analysis_ws = np.zeros((0,), dtype=dtype_np)
+    analysis_out = np.zeros((0,), dtype=dtype_np)
+    analysis_trace = np.zeros((0, 0), dtype=dtype_np)
+    analysis_trace_count = np.zeros((1,), dtype=np.int64)
+    analysis_trace_cap = np.int64(0)
+    analysis_trace_stride = np.int64(0)
+    analysis_kind = np.int32(0)
+    analysis_dispatch_pre = analysis_noop_hook()
+    analysis_dispatch_post = analysis_noop_hook()
     
     user_break_flag = np.zeros((1,), dtype=np.int32)
     status_out = np.zeros((1,), dtype=np.int32)
@@ -443,6 +457,10 @@ def _warmup_jit_runner(
             rec.T, rec.Y, aux_rec, rec.STEP, rec.FLAGS,
             ev.EVT_CODE, ev.EVT_INDEX, ev.EVT_LOG_DATA,
             evt_log_scratch,
+            analysis_ws, analysis_out, analysis_trace,
+            analysis_trace_count, int(analysis_trace_cap), int(analysis_trace_stride),
+            int(analysis_kind),
+            analysis_dispatch_pre, analysis_dispatch_post,
             np.int64(0), np.int64(0), int(rec.cap_rec), int(ev.cap_evt),
             user_break_flag, status_out, hint_out,
             i_out, step_out, t_out,
@@ -855,12 +873,14 @@ def build(
         runner=runner_fn,
         spec_hash=pieces.spec_hash,
         dtype=dtype_np,
+        jacobian=None,
         guards=guards_tuple,
         rhs_source=pieces.rhs_source,
         events_pre_source=pieces.events_pre_source,
         events_post_source=pieces.events_post_source,
         update_aux_source=pieces.update_aux_source,
         stepper_source=stepper_source if 'stepper_source' in locals() and stepper_source else None,
+        jacobian_source=None,
         lag_state_info=lag_state_info_list,
         uses_lag=spec.uses_lag,
         equations_use_lag=spec.equations_use_lag,
@@ -898,7 +918,9 @@ def export_model_sources(model: FullModel, output_dir: Union[str, Path]) -> Dict
         ("rhs", model.rhs_source),
         ("events_pre", model.events_pre_source),
         ("events_post", model.events_post_source),
+        ("update_aux", getattr(model, "update_aux_source", None)),
         ("stepper", model.stepper_source),
+        ("jacobian", getattr(model, "jacobian_source", None)),
     ]
     
     for name, source in components:

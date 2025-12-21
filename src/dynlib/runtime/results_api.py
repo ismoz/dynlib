@@ -28,6 +28,7 @@ from dynlib.dsl.spec import ModelSpec
 
 if TYPE_CHECKING:
     from .sim import Segment
+    from dynlib.analysis.runtime import AnalysisModule
 
 __all__ = [
     "ResultsView",
@@ -156,6 +157,45 @@ class ResultsView:
     def ok(self) -> bool:
         return bool(self._raw.ok)
 
+    # ---- runtime analysis (during-run diagnostics) ----
+    @property
+    def analysis(self) -> Dict[str, Mapping[str, object]]:
+        """
+        Runtime analysis outputs keyed by analysis module name.
+
+        Returns a mapping ``{name: {"out": ndarray, "trace": ndarray|None,
+        "stride": int|None, "output_names": tuple|None, "trace_names": tuple|None}}``.
+        """
+        modules: Tuple["AnalysisModule", ...] | None = getattr(self._raw, "analysis_modules", None)  # type: ignore[attr-defined]
+        if not modules:
+            return {}
+        out_attr = getattr(self._raw, "analysis_out_view", None)
+        out = out_attr() if callable(out_attr) else out_attr
+        trace_attr = getattr(self._raw, "analysis_trace_view", None)
+        trace = trace_attr() if callable(trace_attr) else trace_attr
+        stride = getattr(self._raw, "analysis_trace_stride", None)
+        result: Dict[str, Mapping[str, object]] = {}
+        out_offset = 0
+        trace_offset = 0
+        for mod in modules:
+            out_slice = None
+            if out is not None and mod.output_size > 0:
+                out_slice = out[out_offset : out_offset + mod.output_size]
+            trace_slice = None
+            if trace is not None and mod.trace is not None and trace.size > 0:
+                trace_slice = trace[:, trace_offset : trace_offset + mod.trace.width]
+            result[mod.name] = {
+                "out": out_slice,
+                "trace": trace_slice,
+                "stride": int(stride) if stride is not None and mod.trace is not None else None,
+                "output_names": mod.output_names,
+                "trace_names": mod.trace_names,
+            }
+            out_offset += mod.output_size
+            if mod.trace is not None:
+                trace_offset += mod.trace.width
+        return result
+
     # ---- discovery helpers (states/events/tags) ----
     def event_names(self) -> Tuple[str, ...]:
         return tuple(self._ev_fields.keys())
@@ -207,7 +247,7 @@ class ResultsView:
             >>> res.analyze("x").crossing_times(threshold=0.5, direction="up")
             array([12.3, 24.7, 36.1])
         """
-        from dynlib.analysis.trajectory import TrajectoryAnalyzer, MultiVarAnalyzer
+        from dynlib.analysis.post import TrajectoryAnalyzer, MultiVarAnalyzer
         
         if var is None:
             # Prefer recorded states; if none, fall back to recorded aux
