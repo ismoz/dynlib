@@ -95,6 +95,7 @@ def test_parse_model_v2_roundtrip_shapes_and_defaults():
     assert list(normal["params"].keys()) == ["a", "b"]                     # order preserved
     assert normal["equations"]["rhs"] == {"x": "-a*x", "u": "x - b*u"}     # copied
     assert normal["equations"]["expr"] is None
+    assert normal["equations"]["jacobian"] is None
     assert normal["events"] == []                                           # table→list normalized
     assert isinstance(normal["functions"], dict)
     assert isinstance(normal["aux"], dict)

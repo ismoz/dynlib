@@ -25,7 +25,9 @@ class AnalysisRequirements:
     """Declarative requirements for a runtime analysis module."""
 
     fixed_step: bool = False
-    need_jacobian: bool = False
+    need_jvp: bool = False
+    need_dense_jacobian: bool = False
+    need_jacobian: bool = False  # legacy flag; treated as dense requirement
     need_events: bool = False
     accept_reject: bool = False
     mutates_state: bool = False
@@ -126,7 +128,8 @@ class AnalysisModule:
         *,
         adaptive: bool,
         has_event_logs: bool,
-        has_jacobian: bool,
+        has_jvp: bool,
+        has_dense_jacobian: bool,
     ) -> tuple[bool, str | None]:
         """
         Lightweight capability gate used by fast-path assess_capability().
@@ -135,7 +138,11 @@ class AnalysisModule:
             return False, "analysis requires fixed-step"
         if self.requirements.need_events and has_event_logs:
             return False, "analysis incompatible with event logging"
-        if self.requirements.need_jacobian and not has_jacobian:
+        if self.requirements.need_jvp and not has_jvp:
+            return False, "analysis requires a model Jacobian-vector product"
+        if self.requirements.need_dense_jacobian and not has_dense_jacobian:
+            return False, "analysis requires a model Jacobian"
+        if self.requirements.need_jacobian and not (has_dense_jacobian or has_jvp):
             return False, "analysis requires a model Jacobian"
         if self.requirements.accept_reject:
             return False, "analysis with accept/reject hooks not supported on fast path"
@@ -187,12 +194,16 @@ class CombinedAnalysis(AnalysisModule):
     @staticmethod
     def _merge_requirements(modules: Sequence[AnalysisModule]) -> AnalysisRequirements:
         fixed_step = any(mod.requirements.fixed_step for mod in modules)
+        need_jvp = any(mod.requirements.need_jvp for mod in modules)
+        need_dense_jacobian = any(mod.requirements.need_dense_jacobian for mod in modules)
         need_jacobian = any(mod.requirements.need_jacobian for mod in modules)
         need_events = any(mod.requirements.need_events for mod in modules)
         accept_reject = any(mod.requirements.accept_reject for mod in modules)
         mutates_state = any(mod.requirements.mutates_state for mod in modules)
         return AnalysisRequirements(
             fixed_step=fixed_step,
+            need_jvp=need_jvp,
+            need_dense_jacobian=need_dense_jacobian,
             need_jacobian=need_jacobian,
             need_events=need_events,
             accept_reject=accept_reject,

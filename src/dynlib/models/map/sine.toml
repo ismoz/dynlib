@@ -13,5 +13,10 @@ pi = 3.141592653589793
 [equations.rhs]
 x = "r * sin(pi * x)"
 
+[equations.jacobian]
+exprs = [
+    ["r * pi * cos(pi * x)"]
+]
+
 [meta]
 title = "Sine Map (1D chaotic map)"

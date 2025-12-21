@@ -2,6 +2,29 @@
 
 ---
 
+## [2.34.1] – 2025-12-21
+### Added
+- DSL models can now declare Jacobians directly in TOML via `[equations.jacobian].exprs` with deterministic 
+  state order semantics (state decleration order is used for determining the order of the matrix).
+- Jacobian declarations generate JVP (Jacobian Vector Product) operators (and optional dense fill) that are 
+  JIT/disk-cache aware and wired into models.
+- Lyapunov runtime analysis now consumes JVPs, making Jacobian-dependent analyses work without Python 
+  callbacks.
+
+### Changed
+- State declaration order is now part of the spec hash to avoid cache ambiguity and is preserved through mods
+  /build.
+- Capability checks now distinguish JVP and dense-Jacobian requirements; `Sim` validates analysis requirements 
+  early.
+- Logistic map Lyapunov example updated to use DSL Jacobian instead of a Python function.
+
+### Known Issues
+- Models without a declared Jacobian still fall back to Python-only analyses; declarative TOML Jacobians are 
+  now compiled to JVPs but dense numeric Jacobians are not generated automatically.
+- Steppers using numerical Jacobian approximations can benefit from builtin Jacobian functions.
+
+---
+
 ## [2.34.0] – 2025-12-21
 ### Added
 - Runtime analysis system for computing diagnostics during simulation execution:

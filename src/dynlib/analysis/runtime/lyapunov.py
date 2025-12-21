@@ -20,7 +20,7 @@ def _default_tangent(n_state: int) -> np.ndarray:
 
 def lyapunov_mle(
     *,
-    jacobian_fn: Callable[[float, np.ndarray, np.ndarray], np.ndarray],
+    jvp: Callable[[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, object], None],
     n_state: int,
     trace_plan: Optional[FixedTracePlan] = None,
     analysis_kind: int = 1,
@@ -53,9 +53,10 @@ def lyapunov_mle(
         trace_stride: int,
     ) -> None:
         # One-time tangent initialization
-        if analysis_ws.shape[0] >= n_state and step == 0 and analysis_out.shape[0] > 1:
+        if analysis_ws.shape[0] >= 2 * n_state and step == 0 and analysis_out.shape[0] > 1:
             if not np.any(analysis_ws[:n_state]):
                 analysis_ws[:n_state] = init_vec
+            analysis_ws[n_state : 2 * n_state] = 0.0
             analysis_out[0] = 0.0
             analysis_out[1] = 0.0
 
@@ -74,15 +75,15 @@ def lyapunov_mle(
         trace_cap: int,
         trace_stride: int,
     ) -> None:
-        if analysis_ws.shape[0] < n_state or analysis_out.shape[0] < 2:
+        if analysis_ws.shape[0] < 2 * n_state or analysis_out.shape[0] < 2:
             return
-        jac = jacobian_fn(t, y_curr, params)
         vec = analysis_ws[:n_state]
-        new_vec = jac @ vec
-        norm = float(np.linalg.norm(new_vec))
+        out_vec = analysis_ws[n_state : 2 * n_state]
+        jvp(t, y_curr, params, vec, out_vec, runtime_ws)
+        norm = float(np.linalg.norm(out_vec))
         if norm == 0.0:
             return
-        analysis_ws[:n_state] = new_vec / norm
+        analysis_ws[:n_state] = out_vec / norm
         analysis_out[0] += math.log(norm)
         analysis_out[1] += 1.0
 
@@ -95,11 +96,11 @@ def lyapunov_mle(
                 trace_count[0] = trace_cap
 
     hooks = AnalysisHooks(pre_step=_pre_step, post_step=_post_step)
-    reqs = AnalysisRequirements(fixed_step=True, need_jacobian=True, mutates_state=False)
+    reqs = AnalysisRequirements(fixed_step=True, need_jvp=True, mutates_state=False)
     return AnalysisModule(
         name="lyapunov_mle",
         requirements=reqs,
-        workspace_size=n_state,
+        workspace_size=2 * n_state,
         output_size=2,
         output_names=("log_growth", "steps"),
         trace_names=("mle",),

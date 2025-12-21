@@ -13,3 +13,8 @@ a = 1.0
 
 [equations.rhs]
 x = "-a * x"
+
+[equations.jacobian]
+exprs = [
+    ["-a"]
+]

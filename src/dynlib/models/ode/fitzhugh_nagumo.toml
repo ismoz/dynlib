@@ -20,5 +20,11 @@ tau = 12.5
 V = "V - V**3/3 - w + R*I"
 w = "(V + a - b*w) / tau"
 
+[equations.jacobian]
+exprs = [
+    ["1 - V**2", "-1.0"],
+    ["1 / tau", "-b / tau"]
+]
+
 [meta]
 title = "FitzHugh-Nagumo Model (2D reduction of Hodgkin-Huxley)"

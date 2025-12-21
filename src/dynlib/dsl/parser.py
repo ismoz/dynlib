@@ -127,6 +127,31 @@ def _ordered_items(d: Dict[str, Any]) -> List[Tuple[str, Any]]:
     # Python 3.7+ preserves insertion order; we keep it explicit here.
     return list(d.items())
 
+def _coerce_jacobian_exprs(jac_tbl: Dict[str, Any]) -> Dict[str, list[list[str]]]:
+    """Normalize [equations.jacobian] table to a list-of-lists of strings."""
+    exprs = jac_tbl.get("exprs")
+    if exprs is None:
+        raise ModelLoadError("[equations.jacobian].exprs is required and must be a square list")
+    if not isinstance(exprs, list):
+        raise ModelLoadError("[equations.jacobian].exprs must be a list of rows")
+
+    rows: list[list[str]] = []
+    for i, row in enumerate(exprs):
+        if not isinstance(row, list):
+            raise ModelLoadError(f"[equations.jacobian].exprs[{i}] must be a list")
+        row_out: list[str] = []
+        for j, entry in enumerate(row):
+            if isinstance(entry, (int, float)):
+                row_out.append(str(entry))
+            elif isinstance(entry, str):
+                row_out.append(entry)
+            else:
+                raise ModelLoadError(
+                    f"[equations.jacobian].exprs[{i}][{j}] must be a string or number"
+                )
+        rows.append(row_out)
+    return {"exprs": rows}
+
 
 def _read_functions(funcs_tbl: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     out: Dict[str, Dict[str, Any]] = {}
@@ -288,10 +313,14 @@ def parse_model_v2(doc: Dict[str, Any]) -> Dict[str, Any]:
     eq_tbl = doc.get("equations") or {}
     rhs_tbl = eq_tbl.get("rhs") or None
     block_expr = eq_tbl.get("expr") or None
+    jac_tbl = eq_tbl.get("jacobian") or None
     if rhs_tbl is not None and not isinstance(rhs_tbl, dict):
         raise ModelLoadError("[equations.rhs] must be a table")
     if block_expr is not None and not isinstance(block_expr, str):
         raise ModelLoadError("[equations].expr must be a string")
+    if jac_tbl is not None and not isinstance(jac_tbl, dict):
+        raise ModelLoadError("[equations.jacobian] must be a table if present")
+    jacobian = _coerce_jacobian_exprs(jac_tbl) if jac_tbl else None
 
     # Aux
     aux_tbl = doc.get("aux") or {}
@@ -323,7 +352,7 @@ def parse_model_v2(doc: Dict[str, Any]) -> Dict[str, Any]:
         "states": states,
         "params": params,
         "constants": constants,
-        "equations": {"rhs": rhs_tbl, "expr": block_expr},
+        "equations": {"rhs": rhs_tbl, "expr": block_expr, "jacobian": jacobian},
         "aux": aux_tbl,
         "functions": functions,
         "events": events,

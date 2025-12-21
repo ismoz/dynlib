@@ -79,11 +79,13 @@ def assess_capability(
         return FastpathSupport(False, "lagged systems are not fast-path ready yet")
 
     if analysis is not None:
+        has_jvp = getattr(sim.model, "jvp", None) is not None
         has_jacobian = getattr(sim.model, "jacobian", None) is not None
         ok, reason = analysis.supports_fastpath(
             adaptive=adaptive,
             has_event_logs=_has_event_logs(spec),
-            has_jacobian=has_jacobian,
+            has_jvp=has_jvp,
+            has_dense_jacobian=has_jacobian,
         )
         if not ok:
             return FastpathSupport(False, reason)

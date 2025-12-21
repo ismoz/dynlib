@@ -1,4 +1,3 @@
-import dataclasses
 import numpy as np
 import pytest
 import tomllib
@@ -88,6 +87,11 @@ r = 2.0
 
 [equations.rhs]
 x = "r * x"
+
+[equations.jacobian]
+exprs = [
+    ["r"]
+]
 """
     data = tomllib.loads(toml_str)
     spec = build_spec(parse_model_v2(data))
@@ -104,13 +108,15 @@ x = "r * x"
         runner=full_model.runner,
         spec_hash=full_model.spec_hash,
         dtype=full_model.dtype,
-        jacobian=None,
+        jvp=full_model.jvp,
+        jacobian=full_model.jacobian,
         rhs_source=full_model.rhs_source,
         events_pre_source=full_model.events_pre_source,
         events_post_source=full_model.events_post_source,
         update_aux_source=full_model.update_aux_source,
         stepper_source=full_model.stepper_source,
-        jacobian_source=None,
+        jvp_source=full_model.jvp_source,
+        jacobian_source=full_model.jacobian_source,
         lag_state_info=full_model.lag_state_info,
         uses_lag=full_model.uses_lag,
         equations_use_lag=full_model.equations_use_lag,
@@ -254,14 +260,10 @@ x = "-a * x"
 
 def test_lyapunov_matches_wrapper_and_fastpath():
     model = _build_map_model(jit=False)
-
-    def jac_fn(t, y, params):
-        return np.array([[params[0]]], dtype=float)
-
-    model = dataclasses.replace(model, jacobian=jac_fn)
+    assert model.jvp is not None
     sim = Sim(model)
 
-    analysis_mod = lyapunov_mle(jacobian_fn=jac_fn, n_state=1, trace_plan=FixedTracePlan(stride=1))
+    analysis_mod = lyapunov_mle(jvp=model.jvp, n_state=1, trace_plan=FixedTracePlan(stride=1))
 
     wrapper_res = run_with_wrapper(
         runner=model.runner,

@@ -14,5 +14,11 @@ K  = 0.971635
 p     = "((p + K * sin(theta)) + pi) % (2*pi) - pi"
 theta = "(theta + p + K * sin(theta)) % (2*pi)"
 
+[equations.jacobian]
+exprs = [
+    ["1.0", "K * cos(theta)"],
+    ["1.0", "1.0 + K * cos(theta)"]
+]
+
 [meta]
 title = "Standard Map (Chirikov–Taylor, unwrapped)"

@@ -13,3 +13,9 @@ expr = """
 dx = y
 dy = mu*(1-x**2)*y-x
 """
+
+[equations.jacobian]
+exprs = [
+    ["0.0", "1.0"],
+    ["-2.0 * mu * x * y - 1.0", "mu * (1 - x**2)"]
+]

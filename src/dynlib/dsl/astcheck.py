@@ -21,6 +21,7 @@ __all__ = [
     "validate_reserved_identifiers",
     "validate_constants",
     "validate_identifiers_resolved",
+    "validate_jacobian_matrix",
 ]
 
 #NOTE: emitter.py and schema.py also perform the same regex matching;
@@ -676,3 +677,33 @@ def validate_identifiers_resolved(normal: Dict[str, Any]) -> None:
                     continue
                 _, rhs = [p.strip() for p in line.split("=", 1)]
                 _check_expr(rhs, f"[events.{ev_name}].action")
+
+    # equations.jacobian entries
+    jac_tbl = (normal.get("equations") or {}).get("jacobian") or {}
+    for i, row in enumerate(jac_tbl.get("exprs", []) or []):
+        for j, expr in enumerate(row):
+            _check_expr(expr, f"[equations.jacobian].exprs[{i}][{j}]")
+
+
+def validate_jacobian_matrix(normal: Dict[str, Any]) -> None:
+    """Validate shape and types of [equations.jacobian]."""
+    jac_tbl = (normal.get("equations") or {}).get("jacobian")
+    if not jac_tbl:
+        return
+
+    exprs = jac_tbl.get("exprs") or []
+    n_state = len(normal["states"])
+    if len(exprs) != n_state:
+        raise ModelLoadError(
+            f"[equations.jacobian].exprs must have {n_state} rows to match [states]; got {len(exprs)}"
+        )
+    for i, row in enumerate(exprs):
+        if len(row) != n_state:
+            raise ModelLoadError(
+                f"[equations.jacobian].exprs[{i}] must have {n_state} columns to match [states]; got {len(row)}"
+            )
+        for j, expr in enumerate(row):
+            if not isinstance(expr, str):
+                raise ModelLoadError(
+                    f"[equations.jacobian].exprs[{i}][{j}] must be a string expression"
+                )

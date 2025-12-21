@@ -8,7 +8,7 @@ from dynlib.dsl.spec import ModelSpec, EventSpec
 from dynlib.dsl.constants import cast_constants
 from .rewrite import NameMaps, compile_scalar_expr, sanitize_expr, lower_expr_node, lower_expr_with_preamble
 
-__all__ = ["emit_rhs_and_events", "CompiledCallables"]
+__all__ = ["emit_rhs_and_events", "emit_jacobian", "CompiledCallables", "CompiledJacobian"]
 
 # Regex patterns for derivative notation (ODE only)
 _DFUNC_PAREN = re.compile(r'^d\(\s*([A-Za-z_]\w*)\s*\)$')
@@ -24,6 +24,14 @@ class CompiledCallables:
     events_pre_source: str
     events_post_source: str
     update_aux_source: str
+
+
+@dataclass(frozen=True)
+class CompiledJacobian:
+    jvp: Callable
+    jvp_source: str
+    jacobian: Callable | None = None
+    jacobian_source: str | None = None
 
 def _state_param_maps(spec: ModelSpec) -> Tuple[Dict[str, int], Dict[str, int]]:
     s2i = {name: i for i, name in enumerate(spec.states)}
@@ -162,6 +170,165 @@ def _compile_rhs(spec: ModelSpec, nmap: NameMaps):
     ns: Dict[str, object] = {}
     exec(compile(mod, "<dsl-rhs>", "exec"), ns, ns)
     return ns["rhs"], module_source
+
+
+def _compile_jvp(spec: ModelSpec, nmap: NameMaps):
+    """Emit a JVP operator from a dense Jacobian declaration."""
+    import ast
+
+    body: List[ast.stmt] = []
+    for i, row in enumerate(spec.jacobian_exprs or ()):
+        acc_name = f"_acc_{i}"
+        body.append(
+            ast.Assign(targets=[ast.Name(id=acc_name, ctx=ast.Store())], value=ast.Constant(value=0.0))
+        )
+        for j, expr in enumerate(row):
+            preamble, node = lower_expr_with_preamble(
+                expr,
+                nmap,
+                aux_defs=_aux_defs(spec),
+                fn_defs=nmap.functions,
+            )
+            body.extend(preamble)
+            term = ast.BinOp(
+                left=node,
+                op=ast.Mult(),
+                right=ast.Subscript(
+                    value=ast.Name(id="v_in", ctx=ast.Load()),
+                    slice=ast.Constant(value=j),
+                    ctx=ast.Load(),
+                ),
+            )
+            body.append(
+                ast.AugAssign(
+                    target=ast.Name(id=acc_name, ctx=ast.Store()),
+                    op=ast.Add(),
+                    value=term,
+                )
+            )
+        body.append(
+            ast.Assign(
+                targets=[
+                    ast.Subscript(
+                        value=ast.Name(id="v_out", ctx=ast.Load()),
+                        slice=ast.Constant(value=i),
+                        ctx=ast.Store(),
+                    )
+                ],
+                value=ast.Name(id=acc_name, ctx=ast.Load()),
+            )
+        )
+
+    mod = ast.Module(
+        body=[
+            ast.Import(names=[ast.alias(name="math", asname=None)]),
+            ast.FunctionDef(
+                name="jvp",
+                args=ast.arguments(
+                    posonlyargs=[],
+                    args=[
+                        ast.arg(arg="t"),
+                        ast.arg(arg="y_vec"),
+                        ast.arg(arg="params"),
+                        ast.arg(arg="v_in"),
+                        ast.arg(arg="v_out"),
+                        ast.arg(arg="runtime_ws"),
+                    ],
+                    vararg=None,
+                    kwonlyargs=[],
+                    kw_defaults=[],
+                    kwarg=None,
+                    defaults=[],
+                ),
+                body=body if body else [ast.Pass()],
+                decorator_list=[],
+            ),
+        ],
+        type_ignores=[],
+    )
+    ast.fix_missing_locations(mod)
+    module_source = ast.unparse(mod)
+    ns: Dict[str, object] = {}
+    exec(compile(mod, "<dsl-jvp>", "exec"), ns, ns)
+    return ns["jvp"], module_source
+
+
+def _compile_jacobian_fill(spec: ModelSpec, nmap: NameMaps):
+    """Emit a dense Jacobian filler: J_out[i, j] = expr."""
+    import ast
+
+    body: List[ast.stmt] = []
+    for i, row in enumerate(spec.jacobian_exprs or ()):
+        for j, expr in enumerate(row):
+            preamble, node = lower_expr_with_preamble(
+                expr,
+                nmap,
+                aux_defs=_aux_defs(spec),
+                fn_defs=nmap.functions,
+            )
+            body.extend(preamble)
+            body.append(
+                ast.Assign(
+                    targets=[
+                        ast.Subscript(
+                            value=ast.Name(id="J_out", ctx=ast.Load()),
+                            slice=ast.Tuple(
+                                elts=[ast.Constant(value=i), ast.Constant(value=j)],
+                                ctx=ast.Load(),
+                            ),
+                            ctx=ast.Store(),
+                        )
+                    ],
+                    value=node,
+                )
+            )
+
+    mod = ast.Module(
+        body=[
+            ast.Import(names=[ast.alias(name="math", asname=None)]),
+            ast.FunctionDef(
+                name="jacobian",
+                args=ast.arguments(
+                    posonlyargs=[],
+                    args=[
+                        ast.arg(arg="t"),
+                        ast.arg(arg="y_vec"),
+                        ast.arg(arg="params"),
+                        ast.arg(arg="J_out"),
+                        ast.arg(arg="runtime_ws"),
+                    ],
+                    vararg=None,
+                    kwonlyargs=[],
+                    kw_defaults=[],
+                    kwarg=None,
+                    defaults=[],
+                ),
+                body=body if body else [ast.Pass()],
+                decorator_list=[],
+            ),
+        ],
+        type_ignores=[],
+    )
+    ast.fix_missing_locations(mod)
+    module_source = ast.unparse(mod)
+    ns: Dict[str, object] = {}
+    exec(compile(mod, "<dsl-jacobian>", "exec"), ns, ns)
+    return ns["jacobian"], module_source
+
+
+def emit_jacobian(spec: ModelSpec) -> CompiledJacobian | None:
+    """Emit JVP (and dense fill) from a DSL-declared Jacobian."""
+    if not spec.jacobian_exprs:
+        return None
+    nmap = _build_name_maps(spec)
+    jvp_fn, jvp_src = _compile_jvp(spec, nmap)
+    jac_fn, jac_src = _compile_jacobian_fill(spec, nmap)
+    return CompiledJacobian(
+        jvp=jvp_fn,
+        jvp_source=jvp_src,
+        jacobian=jac_fn,
+        jacobian_source=jac_src,
+    )
 
 def _legal_lhs(name: str, spec: ModelSpec) -> Tuple[str, int, str]:
     if name in spec.states:

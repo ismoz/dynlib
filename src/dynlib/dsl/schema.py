@@ -60,7 +60,7 @@ def validate_tables(doc: Dict[str, Any]) -> None:
     """Presence and shape checks for top-level tables.
 
     Required: [model], [states]
-    Optional: [params], [constants], [equations], [equations.rhs], [aux], [functions], [events.*], [sim]
+    Optional: [params], [constants], [equations], [equations.rhs], [equations.jacobian], [aux], [functions], [events.*], [sim]
     """
     validate_model_header(doc)
 
@@ -88,6 +88,9 @@ def validate_tables(doc: Dict[str, Any]) -> None:
         expr = eq.get("expr")
         if expr is not None and not isinstance(expr, str):
             raise ModelLoadError("[equations].expr must be a string block if present")
+        jac = eq.get("jacobian")
+        if jac is not None and not isinstance(jac, dict):
+            raise ModelLoadError("[equations.jacobian] must be a table if present")
 
     funcs = doc.get("functions")
     if funcs is not None and not isinstance(funcs, dict):

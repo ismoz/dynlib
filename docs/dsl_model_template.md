@@ -11,7 +11,7 @@ It lists all available tables and their keys.
 - `dtype` (optional): data type, default "float64"
 
 ### [states]
-- `state_name = initial_value` (order defines state vector order)
+- `state_name = initial_value` (order defines the authoritative state vector order)
 - For value expressions like 8/3 use quotes: "8/3".
 
 ## Optional Tables
@@ -29,6 +29,10 @@ It lists all available tables and their keys.
 
 #### [equations] (block form)
 - `expr = """dx = expression \n dy = expression"""`
+
+### [equations.jacobian] (optional dense Jacobian)
+- `exprs = [[ "...", "...", ... ], [...], ...]` (n × n matrix of expressions)
+- State vector order is the [states] declaration order (after mods). For `state_names = (s0, s1, ...)`, `exprs[i][j]` is ∂f_state_names[i]/∂state_names[j]. Reordering [states] is a semantic change and changes how matrix literals are interpreted.
 
 ### [aux]
 - `aux_name = "expression"`

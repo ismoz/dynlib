@@ -429,6 +429,9 @@ class Sim:
                 raise TypeError("tag must be a string or None")
             if tag == "":
                 raise ValueError("tag cannot be empty")
+
+        if analysis is not None:
+            self._validate_analysis_requirements(analysis)
         
         # Apply persistent defaults for run-level knobs
         # record
@@ -2681,6 +2684,29 @@ class Sim:
         for idx in range(limit):
             values[names[idx]] = float(cfg[idx])
         return values
+
+    def _validate_analysis_requirements(self, analysis) -> None:
+        """Ensure the provided analysis is compatible with this model."""
+        req = getattr(analysis, "requirements", None)
+        if req is None:
+            return
+
+        has_jvp = getattr(self.model, "jvp", None) is not None
+        has_dense_jac = getattr(self.model, "jacobian", None) is not None
+        name = getattr(analysis, "name", "analysis")
+
+        if req.need_jvp and not has_jvp:
+            raise ValueError(
+                f"Analysis '{name}' requires a model Jacobian-vector product, but none is available."
+            )
+        if req.need_dense_jacobian and not has_dense_jac:
+            raise ValueError(
+                f"Analysis '{name}' requires a dense Jacobian fill callable, but the model does not provide one."
+            )
+        if req.need_jacobian and not (has_jvp or has_dense_jac):
+            raise ValueError(
+                f"Analysis '{name}' requires a model Jacobian, but the model does not provide one."
+            )
 
 
 # ------------------------------- misc helpers ---------------------------------

@@ -9,7 +9,11 @@ import tomllib
 from dynlib.dsl.spec import ModelSpec, compute_spec_hash, build_spec, choose_default_stepper
 from dynlib.dsl.parser import parse_model_v2
 from dynlib.steppers.registry import get_stepper
-from dynlib.compiler.codegen.emitter import emit_rhs_and_events, CompiledCallables
+from dynlib.compiler.codegen.emitter import (
+    emit_rhs_and_events,
+    emit_jacobian,
+    CompiledCallables,
+)
 from dynlib.compiler.codegen import runner as runner_codegen
 from dynlib.compiler.codegen import runner_discrete as runner_discrete_codegen
 from dynlib.compiler.codegen.cache_importer import register_cache_root
@@ -128,6 +132,7 @@ class FullModel:
     runner: Callable
     spec_hash: str
     dtype: np.dtype
+    jvp: Optional[Callable] = None
     jacobian: Optional[Callable] = None
     guards: Optional[Tuple[Callable, Callable]] = None  # (allfinite1d, allfinite_scalar)
     rhs_source: Optional[str] = None
@@ -135,6 +140,7 @@ class FullModel:
     events_post_source: Optional[str] = None
     update_aux_source: Optional[str] = None
     stepper_source: Optional[str] = None
+    jvp_source: Optional[str] = None
     jacobian_source: Optional[str] = None
     lag_state_info: Optional[Tuple[Tuple[int, int, int, int], ...]] = None
     uses_lag: bool = False
@@ -150,6 +156,7 @@ class _StepperCacheEntry:
 
 
 _cache = JITCache()
+_jac_cache = JITCache()
 _stepper_cache: Dict[str, _StepperCacheEntry] = {}
 
 
@@ -760,6 +767,87 @@ def build(
         disk_cache=disk_cache,
     )
 
+    # Jacobian-derived operators (optional)
+    jvp_fn = None
+    jacobian_fn = None
+    jvp_source = None
+    jacobian_source = None
+    jac_digest = None
+    jac_from_disk = False
+    if spec.jacobian_exprs:
+        jac_structsig = workspace_structsig(runtime_ws_template)
+        jac_key = CacheKey(
+            spec_hash=pieces.spec_hash,
+            stepper="jacobian",
+            structsig=jac_structsig,
+            dtype=dtype_str,
+            version_pins=("dynlib=2",),
+        )
+        cached_jac = _jac_cache.get(jac_key)
+        if cached_jac is not None and cached_jac.get("jit") == bool(jit):
+            jvp_fn = cached_jac.get("jvp")
+            jacobian_fn = cached_jac.get("jacobian")
+            jvp_source = cached_jac.get("jvp_source")
+            jacobian_source = cached_jac.get("jacobian_source")
+            meta = cached_jac.get("meta", {}) or {}
+            jac_digest = meta.get("digest")
+            jac_from_disk = meta.get("from_disk", False)
+        else:
+            compiled_jac = emit_jacobian(spec)
+            if compiled_jac is not None:
+                use_disk_cache = bool(jit and disk_cache and cache_root_path is not None)
+                cache_digest = None
+                cache_from_disk = True if use_disk_cache else False
+
+                if use_disk_cache:
+                    runner_codegen.configure_triplet_disk_cache(
+                        component="jvp",
+                        spec_hash=pieces.spec_hash,
+                        stepper_name="jacobian",
+                        structsig=jac_structsig,
+                        dtype=dtype_str,
+                        cache_root=cache_root_path,
+                        source=compiled_jac.jvp_source,
+                        function_name="jvp",
+                    )
+                jvp_art = jit_compile(compiled_jac.jvp, jit=jit, cache=use_disk_cache)
+                jvp_fn = jvp_art.fn
+                jvp_source = compiled_jac.jvp_source
+                cache_digest = cache_digest or jvp_art.cache_digest
+                cache_from_disk = cache_from_disk and bool(jvp_art.cache_hit)
+
+                if compiled_jac.jacobian is not None and compiled_jac.jacobian_source is not None:
+                    if use_disk_cache:
+                        runner_codegen.configure_triplet_disk_cache(
+                            component="jacobian",
+                            spec_hash=pieces.spec_hash,
+                            stepper_name="jacobian",
+                            structsig=jac_structsig,
+                            dtype=dtype_str,
+                            cache_root=cache_root_path,
+                            source=compiled_jac.jacobian_source,
+                            function_name="jacobian",
+                        )
+                    jac_art = jit_compile(compiled_jac.jacobian, jit=jit, cache=use_disk_cache)
+                    jacobian_fn = jac_art.fn
+                    jacobian_source = compiled_jac.jacobian_source
+                    cache_digest = cache_digest or jac_art.cache_digest
+                    cache_from_disk = cache_from_disk and bool(jac_art.cache_hit)
+
+                jac_digest = cache_digest
+                jac_from_disk = cache_from_disk
+                _jac_cache.put(
+                    jac_key,
+                    {
+                        "jvp": jvp_fn,
+                        "jacobian": jacobian_fn,
+                        "jit": bool(jit),
+                        "meta": {"digest": jac_digest, "from_disk": jac_from_disk},
+                        "jvp_source": compiled_jac.jvp_source,
+                        "jacobian_source": jacobian_source,
+                    },
+                )
+
     # Guards must be ready before JIT compilation so steppers see the updated symbols.
     guards_tuple = get_guards(jit=jit, disk_cache=False)  # disk cache unnecessary (inline functions)
     
@@ -873,14 +961,16 @@ def build(
         runner=runner_fn,
         spec_hash=pieces.spec_hash,
         dtype=dtype_np,
-        jacobian=None,
+        jvp=jvp_fn,
+        jacobian=jacobian_fn,
         guards=guards_tuple,
         rhs_source=pieces.rhs_source,
         events_pre_source=pieces.events_pre_source,
         events_post_source=pieces.events_post_source,
         update_aux_source=pieces.update_aux_source,
         stepper_source=stepper_source if 'stepper_source' in locals() and stepper_source else None,
-        jacobian_source=None,
+        jvp_source=jvp_source,
+        jacobian_source=jacobian_source,
         lag_state_info=lag_state_info_list,
         uses_lag=spec.uses_lag,
         equations_use_lag=spec.equations_use_lag,
@@ -920,6 +1010,7 @@ def export_model_sources(model: FullModel, output_dir: Union[str, Path]) -> Dict
         ("events_post", model.events_post_source),
         ("update_aux", getattr(model, "update_aux_source", None)),
         ("stepper", model.stepper_source),
+        ("jvp", getattr(model, "jvp_source", None)),
         ("jacobian", getattr(model, "jacobian_source", None)),
     ]
     

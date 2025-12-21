@@ -81,6 +81,7 @@ class ModelSpec:
     param_vals: Tuple[float | int, ...]
     equations_rhs: Dict[str, str] | None
     equations_block: str | None
+    jacobian_exprs: Tuple[Tuple[str, ...], ...] | None
     aux: Dict[str, str]
     functions: Dict[str, tuple[list[str], str]]
     events: Tuple[EventSpec, ...]
@@ -148,6 +149,7 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
         validate_reserved_identifiers,
         validate_constants,
         validate_identifiers_resolved,
+        validate_jacobian_matrix,
         collect_lag_requests,
         detect_equation_lag_usage,
     )
@@ -163,6 +165,7 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
     validate_presets(normal)
     validate_aux_names(normal)
     validate_identifiers_resolved(normal)
+    validate_jacobian_matrix(normal)
     
     # Collect lag requests from all expressions
     lag_requests = collect_lag_requests(normal)
@@ -184,6 +187,10 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
     eq = normal["equations"]
     eq_rhs = dict(eq["rhs"]) if eq.get("rhs") else None
     eq_block = eq.get("expr") if isinstance(eq.get("expr"), str) else None
+    jacobian_exprs = None
+    if isinstance(eq.get("jacobian"), dict):
+        expr_rows = eq["jacobian"].get("exprs") or []
+        jacobian_exprs = tuple(tuple(str(item) for item in row) for row in expr_rows)
 
     aux = dict(normal.get("aux", {}))
     functions = {k: (v["args"], v["expr"]) for k, v in (normal.get("functions") or {}).items()}
@@ -261,6 +268,7 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
         param_vals=param_vals,
         equations_rhs=eq_rhs,
         equations_block=eq_block,
+        jacobian_exprs=jacobian_exprs,
         aux=aux,
         functions=functions,
         events=events,
@@ -291,6 +299,7 @@ def _json_canon(obj: Any) -> str:
                 "param_vals": list(o.param_vals),
                 "equations_rhs": o.equations_rhs,
                 "equations_block": o.equations_block,
+                "jacobian_exprs": [list(row) for row in o.jacobian_exprs] if o.jacobian_exprs else None,
                 "aux": o.aux,
                 "functions": o.functions,
                 "events": [encode(e) for e in o.events],

@@ -24,7 +24,8 @@ class Model:
         update_aux: Compiled aux updater callable
         stepper: Compiled stepper callable
         runner: Compiled runner callable
-        jacobian: Optional Jacobian callable (analytic or compiled finite diff)
+        jvp: Optional Jacobian-vector product callable (preferred runtime primitive)
+        jacobian: Optional dense Jacobian filler callable
         spec_hash: Content hash of the spec
         dtype: NumPy dtype for the model
         rhs_source: Python source code for RHS function (if available)
@@ -32,6 +33,7 @@ class Model:
         events_post_source: Python source code for post-events function (if available)
         update_aux_source: Python source code for update_aux function (if available)
         stepper_source: Python source code for stepper function (if available)
+        jvp_source: Python source code for JVP function (if available)
         jacobian_source: Python source code for Jacobian function (if available)
     """
     spec: ModelSpec
@@ -45,12 +47,14 @@ class Model:
     runner: Callable
     spec_hash: str
     dtype: np.dtype
+    jvp: Optional[Callable] = None
     jacobian: Optional[Callable] = None
     rhs_source: Optional[str] = None
     events_pre_source: Optional[str] = None
     events_post_source: Optional[str] = None
     update_aux_source: Optional[str] = None
     stepper_source: Optional[str] = None
+    jvp_source: Optional[str] = None
     jacobian_source: Optional[str] = None
     lag_state_info: Optional[Tuple[Tuple[int, int, int, int], ...]] = None
     uses_lag: bool = False
@@ -88,6 +92,7 @@ class Model:
             ("events_post", self.events_post_source),
             ("update_aux", self.update_aux_source),
             ("stepper", self.stepper_source),
+            ("jvp", self.jvp_source),
             ("jacobian", self.jacobian_source),
         ]
         

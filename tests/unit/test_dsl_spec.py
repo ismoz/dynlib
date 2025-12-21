@@ -185,3 +185,35 @@ def test_builtin_constants_are_inlined_in_codegen():
         assert "pi" not in src
     assert "3.1415" in compiled.rhs_source
     assert "2.71828" in compiled.rhs_source
+
+
+def test_state_order_is_authoritative_and_hashes_change():
+    base = minimal_doc()
+    parsed = parse_model_v2(base)
+    spec = build_spec(parsed)
+
+    reordered = minimal_doc()
+    reordered["states"] = {"u": 0.0, "x": 1.0}
+    parsed_reordered = parse_model_v2(reordered)
+    spec_reordered = build_spec(parsed_reordered)
+
+    assert spec.states == ("x", "u")
+    assert spec_reordered.states == ("u", "x")
+    assert compute_spec_hash(spec) != compute_spec_hash(spec_reordered)
+
+
+def test_jacobian_matrix_roundtrip_and_validation():
+    n = minimal_doc()
+    n["equations"]["jacobian"] = {"exprs": [["-a", "1"], ["x", "0"]]}
+    spec = build_spec(parse_model_v2(n))
+    assert spec.jacobian_exprs == (("-a", "1"), ("x", "0"))
+
+    bad_shape = minimal_doc()
+    bad_shape["equations"]["jacobian"] = {"exprs": [["1"]]}
+    with pytest.raises(ModelLoadError, match=r"must have 2 rows"):
+        build_spec(parse_model_v2(bad_shape))
+
+    bad_ident = minimal_doc()
+    bad_ident["equations"]["jacobian"] = {"exprs": [["unknown", "0"], ["0", "0"]]}
+    with pytest.raises(ModelLoadError, match=r"Unknown identifier"):
+        build_spec(parse_model_v2(bad_ident))

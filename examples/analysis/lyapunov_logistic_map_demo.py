@@ -19,51 +19,15 @@ from dynlib.analysis.runtime import lyapunov_mle
 from dynlib.runtime.fastpath.plans import FixedTracePlan
 from dynlib.plot import series, export, theme, fig
 
-try:
-    from numba import njit
-    NUMBA_AVAILABLE = True
-except ImportError:
-    NUMBA_AVAILABLE = False
-    njit = lambda f: f
-
-# Define the logistic map model
-model_toml = """
-inline:
-[model]
-type = "map"
-name = "Logistic Map"
-
-[sim]
-dt = 1.0
-record = true
-
-[states]
-x = 0.4
-
-[params]
-r = 4.0
-
-[equations.rhs]
-x = "r * x * (1 - x)"
-"""
-
 # Compile the model
 print("Compiling logistic map model...")
-sim = setup(model_toml, stepper="map", jit=False)
+sim = setup("builtin://map/logistic", jit=False)
 model = sim.model  # keep dtype/params handy below
-
-# Define Jacobian for the logistic map: J = r * (1 - 2x)
-@njit
-def jacobian_fn(t, y, params):
-    """Jacobian of logistic map: ∂f/∂x = r(1 - 2x)"""
-    r = params[0]
-    x = y[0]
-    return np.array([[r * (1 - 2*x)]], dtype=np.float64)
 
 # Create Lyapunov runtime analysis
 print("Setting up Lyapunov analysis...")
 lyap_analysis = lyapunov_mle(
-    jacobian_fn=jacobian_fn,
+    jvp=model.jvp,
     n_state=1,
     trace_plan=FixedTracePlan(stride=1)
 )
@@ -174,7 +138,8 @@ print(f"{'r':>6s} {'λ (MLE)':>12s} {'Regime':>15s}")
 print("-"*60)
 
 test_r_values = [2.5, 3.2, 3.5, 3.83, 4.0]
-scan_sim = setup(model_toml, stepper="map", jit=False)
+scan_sim = setup("builtin://map/logistic", stepper="map", jit=False)
+scan_jvp = scan_sim.model.jvp
 
 for r_test in test_r_values:
     params_test = np.array([r_test], dtype=model.dtype)
@@ -188,7 +153,7 @@ for r_test in test_r_values:
         cap_evt=1,
         ic=np.array([0.4], dtype=model.dtype),
         params=params_test,
-        analysis=lyapunov_mle(jacobian_fn=jacobian_fn, n_state=1, trace_plan=None),
+        analysis=lyapunov_mle(jvp=scan_jvp, n_state=1, trace_plan=None),
     )
 
     lyap_out = scan_sim.results().analysis["lyapunov_mle"]["out"]
