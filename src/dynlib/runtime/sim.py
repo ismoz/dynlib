@@ -217,6 +217,7 @@ class _ResultAccumulator:
         analysis_trace_filled: int | None = None,
         analysis_trace_stride: int | None = None,
         analysis_modules: tuple[object, ...] | None = None,
+        analysis_meta: Mapping[str, object] | None = None,
     ) -> Results:
         return Results(
             T=self.T,
@@ -243,6 +244,7 @@ class _ResultAccumulator:
             analysis_trace_filled=analysis_trace_filled,
             analysis_trace_stride=analysis_trace_stride,
             analysis_modules=analysis_modules,
+            analysis_meta=analysis_meta,
         )
 
     def assert_monotone_time(self) -> None:
@@ -430,9 +432,6 @@ class Sim:
             if tag == "":
                 raise ValueError("tag cannot be empty")
 
-        if analysis is not None:
-            self._validate_analysis_requirements(analysis)
-        
         # Apply persistent defaults for run-level knobs
         # record
         if record is None:
@@ -602,6 +601,7 @@ class Sim:
         record_target_T = target_T + self._time_shift
         stepper_meta = self._stepper_spec.meta
         adaptive = getattr(stepper_meta, "time_control", "fixed") == "adaptive"
+        has_event_logs = self._max_log_width > 0
         wrms_cfg: WRMSConfig | None = None
         if adaptive and not resume:
             config_source = stepper_config_values or {}
@@ -610,6 +610,12 @@ class Sim:
                 stepper_meta,
                 config_source,
                 max_dt=max_dt_hint,
+            )
+        if analysis is not None:
+            self._validate_analysis_requirements(
+                analysis,
+                adaptive=adaptive,
+                has_event_logs=has_event_logs,
             )
         def _remaining_steps(recorded_completed: int) -> int:
             remaining = target_N - recorded_completed
@@ -2336,7 +2342,7 @@ class Sim:
     def _ensure_runner_done(self, result: Results, *, phase: str) -> None:
         """Raise when the wrapped runner did not complete successfully."""
         status_value = int(result.status)
-        if status_value == int(Status.DONE):
+        if status_value in (int(Status.DONE), int(Status.TRACE_OVERFLOW)):
             return
         try:
             status_name = Status(status_value).name
@@ -2477,6 +2483,7 @@ class Sim:
             analysis_trace_filled=last_result.analysis_trace_filled,
             analysis_trace_stride=last_result.analysis_trace_stride,
             analysis_modules=last_result.analysis_modules,
+            analysis_meta=getattr(last_result, "analysis_meta", None),
         )
         self._results_view = None
 
@@ -2685,7 +2692,13 @@ class Sim:
             values[names[idx]] = float(cfg[idx])
         return values
 
-    def _validate_analysis_requirements(self, analysis) -> None:
+    def _validate_analysis_requirements(
+        self,
+        analysis,
+        *,
+        adaptive: bool | None = None,
+        has_event_logs: bool | None = None,
+    ) -> None:
         """Ensure the provided analysis is compatible with this model."""
         req = getattr(analysis, "requirements", None)
         if req is None:
@@ -2707,6 +2720,18 @@ class Sim:
             raise ValueError(
                 f"Analysis '{name}' requires a model Jacobian, but the model does not provide one."
             )
+        if adaptive is True and getattr(req, "fixed_step", False):
+            raise ValueError(f"Analysis '{name}' requires fixed-step execution")
+        if req.requires_event_log:
+            if has_event_logs is False:
+                raise ValueError(f"Analysis '{name}' requires event logging, but no event logs are configured.")
+        if getattr(analysis, "trace", None) is not None and analysis.needs_trace:
+            if analysis.trace.plan is None:
+                raise ValueError(f"Analysis '{name}' requires a TracePlan when trace width > 0.")
+            if analysis.trace.record_interval() <= 0:
+                raise ValueError(f"Analysis '{name}' trace stride must be positive.")
+            if adaptive:
+                raise ValueError(f"Analysis '{name}' traces require fixed-step execution.")
 
 
 # ------------------------------- misc helpers ---------------------------------

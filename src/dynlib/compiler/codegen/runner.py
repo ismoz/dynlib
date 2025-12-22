@@ -47,7 +47,7 @@ except ImportError:  # pragma: no cover - Python <3.8 fallback
 # Import status codes from canonical source
 from dynlib.runtime.runner_api import (
     OK, STEPFAIL, NAN_DETECTED,
-    DONE, GROW_REC, GROW_EVT, USER_BREAK
+    DONE, GROW_REC, GROW_EVT, USER_BREAK, TRACE_OVERFLOW
 )
 
 # Import centralized JIT compilation helper
@@ -270,6 +270,13 @@ def runner(
                 analysis_ws, analysis_out, analysis_trace,
                 analysis_trace_count, trace_cap_int, trace_stride_int,
             )
+            if trace_cap_int > 0 and analysis_trace_count[0] > trace_cap_int:
+                i_out[0] = i
+                step_out[0] = step
+                t_out[0] = t
+                status_out[0] = TRACE_OVERFLOW
+                hint_out[0] = m
+                return TRACE_OVERFLOW
         
         # 2. Check for completion and handle endpoint clipping
         remaining = t_end - t
@@ -402,6 +409,13 @@ def runner(
                 analysis_ws, analysis_out, analysis_trace,
                 analysis_trace_count, trace_cap_int, trace_stride_int,
             )
+            if trace_cap_int > 0 and analysis_trace_count[0] > trace_cap_int:
+                i_out[0] = i
+                step_out[0] = step
+                t_out[0] = t
+                status_out[0] = TRACE_OVERFLOW
+                hint_out[0] = m
+                return TRACE_OVERFLOW
         
         # 6. Record (if enabled and step matches record_interval)
         if record_interval > 0 and (step % record_interval == 0):
@@ -948,7 +962,7 @@ def _render_runner_module_source(request: RunnerCacheRequest) -> str:
         from numba import njit
         from dynlib.runtime.runner_api import (
             OK, STEPFAIL, NAN_DETECTED,
-            DONE, GROW_REC, GROW_EVT, USER_BREAK
+            DONE, GROW_REC, GROW_EVT, USER_BREAK, TRACE_OVERFLOW
         )
 
         __all__ = ["runner"]

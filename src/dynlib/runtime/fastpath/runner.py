@@ -11,10 +11,11 @@ from dynlib.analysis.runtime import AnalysisModule, analysis_noop_hook
 from dynlib.runtime.fastpath.plans import RecordingPlan
 from dynlib.runtime.fastpath.capability import assess_capability, FastpathSupport
 from dynlib.runtime.results import Results
+from dynlib.runtime.analysis_meta import build_analysis_metadata
 from dynlib.runtime.workspace import make_runtime_workspace, snapshot_workspace
 from dynlib.runtime.sim import Segment, Sim
 from dynlib.runtime.results_api import ResultsView
-from dynlib.runtime.runner_api import DONE, GROW_REC, GROW_EVT
+from dynlib.runtime.runner_api import DONE, GROW_REC, GROW_EVT, TRACE_OVERFLOW
 
 __all__ = [
     "run_single_fastpath",
@@ -123,6 +124,7 @@ def _call_runner(
     n_aux = len(model.spec.aux)
     n_rec_states = len(state_rec_indices)
     n_rec_aux = len(aux_rec_indices)
+    is_jit_runner = _is_jitted_runner(model.runner)
 
     rec_every = int(ctx.record_interval)
     total_steps = ctx.target_steps if ctx.target_steps is not None else math.ceil(max(0.0, ctx.t_end - ctx.t0) / ctx.dt)
@@ -167,6 +169,8 @@ def _call_runner(
 
         trace_width = analysis.trace.width if analysis.trace else 0
         if trace_width > 0:
+            if analysis.trace is None:
+                raise RuntimeError("analysis trace requested but TracePlan is missing")
             trace_cap = int(analysis.trace.capacity(total_steps=total_steps))
             if trace_cap <= 0:
                 raise RuntimeError("TracePlan must provide positive capacity for fastpath analysis.")
@@ -178,14 +182,10 @@ def _call_runner(
             analysis_trace_cap = 0
             analysis_trace_stride = 0
         analysis_trace_count = np.zeros((1,), dtype=np.int64)
-        hooks = analysis.jit_hooks or analysis.python_hooks
+        resolved_hooks = analysis.resolve_hooks(jit=is_jit_runner, dtype=dtype)
         noop_hook = analysis_noop_hook()
-        if hooks is not None:
-            analysis_dispatch_pre = hooks.pre_step or noop_hook
-            analysis_dispatch_post = hooks.post_step or noop_hook
-        else:
-            analysis_dispatch_pre = noop_hook
-            analysis_dispatch_post = noop_hook
+        analysis_dispatch_pre = resolved_hooks.pre_step or noop_hook
+        analysis_dispatch_post = resolved_hooks.post_step or noop_hook
     else:
         analysis_kind = 0
         analysis_ws = np.zeros((0,), dtype=dtype)
@@ -254,33 +254,46 @@ def _call_runner(
         n_rec_aux,
     )
 
+    status_value = int(status)
     filled = int(i_out[0])
     evt_filled = max(0, int(hint_out[0]))
-    if status == GROW_REC:
+    if status_value == GROW_REC:
         raise RuntimeError("Fastpath runner ran out of record capacity; adjust plan.")
-    if status == GROW_EVT:
+    if status_value == GROW_EVT:
         raise RuntimeError("Fastpath runner received unexpected event growth request.")
-    if status != DONE:
-        raise RuntimeError(f"Fastpath runner exited with status {int(status)}")
+    overflowed = status_value == TRACE_OVERFLOW
+    if status_value not in (DONE, TRACE_OVERFLOW):
+        raise RuntimeError(f"Fastpath runner exited with status {status_value}")
 
     analysis_trace_view = None
     analysis_trace_filled = None
     analysis_out_payload = None
     analysis_stride_payload = None
     analysis_modules = None
+    analysis_meta = None
     if analysis is not None:
         analysis_modules = tuple(getattr(analysis, "modules", (analysis,)))
         analysis_out_payload = analysis_out if analysis_out.size > 0 else None
-        analysis_trace_filled = int(analysis_trace_count[0])
+        filled_raw = int(analysis_trace_count[0])
+        analysis_trace_filled = filled_raw
         analysis_stride_payload = int(analysis_trace_stride) if analysis_trace_stride else None
+        cap_payload = int(analysis_trace_cap) if analysis_trace_cap else None
         if analysis_trace.shape[0] > 0:
-            trace_view = analysis_trace[:analysis_trace_filled, :]
+            trace_view = analysis_trace[:filled_raw, :]
+            analysis_trace_filled = trace_view.shape[0]
             if analysis.trace:
-                sl = analysis.finalize_trace(analysis_trace_filled)
+                sl = analysis.finalize_trace(filled_raw)
                 if sl is not None:
                     trace_view = trace_view[sl]
                     analysis_trace_filled = trace_view.shape[0]
             analysis_trace_view = trace_view
+        analysis_meta = build_analysis_metadata(
+            analysis_modules,
+            analysis_kind=analysis_kind,
+            trace_stride=analysis_stride_payload,
+            trace_capacity=cap_payload,
+            overflow=overflowed,
+        )
 
     # Optional tail trimming
     trim = plan.finalize_index(filled)
@@ -314,7 +327,7 @@ def _call_runner(
         EVT_LOG_DATA=EVT_LOG_DATA,
         n=filled,
         m=evt_filled,
-        status=int(status),
+        status=status_value,
         final_state=np.array(y_curr, copy=True),
         final_params=np.array(params, copy=True),
         t_final=float(t_out[0]),
@@ -328,6 +341,7 @@ def _call_runner(
         analysis_trace_filled=analysis_trace_filled,
         analysis_trace_stride=analysis_stride_payload,
         analysis_modules=analysis_modules,
+        analysis_meta=analysis_meta,
     )
 
 

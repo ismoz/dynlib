@@ -1,8 +1,9 @@
+# src/dynlib/analysis/runtime/core.py
 """Runtime analysis infrastructure."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Callable, Iterable, Optional, Sequence, Tuple
 
@@ -28,7 +29,7 @@ class AnalysisRequirements:
     need_jvp: bool = False
     need_dense_jacobian: bool = False
     need_jacobian: bool = False  # legacy flag; treated as dense requirement
-    need_events: bool = False
+    requires_event_log: bool = False
     accept_reject: bool = False
     mutates_state: bool = False
 
@@ -66,7 +67,14 @@ class TraceSpec:
 
     width: int
     plan: Optional[TracePlan] = None
-    allow_growth: bool = True
+
+    def __post_init__(self) -> None:
+        if self.width < 0:
+            raise ValueError("trace width must be non-negative")
+        if self.width > 0 and self.plan is None:
+            raise ValueError("TraceSpec requires a TracePlan when width > 0")
+        if self.plan is not None and self.plan.record_interval() <= 0:
+            raise ValueError("TracePlan stride must be positive")
 
     def capacity(self, *, total_steps: int | None) -> int:
         if self.plan is None:
@@ -87,7 +95,7 @@ class TraceSpec:
 
 @dataclass(frozen=True)
 class AnalysisModule:
-    """Single runtime analysis with optional Python and JIT hooks."""
+    """Single runtime analysis with optional JIT dispatch."""
 
     name: str
     requirements: AnalysisRequirements
@@ -96,9 +104,11 @@ class AnalysisModule:
     output_names: Tuple[str, ...] | None = None
     trace: Optional[TraceSpec] = None
     trace_names: Tuple[str, ...] | None = None
-    python_hooks: AnalysisHooks = AnalysisHooks()
-    jit_hooks: Optional[AnalysisHooks] = None
+    hooks: AnalysisHooks = AnalysisHooks()
     analysis_kind: int = 1
+    _jit_cache: dict[tuple[int, str, int, int], AnalysisHooks] = field(
+        init=False, repr=False, compare=False, default_factory=dict
+    )
 
     @property
     def needs_trace(self) -> bool:
@@ -107,12 +117,6 @@ class AnalysisModule:
     @property
     def trace_stride(self) -> int:
         return self.trace.record_interval() if self.trace else 0
-
-    @property
-    def allows_growth(self) -> bool:
-        if self.trace is None:
-            return True
-        return bool(self.trace.allow_growth)
 
     def trace_capacity(self, *, total_steps: int | None) -> int:
         return self.trace.capacity(total_steps=total_steps) if self.trace else 0
@@ -136,8 +140,8 @@ class AnalysisModule:
         """
         if self.requirements.fixed_step and adaptive:
             return False, "analysis requires fixed-step"
-        if self.requirements.need_events and has_event_logs:
-            return False, "analysis incompatible with event logging"
+        if self.requirements.requires_event_log:
+            return False, "analysis requires event logs"
         if self.requirements.need_jvp and not has_jvp:
             return False, "analysis requires a model Jacobian-vector product"
         if self.requirements.need_dense_jacobian and not has_dense_jacobian:
@@ -146,11 +150,58 @@ class AnalysisModule:
             return False, "analysis requires a model Jacobian"
         if self.requirements.accept_reject:
             return False, "analysis with accept/reject hooks not supported on fast path"
-        if self.jit_hooks is None:
-            return False, "analysis lacks JIT hooks"
         if self.needs_trace and self.trace is None:
             return False, "analysis trace missing plan"
+        if self.requirements.mutates_state:
+            return False, "analysis mutates state"
         return True, None
+
+    def _jit_key(self, dtype: np.dtype) -> tuple[int, str, int, int]:
+        trace_width = self.trace.width if self.trace else 0
+        trace_stride = self.trace_stride
+        return (id(self), str(np.dtype(dtype)), trace_width, trace_stride)
+
+    def _compile_hooks(self, hooks: AnalysisHooks, dtype: np.dtype) -> AnalysisHooks:
+        try:  # pragma: no cover - numba may be missing
+            from numba import njit  # type: ignore
+        except Exception as exc:  # pragma: no cover - import guard
+            raise RuntimeError(
+                f"Analysis '{self.name}' requested jit hooks but numba is not installed"
+            ) from exc
+
+        def _jit(fn: Optional[Callable[..., None]]) -> Optional[Callable[..., None]]:
+            if fn is None:
+                return None
+            try:
+                return njit(cache=True)(fn)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Failed to njit analysis hook '{self.name}.{getattr(fn, '__name__', 'hook')}' "
+                    f"in nopython mode"
+                ) from exc
+
+        compiled = AnalysisHooks(
+            pre_step=_jit(hooks.pre_step),
+            post_step=_jit(hooks.post_step),
+        )
+        key = self._jit_key(dtype)
+        self._jit_cache[key] = compiled
+        return compiled
+
+    def resolve_hooks(self, *, jit: bool, dtype: np.dtype) -> AnalysisHooks:
+        """
+        Return dispatch hooks for the requested execution mode.
+
+        jit=True compiles the authored hooks with numba (nopython) and caches the
+        result per (module, dtype, trace shape). jit=False returns the Python hooks.
+        """
+        if not jit:
+            return self.hooks
+        key = self._jit_key(dtype)
+        cached = self._jit_cache.get(key)
+        if cached is not None:
+            return cached
+        return self._compile_hooks(self.hooks, dtype)
 
 
 class CombinedAnalysis(AnalysisModule):
@@ -168,15 +219,9 @@ class CombinedAnalysis(AnalysisModule):
         trace_names = self._merge_names(tuple(mod.trace_names or tuple() for mod in modules))
 
         python_hooks = AnalysisHooks(
-            pre_step=self._compose_hook(modules, phase="pre"),
-            post_step=self._compose_hook(modules, phase="post"),
+            pre_step=self._compose_hook(modules, hooks=[m.hooks for m in modules], phase="pre"),
+            post_step=self._compose_hook(modules, hooks=[m.hooks for m in modules], phase="post"),
         )
-        jit_hooks = None
-        if all(mod.jit_hooks is not None for mod in modules):
-            jit_hooks = AnalysisHooks(
-                pre_step=self._compose_hook(modules, phase="pre", use_jit=True),
-                post_step=self._compose_hook(modules, phase="post", use_jit=True),
-            )
 
         super().__init__(
             name="combined",
@@ -186,8 +231,7 @@ class CombinedAnalysis(AnalysisModule):
             trace=trace_spec,
             output_names=output_names,
             trace_names=trace_names,
-            python_hooks=python_hooks,
-            jit_hooks=jit_hooks,
+            hooks=python_hooks,
             analysis_kind=analysis_kind,
         )
 
@@ -197,7 +241,7 @@ class CombinedAnalysis(AnalysisModule):
         need_jvp = any(mod.requirements.need_jvp for mod in modules)
         need_dense_jacobian = any(mod.requirements.need_dense_jacobian for mod in modules)
         need_jacobian = any(mod.requirements.need_jacobian for mod in modules)
-        need_events = any(mod.requirements.need_events for mod in modules)
+        requires_event_log = any(mod.requirements.requires_event_log for mod in modules)
         accept_reject = any(mod.requirements.accept_reject for mod in modules)
         mutates_state = any(mod.requirements.mutates_state for mod in modules)
         return AnalysisRequirements(
@@ -205,7 +249,7 @@ class CombinedAnalysis(AnalysisModule):
             need_jvp=need_jvp,
             need_dense_jacobian=need_dense_jacobian,
             need_jacobian=need_jacobian,
-            need_events=need_events,
+            requires_event_log=requires_event_log,
             accept_reject=accept_reject,
             mutates_state=mutates_state,
         )
@@ -219,8 +263,7 @@ class CombinedAnalysis(AnalysisModule):
         if any(spec.plan != plan for spec in specs):
             raise ValueError("CombinedAnalysis requires all trace plans to match")
         width = sum(spec.width for spec in specs)
-        allow_growth = all(spec.allow_growth for spec in specs)
-        return TraceSpec(width=width, plan=plan, allow_growth=allow_growth)
+        return TraceSpec(width=width, plan=plan)
 
     @staticmethod
     def _merge_names(name_sets: Tuple[Tuple[str, ...], ...]) -> Tuple[str, ...] | None:
@@ -230,11 +273,33 @@ class CombinedAnalysis(AnalysisModule):
         return flat if flat else None
 
     @staticmethod
+    def _compute_offsets(modules: Sequence[AnalysisModule]) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Precompute workspace/output/trace offsets per module for jit-safe composition.
+        """
+        ws_offsets = [0]
+        out_offsets = [0]
+        trace_offsets = [0]
+        trace_widths = []
+        for mod in modules:
+            ws_offsets.append(ws_offsets[-1] + mod.workspace_size)
+            out_offsets.append(out_offsets[-1] + mod.output_size)
+            width = mod.trace.width if mod.trace else 0
+            trace_offsets.append(trace_offsets[-1] + width)
+            trace_widths.append(width)
+        return (
+            np.asarray(ws_offsets, dtype=np.int64),
+            np.asarray(out_offsets, dtype=np.int64),
+            np.asarray(trace_offsets, dtype=np.int64),
+            np.asarray(trace_widths, dtype=np.int64),
+        )
+
+    @staticmethod
     def _compose_hook(
         modules: Sequence[AnalysisModule],
         *,
+        hooks: Sequence[AnalysisHooks],
         phase: str,
-        use_jit: bool = False,
     ):
         hook_name = "pre_step" if phase == "pre" else "post_step"
 
@@ -256,9 +321,8 @@ class CombinedAnalysis(AnalysisModule):
             ws_offset = 0
             out_offset = 0
             trace_offset = 0
-            for mod in modules:
-                hooks = mod.jit_hooks if use_jit else mod.python_hooks
-                fn = getattr(hooks, hook_name) if hooks else None
+            for mod, hook_set in zip(modules, hooks):
+                fn = getattr(hook_set, hook_name) if hook_set else None
                 if fn is None:
                     ws_offset += mod.workspace_size
                     out_offset += mod.output_size
@@ -294,6 +358,150 @@ class CombinedAnalysis(AnalysisModule):
                     trace_offset += mod.trace.width
 
         return _hook
+
+    @staticmethod
+    def _compose_hook_jit(
+        *,
+        hooks: Sequence[AnalysisHooks],
+        ws_offsets: np.ndarray,
+        out_offsets: np.ndarray,
+        trace_offsets: np.ndarray,
+        trace_widths: np.ndarray,
+    ):
+        """
+        JIT-friendly hook that only closes over primitive offsets and compiled callables.
+        """
+        noop = analysis_noop_hook()
+        hook_funcs = tuple(h.pre_step or noop for h in hooks)
+
+        def _hook(
+            t: float,
+            dt: float,
+            step: int,
+            y_curr: np.ndarray,
+            y_prev: np.ndarray,
+            params: np.ndarray,
+            runtime_ws,
+            analysis_ws: np.ndarray,
+            analysis_out: np.ndarray,
+            trace_buf: np.ndarray,
+            trace_count: np.ndarray,
+            trace_cap: int,
+            trace_stride: int,
+        ) -> None:
+            n = len(hook_funcs)
+            for i in range(n):
+                ws0 = int(ws_offsets[i])
+                ws1 = int(ws_offsets[i + 1])
+                out0 = int(out_offsets[i])
+                out1 = int(out_offsets[i + 1])
+                trace_width = int(trace_widths[i])
+                trace0 = int(trace_offsets[i])
+                if trace_width > 0 and trace_buf.shape[0] > 0:
+                    trace_view = trace_buf[:, trace0 : trace0 + trace_width]
+                else:
+                    trace_view = trace_buf[:0, :0]
+                hook_funcs[i](
+                    t,
+                    dt,
+                    step,
+                    y_curr,
+                    y_prev,
+                    params,
+                    runtime_ws,
+                    analysis_ws[ws0:ws1],
+                    analysis_out[out0:out1],
+                    trace_view,
+                    trace_count,
+                    trace_cap,
+                    trace_stride,
+                )
+
+        return _hook
+
+    @staticmethod
+    def _compose_hook_jit_post(
+        *,
+        hooks: Sequence[AnalysisHooks],
+        ws_offsets: np.ndarray,
+        out_offsets: np.ndarray,
+        trace_offsets: np.ndarray,
+        trace_widths: np.ndarray,
+    ):
+        noop = analysis_noop_hook()
+        hook_funcs = tuple(h.post_step or noop for h in hooks)
+
+        def _hook(
+            t: float,
+            dt: float,
+            step: int,
+            y_curr: np.ndarray,
+            y_prev: np.ndarray,
+            params: np.ndarray,
+            runtime_ws,
+            analysis_ws: np.ndarray,
+            analysis_out: np.ndarray,
+            trace_buf: np.ndarray,
+            trace_count: np.ndarray,
+            trace_cap: int,
+            trace_stride: int,
+        ) -> None:
+            n = len(hook_funcs)
+            for i in range(n):
+                ws0 = int(ws_offsets[i])
+                ws1 = int(ws_offsets[i + 1])
+                out0 = int(out_offsets[i])
+                out1 = int(out_offsets[i + 1])
+                trace_width = int(trace_widths[i])
+                trace0 = int(trace_offsets[i])
+                if trace_width > 0 and trace_buf.shape[0] > 0:
+                    trace_view = trace_buf[:, trace0 : trace0 + trace_width]
+                else:
+                    trace_view = trace_buf[:0, :0]
+                hook_funcs[i](
+                    t,
+                    dt,
+                    step,
+                    y_curr,
+                    y_prev,
+                    params,
+                    runtime_ws,
+                    analysis_ws[ws0:ws1],
+                    analysis_out[out0:out1],
+                    trace_view,
+                    trace_count,
+                    trace_cap,
+                    trace_stride,
+                )
+
+        return _hook
+
+    def resolve_hooks(self, *, jit: bool, dtype: np.dtype) -> AnalysisHooks:
+        if not jit:
+            return self.hooks
+        ws_offsets, out_offsets, trace_offsets, trace_widths = self._compute_offsets(self.modules)
+        compiled_children = [mod.resolve_hooks(jit=True, dtype=dtype) for mod in self.modules]
+        composed = AnalysisHooks(
+            pre_step=self._compose_hook_jit(
+                hooks=compiled_children,
+                ws_offsets=ws_offsets,
+                out_offsets=out_offsets,
+                trace_offsets=trace_offsets,
+                trace_widths=trace_widths,
+            ),
+            post_step=self._compose_hook_jit_post(
+                hooks=compiled_children,
+                ws_offsets=ws_offsets,
+                out_offsets=out_offsets,
+                trace_offsets=trace_offsets,
+                trace_widths=trace_widths,
+            ),
+        )
+        key = self._jit_key(dtype)
+        cached = self._jit_cache.get(key)
+        if cached is not None:
+            return cached
+        return self._compile_hooks(composed, dtype)
 
 
 @lru_cache(maxsize=1)

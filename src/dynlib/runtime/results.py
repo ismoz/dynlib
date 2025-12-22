@@ -60,6 +60,7 @@ class Results:
     analysis_trace_filled: int | None = None
     analysis_trace_stride: int | None = None
     analysis_modules: tuple[object, ...] | None = None
+    analysis_meta: Mapping[str, object] | None = None
 
     # ---------------- views ----------------
 
@@ -159,6 +160,11 @@ class Results:
             if mod.trace is not None:
                 trace_offset += mod.trace.width
         return result
+
+    @property
+    def analysis_metadata(self) -> Mapping[str, object] | None:
+        """Metadata describing attached analysis modules."""
+        return self.analysis_meta
 
     # --------------- helpers (out of hot path) ---------------
 

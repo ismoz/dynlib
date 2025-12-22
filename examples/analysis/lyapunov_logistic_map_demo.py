@@ -21,7 +21,7 @@ from dynlib.plot import series, export, theme, fig
 
 # Compile the model
 print("Compiling logistic map model...")
-sim = setup("builtin://map/logistic", jit=False)
+sim = setup("builtin://map/logistic", jit=True)
 model = sim.model  # keep dtype/params handy below
 
 # Create Lyapunov runtime analysis

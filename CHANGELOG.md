@@ -2,6 +2,17 @@
 
 ---
 
+## [2.34.2] – 2025-12-22
+### Fixed
+- Runtime `CombinedAnalysis` now composes child hooks with precomputed offsets and numba-friendly closures, 
+  making combined analyses eligible for fast-path/JIT execution while preserving the Python path when `jit=False`.
+- Analysis JIT compilation remains opt-in; pure-Python runners continue to dispatch uncompiled hooks when JIT is 
+  not requested or numba is unavailable.
+- With this and previous changes, all of the issues blocking numba compatibility (`jit=True`) of runtime analysis 
+  modules are resolved.
+
+---
+
 ## [2.34.1] – 2025-12-21
 ### Added
 - DSL models can now declare Jacobians directly in TOML via `[equations.jacobian].exprs` with deterministic 

@@ -1,3 +1,4 @@
+# src/dynlib/analysis/runtime/__init__.py
 """Online analysis utilities executed during simulation."""
 
 from .core import (

@@ -5,12 +5,13 @@ import math
 import numpy as np
 
 from dynlib.runtime.runner_api import (
-    OK, STEPFAIL, NAN_DETECTED, DONE, GROW_REC, GROW_EVT, USER_BREAK, Status,
+    OK, STEPFAIL, NAN_DETECTED, DONE, GROW_REC, GROW_EVT, USER_BREAK, TRACE_OVERFLOW, Status,
 )
 from dynlib.runtime.buffers import (
     allocate_pools, grow_rec_arrays, grow_evt_arrays,
 )
 from dynlib.runtime.results import Results
+from dynlib.runtime.analysis_meta import build_analysis_metadata
 from dynlib.runtime.workspace import (
     make_runtime_workspace,
     initialize_lag_runtime_workspace,
@@ -21,6 +22,11 @@ from dynlib.runtime.initial_step import WRMSConfig, choose_initial_dt_wrms
 from dynlib.analysis.runtime import AnalysisModule, analysis_noop_hook
 
 __all__ = ["run_with_wrapper"]
+
+# Shared helper: detect numba-compiled callables
+def _is_jitted(obj) -> bool:
+    """Best-effort detection of a numba-compiled callable (has signatures)."""
+    return bool(getattr(obj, "signatures", None))
 
 # ------------------------------ Wrapper --------------------------------------
 
@@ -201,6 +207,8 @@ def run_with_wrapper(
             if dt_curr == 0.0:
                 dt_curr = 1e-6
 
+    is_jit_runner = _is_jitted(runner)
+
     # Analysis buffers (persist across re-entry)
     if analysis is not None:
         analysis_kind = int(analysis.analysis_kind)
@@ -211,13 +219,17 @@ def run_with_wrapper(
 
         trace_width = analysis.trace.width if analysis.trace else 0
         if trace_width > 0:
+            if analysis.trace is None:
+                raise ValueError("analysis trace requested but TracePlan is missing")
+            if adaptive:
+                raise ValueError("analysis traces require fixed-step execution")
             if discrete and steps_horizon is not None:
-                est_steps = int(steps_horizon)
+                total_steps = int(steps_horizon)
             else:
-                # Fallback estimate for continuous/adaptive modes
-                horizon = float(t_end) if not discrete else float(t0)
-                est_steps = int(math.ceil(max(0.0, horizon - float(t0)) / max(float(dt_curr), 1e-12))) if not adaptive else int(max_steps)
-            trace_cap = max(1, analysis.trace.capacity(total_steps=est_steps))
+                total_steps = int(max_steps)
+            trace_cap = int(analysis.trace.capacity(total_steps=total_steps))
+            if trace_cap <= 0:
+                raise ValueError("TracePlan must provide positive capacity for runtime analysis")
             analysis_trace = np.zeros((trace_cap, trace_width), dtype=dtype)
             analysis_trace_cap = np.int64(trace_cap)
             analysis_trace_stride = np.int64(analysis.trace.record_interval())
@@ -226,9 +238,10 @@ def run_with_wrapper(
             analysis_trace_cap = np.int64(0)
             analysis_trace_stride = np.int64(0)
         analysis_trace_count = np.zeros((1,), dtype=np.int64)
+        resolved_hooks = analysis.resolve_hooks(jit=is_jit_runner, dtype=dtype)
         noop_hook = analysis_noop_hook()
-        analysis_dispatch_pre = analysis.python_hooks.pre_step or noop_hook
-        analysis_dispatch_post = analysis.python_hooks.post_step or noop_hook
+        analysis_dispatch_pre = resolved_hooks.pre_step or noop_hook
+        analysis_dispatch_post = resolved_hooks.post_step or noop_hook
     else:
         analysis_kind = 0
         analysis_ws = np.zeros((0,), dtype=dtype)
@@ -240,14 +253,29 @@ def run_with_wrapper(
         noop_hook = analysis_noop_hook()
         analysis_dispatch_pre = noop_hook
         analysis_dispatch_post = noop_hook
+    analysis_modules = tuple(getattr(analysis, "modules", (analysis,))) if analysis is not None else None
+
+    def _analysis_meta(overflow: bool = False):
+        if analysis_modules is None:
+            return None
+        stride_payload = int(analysis_trace_stride) if int(analysis_trace_stride) > 0 else None
+        cap_payload = int(analysis_trace_cap) if int(analysis_trace_cap) > 0 else None
+        return build_analysis_metadata(
+            analysis_modules,
+            analysis_kind=analysis_kind,
+            trace_stride=stride_payload,
+            trace_capacity=cap_payload,
+            overflow=overflow,
+        )
 
     def _finalize_analysis_trace_view() -> tuple[np.ndarray | None, int | None]:
         if analysis is None or analysis_trace.shape[0] == 0:
             return None, None
-        filled = int(analysis_trace_count[0])
-        trace_view = analysis_trace[:filled, :]
+        filled_raw = int(analysis_trace_count[0])
+        trace_view = analysis_trace[:filled_raw, :]
+        filled = trace_view.shape[0]
         if analysis.trace:
-            sl = analysis.finalize_trace(filled)
+            sl = analysis.finalize_trace(filled_raw)
             if sl is not None:
                 trace_view = trace_view[sl]
                 filled = trace_view.shape[0]
@@ -300,9 +328,6 @@ def run_with_wrapper(
             trace_view, trace_filled = _finalize_analysis_trace_view()
             analysis_out_payload = analysis_out if (analysis is not None and analysis_out.size > 0) else None
             analysis_stride_payload = int(analysis_trace_stride) if (analysis is not None and int(analysis_trace_stride) > 0) else None
-            analysis_modules = None
-            if analysis is not None:
-                analysis_modules = tuple(getattr(analysis, "modules", (analysis,)))
             return Results(
                 T=T, Y=Y, AUX=(AUX if n_rec_aux > 0 else None), 
                 STEP=STEP, FLAGS=FLAGS,
@@ -323,6 +348,7 @@ def run_with_wrapper(
                 analysis_trace_filled=trace_filled,
                 analysis_trace_stride=analysis_stride_payload,
                 analysis_modules=analysis_modules,
+                analysis_meta=_analysis_meta(status_value == TRACE_OVERFLOW),
             )
 
         if status_value == GROW_REC:
@@ -393,7 +419,7 @@ def run_with_wrapper(
                     dt_curr = dt_candidate
             continue
 
-        if status_value in (USER_BREAK, STEPFAIL, NAN_DETECTED):
+        if status_value in (USER_BREAK, STEPFAIL, NAN_DETECTED, TRACE_OVERFLOW):
             status_name = Status(status_value).name
             t_final = float(t_out[0])
             warnings.warn(
@@ -412,9 +438,6 @@ def run_with_wrapper(
             trace_view, trace_filled = _finalize_analysis_trace_view()
             analysis_out_payload = analysis_out if (analysis is not None and analysis_out.size > 0) else None
             analysis_stride_payload = int(analysis_trace_stride) if (analysis is not None and int(analysis_trace_stride) > 0) else None
-            analysis_modules = None
-            if analysis is not None:
-                analysis_modules = tuple(getattr(analysis, "modules", (analysis,)))
             return Results(
                 T=T, Y=Y, AUX=(AUX if n_rec_aux > 0 else None), 
                 STEP=STEP, FLAGS=FLAGS,
@@ -434,6 +457,7 @@ def run_with_wrapper(
                 analysis_trace_filled=trace_filled,
                 analysis_trace_stride=analysis_stride_payload,
                 analysis_modules=analysis_modules,
+                analysis_meta=_analysis_meta(status_value == TRACE_OVERFLOW),
             )
 
         # Any other code is unexpected in wrapper-level exit contract.

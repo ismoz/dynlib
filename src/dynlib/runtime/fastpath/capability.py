@@ -29,6 +29,11 @@ def _has_event_logs(spec) -> bool:
     return any(getattr(ev, "log", None) for ev in spec.events)
 
 
+def _is_jitted_runner(fn) -> bool:
+    """Detect numba-compiled runners by the presence of signatures."""
+    return bool(getattr(fn, "signatures", None))
+
+
 def assess_capability(
     sim: "Sim",
     *,
@@ -44,11 +49,12 @@ def assess_capability(
 
     Constraints:
       - No event logging (apply-only actions are fine)
+      - Analyses may not mutate state on fast path
       - Fixed-step time control (adaptive steppers fall back)
       - Record interval must be positive and fixed
       - No resume / stitching / snapshots
       - Dtype and stepper config are known
-      - Optional analysis modules must provide JIT hooks and fixed trace plan
+      - Optional analysis modules must provide fixed trace plan
     """
     spec = sim.model.spec
     if _has_event_logs(spec):
@@ -81,6 +87,10 @@ def assess_capability(
     if analysis is not None:
         has_jvp = getattr(sim.model, "jvp", None) is not None
         has_jacobian = getattr(sim.model, "jacobian", None) is not None
+        if analysis.requirements.requires_event_log:
+            return FastpathSupport(False, "analysis requires event logging")
+        if analysis.requirements.mutates_state:
+            return FastpathSupport(False, "analysis mutates state")
         ok, reason = analysis.supports_fastpath(
             adaptive=adaptive,
             has_event_logs=_has_event_logs(spec),
@@ -89,7 +99,14 @@ def assess_capability(
         )
         if not ok:
             return FastpathSupport(False, reason)
-        if analysis.needs_trace and analysis.trace is None:
+        if analysis.needs_trace and (analysis.trace is None or analysis.trace.plan is None):
             return FastpathSupport(False, "analysis trace requires a TracePlan")
+        if analysis.trace is not None and analysis.trace.record_interval() <= 0:
+            return FastpathSupport(False, "analysis trace stride must be positive")
+        if _is_jitted_runner(sim.model.runner):
+            try:
+                analysis.resolve_hooks(jit=True, dtype=sim.model.dtype)
+            except Exception as exc:
+                return FastpathSupport(False, f"analysis hooks failed to jit-compile: {exc}")
 
     return FastpathSupport(True, None)

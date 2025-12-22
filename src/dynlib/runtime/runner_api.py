@@ -7,7 +7,7 @@ __all__ = [
     "Status",
     # int constants (jit-friendly)
     "OK", "STEPFAIL", "NAN_DETECTED", "DONE",
-    "GROW_REC", "GROW_EVT", "USER_BREAK",
+    "GROW_REC", "GROW_EVT", "USER_BREAK", "TRACE_OVERFLOW",
     "RunnerABI",
 ]
 
@@ -20,6 +20,7 @@ class Status(IntEnum):
     GROW_REC = 10       # exit: request record buffer growth
     GROW_EVT = 11       # exit: request event buffer growth
     USER_BREAK = 12     # exit: user requested stop
+    TRACE_OVERFLOW = 13 # exit: analysis trace exceeded capacity
 
 # Plain int constants for JIT friendliness in tests / kernels
 OK: int = int(Status.OK)
@@ -29,6 +30,7 @@ DONE: int = int(Status.DONE)
 GROW_REC: int = int(Status.GROW_REC)
 GROW_EVT: int = int(Status.GROW_EVT)
 USER_BREAK: int = int(Status.USER_BREAK)
+TRACE_OVERFLOW: int = int(Status.TRACE_OVERFLOW)
 
 
 @dataclass(frozen=True)

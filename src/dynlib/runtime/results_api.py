@@ -196,6 +196,14 @@ class ResultsView:
                 trace_offset += mod.trace.width
         return result
 
+    @property
+    def analysis_metadata(self) -> Mapping[str, object] | None:
+        """Return analysis metadata attached to the raw results."""
+        raw_meta = getattr(self._raw, "analysis_metadata", None)
+        if callable(raw_meta):
+            return raw_meta()
+        return getattr(self._raw, "analysis_meta", None)
+
     # ---- discovery helpers (states/events/tags) ----
     def event_names(self) -> Tuple[str, ...]:
         return tuple(self._ev_fields.keys())

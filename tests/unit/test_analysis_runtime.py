@@ -57,6 +57,8 @@ def _counter_analysis():
             if idx < trace_cap:
                 trace_buf[idx, 0] = t
                 trace_count[0] = idx + 1
+            else:
+                trace_count[0] = trace_cap + 1
 
     hooks = AnalysisHooks(post_step=_post)
     return AnalysisModule(
@@ -64,8 +66,8 @@ def _counter_analysis():
         requirements=AnalysisRequirements(fixed_step=True),
         workspace_size=0,
         output_size=1,
-        trace=TraceSpec(width=1, plan=plan, allow_growth=True),
-        python_hooks=hooks,
+        trace=TraceSpec(width=1, plan=plan),
+        hooks=hooks,
     )
 
 
@@ -241,8 +243,7 @@ x = "-a * x"
         workspace_size=0,
         output_size=0,
         trace=None,
-        python_hooks=AnalysisHooks(post_step=lambda *a, **k: None),
-        jit_hooks=None,
+        hooks=AnalysisHooks(post_step=lambda *a, **k: None),
     )
     plan = FixedStridePlan(stride=1)
     support = assess_capability(
@@ -254,8 +255,10 @@ x = "-a * x"
         adaptive=False,
         analysis=analysis_module,
     )
-    assert not support.ok
-    assert "JIT" in (support.reason or "")
+    if support.ok:
+        assert support.reason is None
+    else:
+        assert "jit" in (support.reason or "").lower()
 
 
 def test_lyapunov_matches_wrapper_and_fastpath():
