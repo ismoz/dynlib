@@ -2,6 +2,22 @@
 
 ---
 
+## [2.34.3] – 2025-12-22
+### Changed
+- Simplified runtime analysis API with consistent factory pattern:
+  - `lyapunov_mle()` now uses simple conditional logic: if `model` parameter is provided, returns `AnalysisModule` 
+    directly; otherwise returns a factory function.
+  - Factory accepts `model` parameter that `Sim.run()` injects automatically via signature introspection.
+  - All parameters have sensible defaults: `jvp` and `n_state` extracted from model when not provided.
+  - Usage patterns:
+    - `analysis=lyapunov_mle()` — factory mode, Sim injects model (most common).
+    - `analysis=lyapunov_mle(record_interval=2)` — factory with custom params, Sim injects model.
+    - `analysis=lyapunov_mle(model=sim.model)` — direct mode, returns AnalysisModule immediately.
+  - This simple if/else pattern generalizes cleanly to future analysis modules with different signatures.
+- Updated logistic map Lyapunov example to demonstrate simplified factory API.
+
+---
+
 ## [2.34.2] – 2025-12-22
 ### Fixed
 - Runtime `CombinedAnalysis` now composes child hooks with precomputed offsets and numba-friendly closures, 

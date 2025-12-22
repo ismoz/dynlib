@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import fnmatch
 import hashlib
+import inspect
 import json
 import logging
 from pathlib import Path
@@ -22,6 +23,7 @@ from .results_api import ResultsView
 from .runner_api import Status
 from .initial_step import WRMSConfig, make_wrms_config_from_stepper
 from dynlib.steppers.registry import get_stepper
+from dynlib.analysis.runtime import AnalysisModule
 import tomllib
 
 try:  # pragma: no cover - available on 3.8+
@@ -447,6 +449,8 @@ class Sim:
             else:
                 record_interval = 1
 
+        analysis_mod = self._resolve_analysis(analysis, record_interval=record_interval)
+
         # max_steps
         if max_steps is None:
             if self._run_defaults.max_steps is not None:
@@ -611,9 +615,9 @@ class Sim:
                 config_source,
                 max_dt=max_dt_hint,
             )
-        if analysis is not None:
+        if analysis_mod is not None:
             self._validate_analysis_requirements(
-                analysis,
+                analysis_mod,
                 adaptive=adaptive,
                 has_event_logs=has_event_logs,
             )
@@ -666,7 +670,7 @@ class Sim:
                 aux_rec_indices=np.array([], dtype=np.int32),
                 state_names=[],
                 aux_names=[],
-                analysis=analysis,
+                analysis=analysis_mod,
             )
             self._ensure_runner_done(warm_result, phase="transient warm-up")
             self._session_state = self._state_from_results(
@@ -726,7 +730,7 @@ class Sim:
             aux_rec_indices=aux_rec_indices,
             state_names=state_names,
             aux_names=aux_names,
-            analysis=analysis,
+            analysis=analysis_mod,
         )
         try:
             self._ensure_runner_done(recorded_result, phase="recorded run")
@@ -811,6 +815,7 @@ class Sim:
 
         stepper_spec = self._stepper_spec
         adaptive = getattr(stepper_spec.meta, "time_control", "fixed") == "adaptive"
+        analysis_mod = self._resolve_analysis(analysis, record_interval=record_interval_use)
         support = assess_capability(
             self,
             plan=plan_use,
@@ -818,7 +823,7 @@ class Sim:
             dt=dt_use,
             transient=transient_use,
             adaptive=adaptive,
-            analysis=analysis,
+            analysis=analysis_mod,
         )
         if not support.ok:
             reason = support.reason or "unsupported configuration"
@@ -838,7 +843,7 @@ class Sim:
             ic=ic_vec,
             params=params_vec,
             support=support,
-            analysis=analysis,
+            analysis=analysis_mod,
         )
         if res is None:
             raise RuntimeError("Fastpath unavailable")
@@ -1942,6 +1947,29 @@ class Sim:
             state_names,
             aux_names
         )
+
+    def _resolve_analysis(self, analysis, *, record_interval: Optional[int]):
+        """
+        Accept AnalysisModule instances directly or callable factories.
+
+        When a callable is provided, invoke it with the compiled model and
+        the current record_interval to allow analyses to align trace stride
+        with recording cadence.
+        """
+        if analysis is None or isinstance(analysis, AnalysisModule):
+            return analysis
+        if not callable(analysis):
+            raise TypeError("analysis must be an AnalysisModule or callable factory")
+
+        sig = inspect.signature(analysis)
+        kwargs = {}
+        if "model" in sig.parameters:
+            kwargs["model"] = self.model
+        elif "sim" in sig.parameters:
+            kwargs["sim"] = self
+        if "record_interval" in sig.parameters:
+            kwargs["record_interval"] = record_interval
+        return analysis(**kwargs)
 
     def _load_inline_presets(self) -> None:
         """Auto-populate presets bank from model.spec.presets."""

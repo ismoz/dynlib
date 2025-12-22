@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import math
-from typing import Callable, Optional
+from typing import Callable, Optional, TYPE_CHECKING
 import numpy as np
 
 from dynlib.runtime.fastpath.plans import FixedTracePlan
 from .core import AnalysisHooks, AnalysisModule, AnalysisRequirements, TraceSpec
+
+if TYPE_CHECKING:  # pragma: no cover - type checking only
+    from dynlib.runtime.model import Model
 
 __all__ = ["lyapunov_mle"]
 
@@ -89,6 +92,35 @@ def _make_hooks(
     return AnalysisHooks(pre_step=_pre_step, post_step=_post_step)
 
 
+def _coerce_model(model_like) -> "Model" | None:
+    """Extract a Model instance from a Model or Sim-like object."""
+    if model_like is None:
+        return None
+    # Sim exposes the compiled model via ``.model``; accept both forms for convenience.
+    model = getattr(model_like, "model", model_like)
+    if getattr(model, "spec", None) is None:
+        return None
+    return model  # type: ignore[return-value]
+
+
+def _resolve_trace_plan(
+    *, trace_plan: Optional[FixedTracePlan], record_interval: Optional[int]
+) -> FixedTracePlan:
+    if trace_plan is not None and record_interval is not None:
+        if int(record_interval) != int(trace_plan.record_interval()):
+            raise ValueError(
+                "record_interval must match the provided trace_plan stride for lyapunov_mle"
+            )
+    if record_interval is not None:
+        stride = int(record_interval)
+        if stride <= 0:
+            raise ValueError("record_interval for lyapunov_mle must be positive")
+        return FixedTracePlan(stride=stride)
+    if trace_plan is not None:
+        return trace_plan
+    return FixedTracePlan(stride=1)
+
+
 class _LyapunovModule(AnalysisModule):
     def __init__(
         self,
@@ -147,17 +179,95 @@ class _LyapunovModule(AnalysisModule):
 
 def lyapunov_mle(
     *,
-    jvp: Callable[[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, object], None],
-    n_state: int,
+    model=None,
+    jvp: Optional[
+        Callable[[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, object], None]
+    ] = None,
+    n_state: Optional[int] = None,
     trace_plan: Optional[FixedTracePlan] = None,
+    record_interval: int = 1,
     analysis_kind: int = 1,
-) -> AnalysisModule:
+):
     """
-    Reference Lyapunov maximum exponent analysis.
+    Factory for Lyapunov maximum exponent analysis.
+    
+    Returns a factory function for dependency injection, or an AnalysisModule if model is provided.
+    The factory extracts ``jvp`` and ``n_state`` from the model if not explicitly provided.
+    
+    Parameters
+    ----------
+    model : Model or Sim, optional
+        Model object. If provided, returns AnalysisModule directly. If None, returns factory.
+    jvp : callable, optional
+        Jacobian-vector product function. If None, extracted from model.
+    n_state : int, optional
+        Number of state variables. If None, inferred from model.spec.states.
+    trace_plan : FixedTracePlan, optional
+        Trace sampling plan. If None, created from record_interval.
+    record_interval : int, default=1
+        Recording stride for trace sampling.
+    analysis_kind : int, default=1
+        Analysis algorithm variant selector.
+        
+    Returns
+    -------
+    factory or module
+        If model is None: factory function with signature ``factory(model) -> _LyapunovModule``
+        If model is provided: ``_LyapunovModule`` instance
+        
+    Examples
+    --------
+    >>> # Factory mode - Sim injects model
+    >>> sim.run(analysis=lyapunov_mle())
+    >>> sim.run(analysis=lyapunov_mle(record_interval=2))
+    
+    >>> # Direct mode - model provided explicitly
+    >>> module = lyapunov_mle(model=sim.model, record_interval=1)
+    >>> sim.run(analysis=module)
+    """
+    
+    def _infer_n_state(target) -> int | None:
+        """Extract state count from model spec."""
+        spec = getattr(target, "spec", None)
+        if spec is None or getattr(spec, "states", None) is None:
+            return None
+        return len(spec.states)
 
-    Assumes the model exposes a Jacobian callable. The running log growth is
-    accumulated in ``analysis_out[0]`` with the step count in ``analysis_out[1]``.
-    The trace (when enabled) stores the instantaneous exponent estimate.
-    """
-    plan = trace_plan if trace_plan is not None else FixedTracePlan(stride=1)
-    return _LyapunovModule(jvp=jvp, n_state=n_state, trace_plan=plan, analysis_kind=analysis_kind)
+    def _factory(model: object) -> AnalysisModule:
+        """Factory function invoked by Sim with model injected."""
+        model_obj = _coerce_model(model)
+        if model_obj is None:
+            raise ValueError("lyapunov_mle factory requires a model")
+        
+        # Use provided values or extract from model
+        jvp_use = jvp if jvp is not None else getattr(model_obj, "jvp", None)
+        n_state_use = n_state if n_state is not None else _infer_n_state(model_obj)
+        
+        if jvp_use is None:
+            raise ValueError(
+                "lyapunov_mle requires a JVP; provide model with jvp or pass jvp= explicitly"
+            )
+        if n_state_use is None:
+            raise ValueError(
+                "lyapunov_mle requires n_state; provide model or pass n_state= explicitly"
+            )
+        
+        # Build trace plan
+        plan_use = _resolve_trace_plan(
+            trace_plan=trace_plan,
+            record_interval=record_interval,
+        )
+        
+        return _LyapunovModule(
+            jvp=jvp_use,
+            n_state=int(n_state_use),
+            trace_plan=plan_use,
+            analysis_kind=analysis_kind,
+        )
+
+    # If model provided, evaluate factory immediately
+    if model is not None:
+        return _factory(model)
+    
+    # Otherwise return factory for Sim to call
+    return _factory

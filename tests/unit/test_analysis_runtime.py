@@ -324,3 +324,57 @@ def test_lyapunov_matches_wrapper_and_fastpath():
     assert mle_fast == pytest.approx(target, rel=1e-6)
     assert wrapper_res.analysis_trace_filled == 5
     assert fast_res.analysis_trace_filled == 5
+
+
+def test_lyapunov_defaults_from_model_and_record_interval():
+    model = _build_map_model(jit=False)
+    sim = Sim(model)
+    interval = 3
+    mod = lyapunov_mle(model=sim, record_interval=interval)
+
+    assert mod.trace_stride == interval
+    assert mod.workspace_size == 2 * len(model.spec.states)
+    assert mod.requirements.need_jvp is True
+
+
+def test_lyapunov_requires_jvp_or_model():
+    with pytest.raises(ValueError):
+        lyapunov_mle()
+
+
+def test_sim_resolves_analysis_factory_and_passes_record_interval():
+    model = _build_map_model(jit=False)
+    sim = Sim(model)
+    interval = 2
+
+    mod = sim._resolve_analysis(lyapunov_mle, record_interval=interval)
+    assert isinstance(mod, AnalysisModule)
+    assert mod.trace_stride == interval
+
+
+def test_sim_run_accepts_analysis_factory():
+    model = _build_map_model(jit=False)
+    sim = Sim(model)
+    sim.run(
+        N=3,
+        dt=1.0,
+        record=False,
+        record_interval=1,
+        cap_rec=1,
+        cap_evt=1,
+        ic=np.array([1.0], dtype=model.dtype),
+        params=np.array([2.0], dtype=model.dtype),
+        analysis=lyapunov_mle,
+    )
+
+    out = sim.results().analysis["lyapunov_mle"]["out"]
+    assert out[1] == 3
+
+
+def test_lyapunov_partial_with_record_interval():
+    model = _build_map_model(jit=False)
+    sim = Sim(model)
+    analysis_factory = lyapunov_mle(record_interval=2)
+    mod = sim._resolve_analysis(analysis_factory, record_interval=1)  # Sim-provided interval should be accepted
+    assert isinstance(mod, AnalysisModule)
+    assert mod.trace_stride == 2  # respects user-provided stride

@@ -16,21 +16,14 @@ from __future__ import annotations
 import numpy as np
 from dynlib import setup
 from dynlib.analysis.runtime import lyapunov_mle
-from dynlib.runtime.fastpath.plans import FixedTracePlan
 from dynlib.plot import series, export, theme, fig
 
-# Compile the model
-print("Compiling logistic map model...")
+
 sim = setup("builtin://map/logistic", jit=True)
 model = sim.model  # keep dtype/params handy below
 
-# Create Lyapunov runtime analysis
-print("Setting up Lyapunov analysis...")
-lyap_analysis = lyapunov_mle(
-    jvp=model.jvp,
-    n_state=1,
-    trace_plan=FixedTracePlan(stride=1)
-)
+record_every = 1
+lyap_analysis = lyapunov_mle(record_interval=record_every)
 
 # Run simulation using the high-level Sim API
 print("\nComputing Lyapunov exponent with Sim.run()...")
@@ -38,15 +31,11 @@ print(f"  Parameter: r = 4.0")
 print(f"  Iterations: 5000")
 print(f"  Initial condition: x = 0.4")
 
+sim.assign(x=0.4, r=4.0)
 sim.run(
     N=5000,
     dt=1.0,
-    record=True,
-    record_interval=1,
-    cap_rec=8192,
-    cap_evt=1,
-    ic=np.array([0.4], dtype=model.dtype),
-    params=np.array([4.0], dtype=model.dtype),
+    record_interval=record_every,
     analysis=lyap_analysis,
 )
 result_view = sim.results()
@@ -153,7 +142,7 @@ for r_test in test_r_values:
         cap_evt=1,
         ic=np.array([0.4], dtype=model.dtype),
         params=params_test,
-        analysis=lyapunov_mle(jvp=scan_jvp, n_state=1, trace_plan=None),
+        analysis=lyapunov_mle(trace_plan=None),
     )
 
     lyap_out = scan_sim.results().analysis["lyapunov_mle"]["out"]
