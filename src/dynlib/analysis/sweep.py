@@ -227,6 +227,39 @@ class ParamSweepTrajResult:
 
         return BifurcationExtractor(self, var)
 
+@dataclass
+class ParamSweepMLEResult:
+    """Result from a Lyapunov MLE parameter sweep.
+    
+    Contains converged maximum Lyapunov exponents for each parameter value,
+    plus optional convergence traces for analysis.
+    
+    Attributes:
+        param_name: Name of the swept parameter
+        values: Array of M parameter values tested
+        mle: Array of M converged maximum Lyapunov exponents
+        log_growth: List of M cumulative log growth values (final state)
+        steps: Array of M iteration counts (steps used for each run)
+        trace_runs: Optional list of M convergence trace arrays (if recorded)
+        meta: Simulation metadata (stepper, T, dt, etc.)
+    """
+    param_name: str
+    values: np.ndarray              # (M,)
+    mle: np.ndarray                 # (M,) - final converged values
+    log_growth: list[float]         # length M
+    steps: np.ndarray               # (M,) - iteration counts
+    trace_runs: list[np.ndarray] | None  # length M, each (n_i,) or None
+    meta: dict
+    
+    def stack_traces(self) -> np.ndarray:
+        """Stack convergence traces if all have same length, else raise."""
+        if self.trace_runs is None:
+            raise ValueError("No traces recorded (use record_interval to enable)")
+        lengths = {arr.shape[0] for arr in self.trace_runs}
+        if len(lengths) != 1:
+            raise ValueError("Cannot stack traces: lengths differ")
+        return np.stack(self.trace_runs, axis=0)  # (M, n)
+
 
 def _param_index(sim: Sim, name: str) -> int:
     params = list(sim.model.spec.params)
@@ -674,5 +707,183 @@ def traj(
         record_vars=record_vars_tuple,
         t_runs=t_list,
         data=data_list,
+        meta=meta,
+    )
+
+
+def lyapunov_mle(
+    sim: Sim,
+    *,
+    param: str,
+    values,
+    t0: float | None = None,
+    T: float | None = None,
+    N: int | None = None,
+    dt: float | None = None,
+    transient: float | None = None,
+    record_interval: int | None = None,
+    max_steps: int | None = None,
+    parallel_mode: Literal["auto", "threads", "none"] = "auto",
+    max_workers: int | None = None,
+    analysis_kind: int = 1,
+) -> ParamSweepMLEResult:
+    """Sweep a parameter and compute maximum Lyapunov exponent for each value.
+    
+    Combines parameter sweep with Lyapunov analysis to characterize how chaos
+    transitions vary with parameters. Returns both final converged MLE values
+    and optional convergence traces.
+    
+    Args:
+        sim: Simulation instance (must be JIT-compiled with fixed-step stepper)
+        param: Name of parameter to sweep
+        values: Array-like of parameter values to test
+        t0: Initial time (default from sim config)
+        T: Absolute end time for continuous systems
+        N: Number of iterations (discrete maps)
+        dt: Time step (required for MLE analysis - must be fixed)
+        transient: Time/iterations to discard before recording
+        record_interval: Record trace every Nth step (1 = every step)
+        max_steps: Safety limit on total steps
+        parallel_mode: Parallel execution ("auto", "threads", "none")
+        max_workers: Maximum worker threads (None = default)
+        analysis_kind: Lyapunov algorithm variant (default 1)
+    
+    Returns:
+        ParamSweepMLEResult with:
+            - values: parameter values (M,)
+            - mle: final MLE for each parameter (M,)
+            - trace_runs: optional list of M convergence traces
+            - log_growth: cumulative log growth for each run
+            - steps: iteration counts for each run
+    
+    Example:
+        >>> # Characterize chaos onset in logistic map
+        >>> r_vals = np.linspace(3.0, 4.0, 100)
+        >>> res = sweep.lyapunov_mle(sim, param="r", values=r_vals, 
+        ...                          N=5000, transient=1000, record_interval=10)
+        >>> series.plot(x=res.values, y=res.mle, xlabel="r", ylabel="λ")
+        >>> # λ transitions from negative (stable) to positive (chaotic)
+    """
+    from dynlib.analysis.runtime import lyapunov_mle as lyapunov_mle_module
+    
+    vals = np.asarray(values, dtype=float)
+    M = vals.size
+
+    p_idx = _param_index(sim, param)
+    base_states = sim.state_vector(source="session", copy=True)
+    base_params = sim.param_vector(source="session", copy=True)
+
+    # Build analysis module for Lyapunov MLE
+    analysis = lyapunov_mle_module(
+        model=sim.model,
+        record_interval=record_interval,
+        analysis_kind=analysis_kind,
+    )
+
+    mle_values = np.zeros(M, dtype=float)
+    log_growth_list: list[float] = []
+    steps_values = np.zeros(M, dtype=float)
+    trace_list: list[np.ndarray] | None = [] if record_interval else None
+
+    # Try batch fast-path execution
+    ic_stack = np.repeat(base_states[np.newaxis, :], values.size, axis=0)
+    params_stack = np.repeat(base_params[np.newaxis, :], values.size, axis=0)
+    params_stack[:, p_idx] = vals
+
+    stride = int(record_interval) if record_interval is not None else 1
+    plan = FixedStridePlan(stride=stride)
+    support = _assess_fastpath_support(
+        sim,
+        plan=plan,
+        record_vars=None,
+        dt=dt,
+        transient=transient,
+    )
+
+    batch_views = fastpath_batch_for_sim(
+        sim,
+        plan=plan,
+        t0=t0,
+        T=T,
+        N=int(N) if N is not None else None,
+        dt=dt,
+        record_vars=None,
+        transient=transient,
+        record_interval=record_interval,
+        max_steps=max_steps,
+        ic=ic_stack,
+        params=params_stack,
+        parallel_mode=parallel_mode,  # type: ignore[arg-type]
+        max_workers=max_workers,
+        analysis=analysis,
+    )
+
+    run_iter: Iterable[ResultsView]
+    if batch_views is not None:
+        run_iter = batch_views
+    else:
+        _warn_fastpath_fallback(support, stacklevel=2)
+        # Fallback to sequential execution
+        def _sequential_runs():
+            for v in vals:
+                ic = base_states.copy()
+                params = base_params.copy()
+                params[p_idx] = v
+
+                kwargs: dict[str, object] = dict(
+                    record=False,
+                    transient=transient,
+                    resume=False,
+                    analysis=analysis,
+                )
+                if t0 is not None:
+                    kwargs["t0"] = float(t0)
+                if T is not None:
+                    kwargs["T"] = float(T)
+                if N is not None:
+                    kwargs["N"] = int(N)
+                if dt is not None:
+                    kwargs["dt"] = float(dt)
+                if record_interval is not None:
+                    kwargs["record_interval"] = int(record_interval)
+                if max_steps is not None:
+                    kwargs["max_steps"] = int(max_steps)
+
+                sim.run(ic=ic, params=params, **kwargs)
+                yield sim.results()
+        
+        run_iter = _sequential_runs()
+
+    # Extract analysis results from each run
+    for i, res in enumerate(run_iter):
+        lyap_result = res.analysis["lyapunov_mle"]
+        mle_values[i] = float(lyap_result.mle)
+        log_growth_list.append(float(lyap_result.log_growth))
+        steps_values[i] = float(lyap_result.steps)
+        
+        if trace_list is not None:
+            trace_array = lyap_result["mle"]
+            trace_list.append(trace_array)
+
+    meta = dict(
+        stepper=sim.model.stepper_name,
+        kind=sim.model.spec.kind,
+        t0=t0,
+        T=T,
+        N=N,
+        dt=dt,
+        transient=transient,
+        record_interval=record_interval,
+        parallel_mode=parallel_mode,
+        max_workers=max_workers,
+        analysis_kind=analysis_kind,
+    )
+    return ParamSweepMLEResult(
+        param_name=param,
+        values=vals,
+        mle=mle_values,
+        log_growth=log_growth_list,
+        steps=steps_values,
+        trace_runs=trace_list,
         meta=meta,
     )

@@ -172,6 +172,13 @@ class _LyapunovModule(AnalysisModule):
     def resolve_hooks(self, *, jit: bool, dtype: np.dtype) -> AnalysisHooks:
         if not jit:
             return self.hooks
+
+        # Cache compiled hooks per (dtype, trace shape) to avoid re-jitting on every run.
+        key = self._jit_key(dtype)
+        cached = self._jit_cache.get(key)
+        if cached is not None:
+            return cached
+
         jvp_jit = self._ensure_jit_jvp()
         jit_hooks = _make_hooks(jvp_fn=jvp_jit, init_vec=self._init_vec, n_state=self._n_state)
         return self._compile_hooks(jit_hooks, dtype)

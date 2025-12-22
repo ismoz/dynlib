@@ -2,6 +2,24 @@
 
 ---
 
+## [2.34.6] – 2025-12-22
+### Added
+- Lyapunov MLE parameter sweep functionality via `sweep.lyapunov_mle()` for computing maximum Lyapunov exponents 
+  across parameter ranges.
+  - Returns `ParamSweepMLEResult` with converged MLE values, log growth, step counts, and optional convergence 
+    traces.
+  - Supports parallel execution via `parallel_mode` parameter ("auto", "threads", "none").
+  - Includes `stack_traces()` method for uniform-length trace analysis.
+  - Exported in `dynlib.analysis` namespace alongside `scalar`, `traj` sweep functions.
+- Example script `examples/analysis/lyapunov_sweep_demo.py` demonstrating bifurcation diagram and MLE sweep 
+  visualization for the logistic map.
+
+### Changed
+- `_LyapunovModule.resolve_hooks()` now caches compiled JIT hooks per dtype to avoid redundant JIT compilation 
+  on every run, improving performance for repeated analysis calls.
+
+---
+
 ## [2.34.5] – 2025-12-22
 ### Added
 - `ResultsView.analysis` now returns `AnalysisResult` wrappers that dynamically expose analysis-specific outputs 
