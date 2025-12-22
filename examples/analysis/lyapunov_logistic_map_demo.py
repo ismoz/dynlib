@@ -45,21 +45,24 @@ print("\n" + "="*60)
 print("RESULTS")
 print("="*60)
 
-lyap_data = result_view.analysis["lyapunov_mle"]
-log_growth = lyap_data["out"][0]
-n_steps = lyap_data["out"][1]
-mle = log_growth / n_steps
+# Get analysis result with ergonomic named access
+lyap = result_view.analysis["lyapunov_mle"]
+
+# Direct access to final MLE (auto-computed from trace)
+mle = lyap.mle  # Final converged value from trace
+log_growth = lyap.log_growth
+n_steps = int(lyap.steps)
 
 theoretical_mle = np.log(2.0)
 
 print(f"Computed MLE:      {mle:.10f}")
 print(f"Theoretical MLE:   {theoretical_mle:.10f} (ln(2))")
 print(f"Relative error:    {abs(mle - theoretical_mle)/theoretical_mle * 100:.4f}%")
-print(f"Total iterations:  {int(n_steps)}")
+print(f"Total iterations:  {n_steps}")
 
 # Get trajectory and Lyapunov trace
 x_trajectory = result_view["x"]
-lyap_trace = lyap_data["trace"][:, 0]
+lyap_trace = lyap["mle"]  # Full trace array (use bracket for arrays)
 
 # Note: trace may have one less point than trajectory if recording starts at t0
 n_points = min(len(x_trajectory), len(lyap_trace))
@@ -128,7 +131,6 @@ print("-"*60)
 
 test_r_values = [2.5, 3.2, 3.5, 3.83, 4.0]
 scan_sim = setup("builtin://map/logistic", stepper="map", jit=False)
-scan_jvp = scan_sim.model.jvp
 
 for r_test in test_r_values:
     params_test = np.array([r_test], dtype=model.dtype)
@@ -142,11 +144,11 @@ for r_test in test_r_values:
         cap_evt=1,
         ic=np.array([0.4], dtype=model.dtype),
         params=params_test,
-        analysis=lyapunov_mle(trace_plan=None),
+        analysis=lyapunov_mle,  # Factory mode: Sim injects model
     )
 
-    lyap_out = scan_sim.results().analysis["lyapunov_mle"]["out"]
-    mle_test = lyap_out[0] / lyap_out[1]
+    lyap_result = scan_sim.results().analysis["lyapunov_mle"]
+    mle_test = lyap_result.mle  # Direct final value access
     
     if mle_test < -0.01:
         regime = "Stable"

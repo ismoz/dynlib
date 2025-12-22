@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from dynlib.analysis.runtime import AnalysisModule
 
 __all__ = [
+    "AnalysisResult",
     "ResultsView",
 ]
 
@@ -47,6 +48,213 @@ def _ensure_tuple(x: Union[str, Sequence[str], None]) -> Tuple[str, ...]:
 def _friendly_key_error(kind: str, name: str, options: Iterable[str]) -> KeyError:
     opts = ", ".join(options)
     return KeyError(f"Unknown {kind} '{name}'. Available: {opts}")
+
+
+# ------------------------------ analysis results -----------------------------
+
+class AnalysisResult(Mapping[str, object]):
+    """Smart wrapper for runtime analysis results with named access.
+    
+    Provides both Mapping interface (backward compat) and attribute access (ergonomic).
+    Automatically exposes output_names and trace_names as attributes/keys.
+    
+    Mapping keys: "out", "trace", "stride", "output_names", "trace_names"
+    Named access: Any name from output_names or trace_names
+    
+    Examples:
+        >>> lyap = result_view.analysis["lyapunov_mle"]
+        >>> # Mapping interface (backward compat)
+        >>> lyap["out"][0]  # raw access
+        >>> lyap["trace"][:, 0]
+        >>> # Named access (ergonomic)
+        >>> lyap.log_growth  # from output_names
+        >>> lyap.steps
+        >>> lyap.mle  # from trace_names
+        >>> # Discovery
+        >>> lyap.output_names  # ('log_growth', 'steps')
+        >>> lyap.trace_names   # ('mle',)
+        >>> list(lyap)  # all keys including named outputs
+    """
+    
+    def __init__(
+        self,
+        *,
+        name: str,
+        out: np.ndarray | None,
+        trace: np.ndarray | None,
+        stride: int | None,
+        output_names: Tuple[str, ...] | None,
+        trace_names: Tuple[str, ...] | None,
+    ):
+        self._name = name
+        self._out = out
+        self._trace = trace
+        self._stride = stride
+        self._output_names = output_names or ()
+        self._trace_names = trace_names or ()
+        
+        # Build index maps for O(1) lookup
+        self._output_idx: Dict[str, int] = {
+            name: idx for idx, name in enumerate(self._output_names)
+        }
+        self._trace_idx: Dict[str, int] = {
+            name: idx for idx, name in enumerate(self._trace_names)
+        }
+        
+        # Core mapping keys
+        self._keys = frozenset(["out", "trace", "stride", "output_names", "trace_names"])
+    
+    # ---- Mapping interface (backward compat) ----
+    
+    def __getitem__(self, key: str) -> object:
+        """Bracket access: supports both raw keys and named outputs/traces."""
+        # Core mapping keys
+        if key == "out":
+            return self._out
+        if key == "trace":
+            return self._trace
+        if key == "stride":
+            return self._stride
+        if key == "output_names":
+            return self._output_names
+        if key == "trace_names":
+            return self._trace_names
+        
+        # Named outputs
+        if key in self._output_idx:
+            if self._out is None:
+                return None
+            return self._out[self._output_idx[key]]
+        
+        # Named traces
+        if key in self._trace_idx:
+            if self._trace is None or self._trace.size == 0:
+                raise KeyError(
+                    f"Trace '{key}' not recorded for analysis '{self._name}'. "
+                    "Enable recording with record_interval or trace_plan."
+                )
+            return self._trace[:, self._trace_idx[key]]
+        
+        # Unknown
+        available = list(self._keys) + list(self._output_names) + list(self._trace_names)
+        raise _friendly_key_error("field", key, available)
+    
+    def __iter__(self):
+        """Iterate over all keys: core + output_names + trace_names."""
+        yield from self._keys
+        yield from self._output_names
+        yield from self._trace_names
+    
+    def __len__(self) -> int:
+        """Total number of accessible keys."""
+        return len(self._keys) + len(self._output_names) + len(self._trace_names)
+    
+    def __contains__(self, key: object) -> bool:
+        """Check if key exists."""
+        if not isinstance(key, str):
+            return False
+        return (
+            key in self._keys
+            or key in self._output_idx
+            or key in self._trace_idx
+        )
+    
+    # ---- Attribute access (ergonomic) ----
+    
+    def __getattr__(self, name: str) -> object:
+        """Attribute access for named outputs and traces.
+        
+        Special handling for trace names accessed as attributes:
+        - Returns final scalar value if trace is 1D
+        - Enables ergonomic access like `lyap.mle` returning final converged value
+        
+        Raises AttributeError with helpful message for non-identifier names.
+        """
+        # Avoid recursion on private/special attributes
+        if name.startswith("_"):
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+        
+        # Named outputs
+        if name in self._output_idx:
+            if self._out is None:
+                return None
+            return self._out[self._output_idx[name]]
+        
+        # Named traces - return final scalar value for 1D traces
+        if name in self._trace_idx:
+            if self._trace is None or self._trace.size == 0:
+                raise AttributeError(
+                    f"Trace '{name}' not recorded for analysis '{self._name}'. "
+                    "Enable recording with record_interval or trace_plan."
+                )
+            col = self._trace[:, self._trace_idx[name]]
+            # Return final scalar value for ergonomic access
+            # (for full trace array, use bracket access: result["mle"])
+            return float(col[-1]) if col.size > 0 else 0.0
+        
+        # Check if it's a non-identifier name in output/trace names
+        all_names = list(self._output_names) + list(self._trace_names)
+        non_identifiers = [n for n in all_names if not n.isidentifier()]
+        if non_identifiers:
+            raise AttributeError(
+                f"'{name}' not found. Non-identifier names ({non_identifiers}) "
+                f"must use bracket access: result['{non_identifiers[0]}']"
+            )
+        
+        # Not found
+        available = list(self._output_names) + list(self._trace_names)
+        raise AttributeError(
+            f"Analysis '{self._name}' has no attribute '{name}'. "
+            f"Available: {available}"
+        )
+    
+    def __dir__(self) -> List[str]:
+        """Include output/trace names for tab-completion discovery."""
+        # Standard attributes
+        base = list(super().__dir__())
+        # Add valid identifier names from outputs/traces
+        identifiers = [
+            name for name in list(self._output_names) + list(self._trace_names)
+            if name.isidentifier()
+        ]
+        return sorted(set(base + identifiers))
+    
+    # ---- Properties ----
+    
+    @property
+    def name(self) -> str:
+        """Analysis module name."""
+        return self._name
+    
+    @property
+    def out(self) -> np.ndarray | None:
+        """Raw output array."""
+        return self._out
+    
+    @property
+    def trace(self) -> np.ndarray | None:
+        """Raw trace array (all columns)."""
+        return self._trace
+    
+    @property
+    def stride(self) -> int | None:
+        """Trace recording stride."""
+        return self._stride
+    
+    @property
+    def output_names(self) -> Tuple[str, ...]:
+        """Names of output components."""
+        return self._output_names
+    
+    @property
+    def trace_names(self) -> Tuple[str, ...]:
+        """Names of trace components."""
+        return self._trace_names
+    
+    def __repr__(self) -> str:
+        out_info = f"{len(self._output_names)} outputs" if self._output_names else "no outputs"
+        trace_info = f"{len(self._trace_names)} traces" if self._trace_names else "no traces"
+        return f"<AnalysisResult '{self._name}': {out_info}, {trace_info}>"
 
 
 # ------------------------------ main wrapper ---------------------------------
@@ -159,12 +367,27 @@ class ResultsView:
 
     # ---- runtime analysis (during-run diagnostics) ----
     @property
-    def analysis(self) -> Dict[str, Mapping[str, object]]:
+    def analysis(self) -> Dict[str, AnalysisResult]:
         """
         Runtime analysis outputs keyed by analysis module name.
 
-        Returns a mapping ``{name: {"out": ndarray, "trace": ndarray|None,
-        "stride": int|None, "output_names": tuple|None, "trace_names": tuple|None}}``.
+        Each result is an :class:`AnalysisResult` providing:
+        
+        - Mapping interface (backward compat): ``result["out"]``, ``result["trace"]``
+        - Named access (ergonomic): ``result.log_growth``, ``result.steps``, ``result.mle``
+        - Discovery: ``result.output_names``, ``result.trace_names``, ``list(result)``
+        
+        Examples:
+            >>> lyap = res.analysis["lyapunov_mle"]
+            >>> # Named access (auto-discovered from output_names)
+            >>> lyap.log_growth  # instead of lyap["out"][0]
+            >>> lyap.steps       # instead of lyap["out"][1]
+            >>> lyap.mle         # trace value from trace_names
+            >>> # Mapping interface still works
+            >>> lyap["out"], lyap["trace"]
+            >>> # Discovery
+            >>> lyap.output_names  # ('log_growth', 'steps')
+            >>> list(lyap)  # all available keys
         """
         modules: Tuple["AnalysisModule", ...] | None = getattr(self._raw, "analysis_modules", None)  # type: ignore[attr-defined]
         if not modules:
@@ -174,7 +397,7 @@ class ResultsView:
         trace_attr = getattr(self._raw, "analysis_trace_view", None)
         trace = trace_attr() if callable(trace_attr) else trace_attr
         stride = getattr(self._raw, "analysis_trace_stride", None)
-        result: Dict[str, Mapping[str, object]] = {}
+        result: Dict[str, AnalysisResult] = {}
         out_offset = 0
         trace_offset = 0
         for mod in modules:
@@ -184,13 +407,17 @@ class ResultsView:
             trace_slice = None
             if trace is not None and mod.trace is not None and trace.size > 0:
                 trace_slice = trace[:, trace_offset : trace_offset + mod.trace.width]
-            result[mod.name] = {
-                "out": out_slice,
-                "trace": trace_slice,
-                "stride": int(stride) if stride is not None and mod.trace is not None else None,
-                "output_names": mod.output_names,
-                "trace_names": mod.trace_names,
-            }
+            
+            # Wrap in AnalysisResult for ergonomic access
+            result[mod.name] = AnalysisResult(
+                name=mod.name,
+                out=out_slice,
+                trace=trace_slice,
+                stride=int(stride) if stride is not None and mod.trace is not None else None,
+                output_names=mod.output_names,
+                trace_names=mod.trace_names,
+            )
+            
             out_offset += mod.output_size
             if mod.trace is not None:
                 trace_offset += mod.trace.width

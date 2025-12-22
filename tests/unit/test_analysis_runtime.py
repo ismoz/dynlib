@@ -367,8 +367,10 @@ def test_sim_run_accepts_analysis_factory():
         analysis=lyapunov_mle,
     )
 
-    out = sim.results().analysis["lyapunov_mle"]["out"]
-    assert out[1] == 3
+    result = sim.results().analysis["lyapunov_mle"]
+    assert result.steps == 3
+    # Backward compat: raw access still works
+    assert result["out"][1] == 3
 
 
 def test_lyapunov_partial_with_record_interval():

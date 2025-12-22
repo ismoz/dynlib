@@ -2,6 +2,30 @@
 
 ---
 
+## [2.34.5] – 2025-12-22
+### Added
+- `ResultsView.analysis` now returns `AnalysisResult` wrappers that dynamically expose analysis-specific outputs 
+  and traces via named access.
+  - Generic design: field names are auto-discovered from each analysis module's `output_names` and `trace_names` 
+    metadata - no hardcoding per analysis type.
+  - Attribute access for values: e.g., for Lyapunov MLE, `lyap.log_growth`, `lyap.steps` (from `output_names`), 
+    and `lyap.mle` (from `trace_names`). Different analyses will have different field names.
+  - Trace attributes return final scalar values: `lyap.mle` returns the converged value (last element).
+  - Bracket access for full arrays: `lyap["mle"]` returns complete trace array for plotting/analysis.
+  - Mapping interface is provided as low-level generic API: `lyap["out"]`, `lyap["trace"]`, `lyap["stride"]`.
+  - Discovery support: `lyap.output_names`, `lyap.trace_names`, `list(lyap)`, `dir(lyap)` for introspection and 
+    tab-completion.
+  - Scales from 1D (single MLE value) to nD (Lyapunov spectrum, multiple metrics) automatically.
+
+### Changed
+- Updated `lyapunov_logistic_map_demo.py` to demonstrate new API: `lyap.mle` instead of manual 
+  `lyap["out"][0] / lyap["out"][1]` computation.
+
+### Tests
+- Extended `test_analysis_runtime.py` for the new `AnalysisResult` feature.
+
+---
+
 ## [2.34.4] – 2025-12-22
 ### Changed
 - Moved `src/dynlib/analysis/post/sweep.py` -> `src/dynlib/analysis/post/sweep.py` to gather all sweeps into one 
