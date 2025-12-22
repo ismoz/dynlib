@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
-    from dynlib.analysis.post.sweep import ParamSweepTrajResult
+    from dynlib.analysis.sweep import ParamSweepTrajResult
 
 __all__ = ["BifurcationResult", "BifurcationExtractor"]
 

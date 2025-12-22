@@ -2,6 +2,18 @@
 
 ---
 
+## [2.34.4] – 2025-12-22
+### Changed
+- Moved `src/dynlib/analysis/post/sweep.py` -> `src/dynlib/analysis/post/sweep.py` to gather all sweeps into one 
+  place. Changed sweep imports accordingly.
+
+### Fixed
+- `lyapunov_mle()` now validates inputs consistently: a model or explicit `jvp` (with `n_state`) is required, and
+  `record_interval` is optional (defaults to stride 1). This prevents silent misuse when the factory is called
+  without a model context while keeping `Sim`-injected factory usage unchanged.
+
+---
+
 ## [2.34.3] – 2025-12-22
 ### Changed
 - Simplified runtime analysis API with consistent factory pattern:

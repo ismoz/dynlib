@@ -185,7 +185,7 @@ def lyapunov_mle(
     ] = None,
     n_state: Optional[int] = None,
     trace_plan: Optional[FixedTracePlan] = None,
-    record_interval: int = 1,
+    record_interval: Optional[int] = None,
     analysis_kind: int = 1,
 ):
     """
@@ -204,8 +204,8 @@ def lyapunov_mle(
         Number of state variables. If None, inferred from model.spec.states.
     trace_plan : FixedTracePlan, optional
         Trace sampling plan. If None, created from record_interval.
-    record_interval : int, default=1
-        Recording stride for trace sampling.
+    record_interval : int, optional
+        Recording stride for trace sampling. Defaults to 1 when not provided.
     analysis_kind : int, default=1
         Analysis algorithm variant selector.
         
@@ -233,16 +233,15 @@ def lyapunov_mle(
             return None
         return len(spec.states)
 
-    def _factory(model: object) -> AnalysisModule:
-        """Factory function invoked by Sim with model injected."""
-        model_obj = _coerce_model(model)
-        if model_obj is None:
+    def _build_with_model(model_obj: object) -> _LyapunovModule:
+        """Build AnalysisModule using a provided model-like object."""
+        model_coerced = _coerce_model(model_obj)
+        if model_coerced is None:
             raise ValueError("lyapunov_mle factory requires a model")
-        
-        # Use provided values or extract from model
-        jvp_use = jvp if jvp is not None else getattr(model_obj, "jvp", None)
-        n_state_use = n_state if n_state is not None else _infer_n_state(model_obj)
-        
+
+        jvp_use = jvp if jvp is not None else getattr(model_coerced, "jvp", None)
+        n_state_use = n_state if n_state is not None else _infer_n_state(model_coerced)
+
         if jvp_use is None:
             raise ValueError(
                 "lyapunov_mle requires a JVP; provide model with jvp or pass jvp= explicitly"
@@ -251,13 +250,12 @@ def lyapunov_mle(
             raise ValueError(
                 "lyapunov_mle requires n_state; provide model or pass n_state= explicitly"
             )
-        
-        # Build trace plan
+
         plan_use = _resolve_trace_plan(
             trace_plan=trace_plan,
             record_interval=record_interval,
         )
-        
+
         return _LyapunovModule(
             jvp=jvp_use,
             n_state=int(n_state_use),
@@ -265,9 +263,30 @@ def lyapunov_mle(
             analysis_kind=analysis_kind,
         )
 
-    # If model provided, evaluate factory immediately
+    # Build immediately when model or jvp/n_state is supplied.
     if model is not None:
-        return _factory(model)
-    
+        return _build_with_model(model)
+    if jvp is not None:
+        if n_state is None:
+            raise ValueError("lyapunov_mle requires n_state when jvp is provided without a model")
+        plan_use = _resolve_trace_plan(trace_plan=trace_plan, record_interval=record_interval)
+        return _LyapunovModule(
+            jvp=jvp,
+            n_state=int(n_state),
+            trace_plan=plan_use,
+            analysis_kind=analysis_kind,
+        )
+
+    # Without model/jvp, only the factory path remains; require callers to opt-in
+    # to the factory mode by providing some configuration (e.g., record_interval).
+    if trace_plan is None and record_interval is None:
+        raise ValueError(
+            "lyapunov_mle requires a model or jvp; pass analysis=lyapunov_mle without calling for factory mode"
+        )
+
+    def _factory(model: object) -> AnalysisModule:
+        """Factory function invoked by Sim with model injected."""
+        return _build_with_model(model)
+
     # Otherwise return factory for Sim to call
     return _factory

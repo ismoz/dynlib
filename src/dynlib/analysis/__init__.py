@@ -12,11 +12,14 @@ from dynlib.analysis.runtime import (
     lyapunov_mle,
 )
 
-_POST_EXPORTS = {
+_SWEEP_EXPORTS = {
     "ParamSweepScalarResult",
     "ParamSweepTrajResult",
     "scalar",
     "traj",
+}
+
+_POST_EXPORTS = {
     "BifurcationResult",
     "BifurcationExtractor",
     "TrajectoryAnalyzer",
@@ -32,12 +35,19 @@ __all__ = [
     "TraceSpec",
     "analysis_noop_hook",
     "lyapunov_mle",
+    # Sweep orchestration
+    *_SWEEP_EXPORTS,
     # Post-run analysis
     *_POST_EXPORTS,
 ]
 
 
 def __getattr__(name):
+    if name in _SWEEP_EXPORTS:
+        module = importlib.import_module("dynlib.analysis.sweep")
+        value = getattr(module, name)
+        globals()[name] = value
+        return value
     if name in _POST_EXPORTS:
         module = importlib.import_module("dynlib.analysis.post")
         value = getattr(module, name)
