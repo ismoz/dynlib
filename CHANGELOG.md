@@ -2,6 +2,35 @@
 
 ---
 
+## [2.34.8] – 2025-12-23
+### Changed
+- Modified steppers relying on Jacobian matrices (`bdf2`, `bdf2a`, `tr-bdf2a`, `sdirk`) so that they can utilize
+  DSL-generated Jacobian functions in their calculations alongside their previous finite difference numerical
+  approximations. These two modes can be selected using the stepper config value `jacobian_mode` which can be
+  `external` (use DSL Jacobian) or `internal` (use numerical approximation). Default is `internal` because I am
+  worried about users providing a faulty Jacobian matrix.
+- Set JacobianPolicy of `bdf2`, `bdf2a`, `tr-bdf2a`, `sdirk` steppers to `optional` meaning that they can work
+  both with external and internal Jacobians.
+- For steppers to utilize DSL Jacobian functions, added `jacobian_fn` and `jvp_fn` callable args to the `emit()` 
+  function of all steppers. They are optional so steppers not using Jacobians are not changed.
+- Ensured that `aux` values are calculated exactly once in Jacobian matrix entries to prevent repeated 
+  recalculations and slowing down the steppers unnecessarily. This feature is called as aux hoisting.
+- Removed `bdf2_scipy` and `bdf2a_scipy` because they were performing very poorly and there was no reason to keep
+  them around. However, stepper features like `jit_capable` are kept for future use.
+- Updated `export_sources.md` file encouraging users to utilize `Model.export_sources()` instead of the standalone
+  function.
+
+### Added
+- Example for comparing run times of steppers with `external` and `internal` Jacobian modes. `external` mode is
+  slightly faster for all steppers.
+
+### Tests
+- Added `test_aux_hoist_jacobian.py` to test correct dependency resolution during `aux` variable hoisting in DSL 
+  Jacobian functions.
+- Removed `bdf2_scipy` and `bdf2a_scipy` related tests.
+
+---
+
 ## [2.34.7] – 2025-12-23
 ### Changed
 - Each parameter result had its own result data class. Unified sweep results with a single template: `SweepResult` 

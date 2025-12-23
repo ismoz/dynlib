@@ -378,34 +378,3 @@ max_factor = 4.25
     assert cfg.max_factor == pytest.approx(4.25)
     np.testing.assert_allclose(sim.stepper_config(), rk45_spec.pack_config(cfg))
 
-
-def test_sim_extra_string_defaults_feed_stepper_config():
-    """String-valued extras should also map into stepper configs (with enums)."""
-    model_toml = """
-[model]
-type = "ode"
-
-[states]
-x = 1.0
-
-[params]
-a = 1.0
-
-[equations.rhs]
-x = "-a*x"
-
-[sim]
-t0 = 0.0
-t_end = 0.25
-dt = 0.05
-stepper = "bdf2_scipy"
-record = true
-method = "broyden1"
-"""
-    sim, full_model = _make_sim(model_toml, jit=False)
-    bdf2_spec = get_stepper("bdf2_scipy")
-    cfg = bdf2_spec.default_config(full_model.spec)
-    assert cfg.method == "broyden1"
-    packed = bdf2_spec.pack_config(cfg)
-    # tol, max_iter, method (enum encoded)
-    assert packed[2] == pytest.approx(2.0)

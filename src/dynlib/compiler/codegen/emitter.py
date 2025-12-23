@@ -176,7 +176,28 @@ def _compile_jvp(spec: ModelSpec, nmap: NameMaps):
     """Emit a JVP operator from a dense Jacobian declaration."""
     import ast
 
+    aux_defs = _aux_defs(spec)
+    fn_defs = nmap.functions
     body: List[ast.stmt] = []
+    # Hoist aux once per call to avoid re-evaluating inside each entry
+    for aux_name, expr in aux_defs.items():
+        # Compute aux once with full inlining to avoid order-dependency issues,
+        # then reuse the hoisted locals in the Jacobian body.
+        preamble, node = lower_expr_with_preamble(
+            expr,
+            nmap,
+            aux_defs=aux_defs,
+            fn_defs=fn_defs,
+            hoist_aux=False,
+        )
+        body.extend(preamble)
+        body.append(
+            ast.Assign(
+                targets=[ast.Name(id=aux_name, ctx=ast.Store())],
+                value=node,
+            )
+        )
+
     for i, row in enumerate(spec.jacobian_exprs or ()):
         acc_name = f"_acc_{i}"
         body.append(
@@ -186,8 +207,9 @@ def _compile_jvp(spec: ModelSpec, nmap: NameMaps):
             preamble, node = lower_expr_with_preamble(
                 expr,
                 nmap,
-                aux_defs=_aux_defs(spec),
-                fn_defs=nmap.functions,
+                aux_defs=aux_defs,
+                fn_defs=fn_defs,
+                hoist_aux=True,
             )
             body.extend(preamble)
             term = ast.BinOp(
@@ -257,14 +279,36 @@ def _compile_jacobian_fill(spec: ModelSpec, nmap: NameMaps):
     """Emit a dense Jacobian filler: J_out[i, j] = expr."""
     import ast
 
+    aux_defs = _aux_defs(spec)
+    fn_defs = nmap.functions
     body: List[ast.stmt] = []
+
+    # Hoist aux computations once per call and reuse in entries
+    for aux_name, expr in aux_defs.items():
+        # Compute aux once with inlining (order-independent), then reuse locals.
+        preamble, node = lower_expr_with_preamble(
+            expr,
+            nmap,
+            aux_defs=aux_defs,
+            fn_defs=fn_defs,
+            hoist_aux=False,
+        )
+        body.extend(preamble)
+        body.append(
+            ast.Assign(
+                targets=[ast.Name(id=aux_name, ctx=ast.Store())],
+                value=node,
+            )
+        )
+
     for i, row in enumerate(spec.jacobian_exprs or ()):
         for j, expr in enumerate(row):
             preamble, node = lower_expr_with_preamble(
                 expr,
                 nmap,
-                aux_defs=_aux_defs(spec),
-                fn_defs=nmap.functions,
+                aux_defs=aux_defs,
+                fn_defs=fn_defs,
+                hoist_aux=True,
             )
             body.extend(preamble)
             body.append(

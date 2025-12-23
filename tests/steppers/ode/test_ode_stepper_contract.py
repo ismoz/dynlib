@@ -19,7 +19,6 @@ from dynlib.steppers.registry import get_stepper, registry
 DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "models"
 DECAY_MODEL = str(DATA_DIR / "decay.toml")
 
-# bdf2_scipy is not jittable
 @pytest.mark.parametrize("stepper", ["euler", "rk2", "rk4", "rk45", "ab2", "ab3", "bdf2", "sdirk2", "bdf2a", "tr-bdf2a"])
 def test_jit_on_off_parity(stepper: str):
     """
@@ -108,33 +107,16 @@ def test_stepper_registry_and_meta():
     # Second-order BDF
     assert bdf2_jit.meta.order == 2
     assert getattr(bdf2_jit.meta, "time_control", None) == "fixed"
-    # Jacobian capability: internal numeric J, no external Jacobian API
-    assert bdf2_jit.meta.caps.jacobian == "internal"
+    # Jacobian capability: optional external analytic Jacobian
+    assert bdf2_jit.meta.caps.jacobian == "optional"
 
     sdirk = get_stepper("sdirk2")
     assert sdirk.meta.name == "sdirk2"
     # Second-order BDF
     assert sdirk.meta.order == 2
     assert getattr(sdirk.meta, "time_control", None) == "fixed"
-    # Jacobian capability: internal numeric J, no external Jacobian API
-    assert sdirk.meta.caps.jacobian == "internal"
-
-    bdf2_scipy = get_stepper("bdf2_scipy")
-    assert bdf2_scipy.meta.name == "bdf2_scipy"
-    # Second-order BDF
-    assert bdf2_scipy.meta.order == 2
-    assert getattr(bdf2_scipy.meta, "time_control", None) == "fixed"
-    # Jacobian capability: internal numeric J, no external Jacobian API
-    assert bdf2_scipy.meta.caps.jacobian == "internal"
-
-    bdf2a_scipy = get_stepper("bdf2a_scipy")
-    assert bdf2a_scipy.meta.name == "bdf2a_scipy"
-    # Second-order BDF
-    assert bdf2a_scipy.meta.order == 2
-    assert bdf2a_scipy.meta.embedded_order == 1
-    assert getattr(bdf2a_scipy.meta, "time_control", None) == "adaptive"
-    # Jacobian capability: internal numeric J, no external Jacobian API
-    assert bdf2a_scipy.meta.caps.jacobian == "internal"
+    # Jacobian capability: optional external analytic Jacobian
+    assert sdirk.meta.caps.jacobian == "optional"
 
     bdf2a = get_stepper("bdf2a")
     assert bdf2a.meta.name == "bdf2a"
@@ -142,8 +124,8 @@ def test_stepper_registry_and_meta():
     assert bdf2a.meta.order == 2
     assert bdf2a.meta.embedded_order == 1
     assert getattr(bdf2a.meta, "time_control", None) == "adaptive"
-    # Jacobian capability: internal numeric J, no external Jacobian API
-    assert bdf2a.meta.caps.jacobian == "internal"
+    # Jacobian capability: optional external analytic Jacobian
+    assert bdf2a.meta.caps.jacobian == "optional"
     assert bdf2a.meta.stiff is True
 
     tr_bdf2a = get_stepper("tr-bdf2a")
@@ -152,6 +134,6 @@ def test_stepper_registry_and_meta():
     assert tr_bdf2a.meta.order == 2
     assert tr_bdf2a.meta.embedded_order == 1
     assert getattr(tr_bdf2a.meta, "time_control", None) == "adaptive"
-    # Jacobian capability: internal numeric J, no external Jacobian API
-    assert tr_bdf2a.meta.caps.jacobian == "internal"
+    # Jacobian capability: optional external analytic Jacobian
+    assert tr_bdf2a.meta.caps.jacobian == "optional"
     assert tr_bdf2a.meta.stiff is True

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Tuple, Callable, Dict, Any, Union, List, Optional
 from pathlib import Path
+import inspect
 import numpy as np
 import tomllib
 
@@ -856,15 +857,25 @@ def build(
     stepper_from_disk = False
     
     if stepper_entry is None:
-        stepper_py = stepper_spec.emit(pieces.rhs, model_spec=spec)
+        emit_sig = inspect.signature(stepper_spec.emit)
+        emit_kwargs = {"model_spec": spec}
+        if "jacobian_fn" in emit_sig.parameters:
+            emit_kwargs["jacobian_fn"] = jacobian_fn
+        if "jvp_fn" in emit_sig.parameters:
+            emit_kwargs["jvp_fn"] = jvp_fn
+        stepper_py = stepper_spec.emit(pieces.rhs, **emit_kwargs)
         
         if validate_stepper:
             issues = validate_stepper_function(stepper_py, stepper_name)
             report_validation_issues(issues, stepper_name, strict=False)
         
-        stepper_source = _render_stepper_source(stepper_py)
-        stepper_disk_cache = bool(jit and disk_cache and cache_root_path is not None)
-        if stepper_disk_cache and cache_root_path is not None:
+        freevars = stepper_py.__code__.co_freevars
+        has_closure = bool(freevars)
+        stepper_source = None
+        # Disable disk cache when the stepper closes over non-serializable objects
+        stepper_disk_cache = bool(jit and disk_cache and cache_root_path is not None and not has_closure)
+        if stepper_disk_cache:
+            stepper_source = _render_stepper_source(stepper_py)
             runner_codegen.configure_stepper_disk_cache(
                 spec_hash=pieces.spec_hash,
                 stepper_name=stepper_name,

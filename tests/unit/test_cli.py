@@ -30,10 +30,13 @@ def test_steppers_list_filters(capsys):
     assert "map" in captured.out
     assert "kind=map" in captured.out
 
-    code = cli.main(["steppers", "list", "--requires_scipy"])
+    # Test filtering by jit_capable - should find jittable steppers
+    code = cli.main(["steppers", "list", "--jit_capable"])
     captured = capsys.readouterr()
     assert code == 0
-    assert "requires_scipy=True" in captured.out
+    assert "jit_capable=True" in captured.out
+    # Should find common jittable steppers like euler, rk4, etc.
+    assert any(name in captured.out for name in ["euler", "rk4", "bdf2"])
 
 
 def _write_meta(root: Path, family: str, *, stepper: str, dtype: str, spec_hash: str, digest: str, components=None) -> Path:

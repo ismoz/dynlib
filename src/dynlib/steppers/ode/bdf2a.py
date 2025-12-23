@@ -36,6 +36,8 @@ class BDF2AdaptiveJITSpec(ConfigMixin):
         newton_max_iter: int = 50
         jac_eps: float = 1e-8
         dt_max: float = np.inf
+        jacobian_mode: int = 0  # 0=internal FD, 1=external analytic
+        __enums__ = {"jacobian_mode": {"internal": 0, "external": 1}}
 
     class Workspace(NamedTuple):
         y_nm1: np.ndarray          
@@ -63,7 +65,7 @@ class BDF2AdaptiveJITSpec(ConfigMixin):
                 aliases=("bdf2a_jit",),
                 caps=StepperCaps(
                     dense_output=False,
-                    jacobian="internal",
+                    jacobian="optional",
                 ),
             )
         self.meta = meta
@@ -92,7 +94,7 @@ class BDF2AdaptiveJITSpec(ConfigMixin):
             J=np.zeros((n_state, n_state), dtype=dtype),
         )
 
-    def emit(self, rhs_fn: Callable, model_spec=None) -> Callable:
+    def emit(self, rhs_fn: Callable, model_spec=None, jacobian_fn=None, jvp_fn=None) -> Callable:
         default_cfg = self.default_config(model_spec)
         default_atol = default_cfg.atol
         default_rtol = default_cfg.rtol
@@ -105,6 +107,7 @@ class BDF2AdaptiveJITSpec(ConfigMixin):
         default_newton_max_iter = default_cfg.newton_max_iter
         default_jac_eps = default_cfg.jac_eps
         default_dt_max = default_cfg.dt_max
+        default_jac_mode = default_cfg.jacobian_mode
 
         def bdf2a_stepper(
             t,
@@ -139,7 +142,7 @@ class BDF2AdaptiveJITSpec(ConfigMixin):
             # it will point to an intermediate half-step state.
             y_back = y_curr
             
-            if stepper_config.size >= 11:
+            if stepper_config.size >= 12:
                 atol = stepper_config[0]
                 rtol = stepper_config[1]
                 safety = stepper_config[2]
@@ -151,6 +154,9 @@ class BDF2AdaptiveJITSpec(ConfigMixin):
                 newton_max_iter = int(stepper_config[8])
                 jac_eps = stepper_config[9]
                 dt_max = stepper_config[10]
+                jac_mode = int(stepper_config[11])
+                if jac_mode != 1:
+                    jac_mode = 0
             else:
                 atol = default_atol
                 rtol = default_rtol
@@ -163,9 +169,11 @@ class BDF2AdaptiveJITSpec(ConfigMixin):
                 newton_max_iter = default_newton_max_iter
                 jac_eps = default_jac_eps
                 dt_max = default_dt_max
+                jac_mode = default_jac_mode
 
             if max_tries < 1: max_tries = 1
             if newton_max_iter < 1: newton_max_iter = 1
+            prefer_external_jac = bool(jac_mode == 1 and jacobian_fn is not None)
 
             h = dt
             if h > dt_max:
@@ -234,39 +242,41 @@ class BDF2AdaptiveJITSpec(ConfigMixin):
                     if not allfinite1d(residual):
                         return False
 
-                    # Build Jacobian
-                    for j in range(n):
-                        # Finite diff column j
-                        orig_val = y_guess[j]
-                        abs_base = orig_val if orig_val >= 0 else -orig_val
-                        scale = abs_base if abs_base > 1.0 else 1.0
-                        eps = jac_eps * scale
-                        y_guess[j] = orig_val + eps
-                        
-                        rhs(t_new_local, y_guess, f_tmp, params, runtime_ws)
-                        
-                        y_guess[j] = orig_val # restore
-                        
-                        if not allfinite1d(f_tmp): return False
-                        inv_eps = 1.0 / eps
+                    # Build Jacobian (analytic if requested/available, else FD)
+                    if mode == 1:
+                        factor_fd = h_local
+                    else:
+                        factor_fd = c_beta * h_local
 
-                        if mode == 1:
-                            # J = I - h * df/dy
+                    if prefer_external_jac and jacobian_fn is not None:
+                        jacobian_fn(t_new_local, y_guess, params, J, runtime_ws)
+                        for i in range(n):
+                            for j in range(n):
+                                J[i, j] = -factor_fd * J[i, j]
+                            J[i, i] = J[i, i] + 1.0
+                    else:
+                        for j in range(n):
+                            # Finite diff column j
+                            orig_val = y_guess[j]
+                            abs_base = orig_val if orig_val >= 0 else -orig_val
+                            scale = abs_base if abs_base > 1.0 else 1.0
+                            eps = jac_eps * scale
+                            y_guess[j] = orig_val + eps
+                            
+                            rhs(t_new_local, y_guess, f_tmp, params, runtime_ws)
+                            
+                            y_guess[j] = orig_val # restore
+                            
+                            if not allfinite1d(f_tmp): return False
+                            inv_eps = 1.0 / eps
+
+                            # J = I - factor * df/dy
                             for i in range(n):
                                 df_ij = (f_tmp[i] - f_val[i]) * inv_eps
                                 if i == j:
-                                    J[i, j] = 1.0 - h_local * df_ij
+                                    J[i, j] = 1.0 - factor_fd * df_ij
                                 else:
-                                    J[i, j] = -h_local * df_ij
-                        else:
-                            # J = I - c_beta * h * df/dy
-                            # Note: The leading 1.0 comes from d/dy(y)
-                            for i in range(n):
-                                df_ij = (f_tmp[i] - f_val[i]) * inv_eps
-                                if i == j:
-                                    J[i, j] = 1.0 - c_beta * h_local * df_ij
-                                else:
-                                    J[i, j] = -c_beta * h_local * df_ij
+                                    J[i, j] = -factor_fd * df_ij
 
                     # ... Linear Solve  ...
                     for i in range(n): residual[i] = -residual[i]

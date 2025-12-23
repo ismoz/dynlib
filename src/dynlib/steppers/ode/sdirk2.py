@@ -73,6 +73,8 @@ class SDIRK2JITSpec(ConfigMixin):
         newton_max_iter: int = 50
         # Base finite-difference scale for df/dy
         jac_eps: float = 1e-8
+        jacobian_mode: int = 0  # 0=internal FD, 1=external analytic
+        __enums__ = {"jacobian_mode": {"internal": 0, "external": 1}}
 
     class Workspace(NamedTuple):
         # Stage derivatives
@@ -105,7 +107,7 @@ class SDIRK2JITSpec(ConfigMixin):
                 aliases=("sdirk2_jit", "alexander2"),
                 caps=StepperCaps(
                     dense_output=False,
-                    jacobian="internal",  # internal numeric J; no external Jacobian API
+                    jacobian="optional",
                 ),
             )
         self.meta = meta
@@ -138,7 +140,7 @@ class SDIRK2JITSpec(ConfigMixin):
             J=mat(),
         )
 
-    def emit(self, rhs_fn: Callable, model_spec=None) -> Callable:
+    def emit(self, rhs_fn: Callable, model_spec=None, jacobian_fn=None, jvp_fn=None) -> Callable:
         """
         Generate the SDIRK2 stepper closure using the NamedTuple workspace.
 
@@ -175,14 +177,19 @@ class SDIRK2JITSpec(ConfigMixin):
             J = ws.J
 
             # Unpack config (or use hard-coded defaults if empty)
-            if stepper_config.shape[0] > 0:
+            if stepper_config.shape[0] >= 4:
                 newton_tol = stepper_config[0]
                 newton_max_iter = int(stepper_config[1])
                 jac_eps = stepper_config[2]
+                jac_mode = int(stepper_config[3])
+                if jac_mode != 1:
+                    jac_mode = 0
             else:
                 newton_tol = 1e-8
                 newton_max_iter = 50
                 jac_eps = 1e-8
+                jac_mode = 0
+            prefer_external_jac = bool(jac_mode == 1 and jacobian_fn is not None)
 
             dt_gamma = dt * gamma
 
@@ -196,36 +203,40 @@ class SDIRK2JITSpec(ConfigMixin):
 
             converged = False
 
-            # --- Build FD Jacobian once for Stage 1 (Modified Newton) ---
-            # f_val = f(t1, Y1_initial)
+            # --- Build Jacobian once for Stage 1 (Modified Newton) ---
             rhs(t1, y_stage, f_val, params, runtime_ws)
-
-            # J_base = I - dt*gamma * df/dY evaluated at (t1, Y1_initial)
-            for j in range(n):
-                # y_tmp = y_stage (copy)
+            if prefer_external_jac and jacobian_fn is not None:
+                jacobian_fn(t1, y_stage, params, J_base, runtime_ws)
                 for i in range(n):
-                    y_tmp[i] = y_stage[i]
+                    for j in range(n):
+                        J_base[i, j] = -dt_gamma * J_base[i, j]
+                    J_base[i, i] = J_base[i, i] + 1.0
+            else:
+                for j in range(n):
+                    # y_tmp = y_stage (copy)
+                    for i in range(n):
+                        y_tmp[i] = y_stage[i]
 
-                base = y_stage[j]
-                abs_base = base if base >= 0.0 else -base
-                scale = abs_base if abs_base > 1.0 else 1.0
-                eps = jac_eps * scale
-                if eps == 0.0:
-                    eps = jac_eps
-                y_tmp[j] = y_tmp[j] + eps
+                    base = y_stage[j]
+                    abs_base = base if base >= 0.0 else -base
+                    scale = abs_base if abs_base > 1.0 else 1.0
+                    eps = jac_eps * scale
+                    if eps == 0.0:
+                        eps = jac_eps
+                    y_tmp[j] = y_tmp[j] + eps
 
-                rhs(t1, y_tmp, f_tmp, params, runtime_ws)
-                if not allfinite1d(f_tmp):
-                    return STEPFAIL
+                    rhs(t1, y_tmp, f_tmp, params, runtime_ws)
+                    if not allfinite1d(f_tmp):
+                        return STEPFAIL
 
-                inv_eps = 1.0 / eps
+                    inv_eps = 1.0 / eps
 
-                for i in range(n):
-                    df_ij = (f_tmp[i] - f_val[i]) * inv_eps
-                    if i == j:
-                        J_base[i, j] = 1.0 - dt_gamma * df_ij
-                    else:
-                        J_base[i, j] = -dt_gamma * df_ij
+                    for i in range(n):
+                        df_ij = (f_tmp[i] - f_val[i]) * inv_eps
+                        if i == j:
+                            J_base[i, j] = 1.0 - dt_gamma * df_ij
+                        else:
+                            J_base[i, j] = -dt_gamma * df_ij
 
             # --- Newton iterations using frozen J_base ---
             for _it in range(newton_max_iter):
@@ -376,36 +387,40 @@ class SDIRK2JITSpec(ConfigMixin):
 
             converged = False
 
-            # --- Build FD Jacobian once for Stage 2 (Modified Newton) ---
-            # f_val = f(t2, Y2_initial)
+            # --- Build Jacobian once for Stage 2 (Modified Newton) ---
             rhs(t2, y_stage, f_val, params, runtime_ws)
-
-            # J_base = I - dt*gamma * df/dY evaluated at (t2, Y2_initial)
-            for j in range(n):
-                # y_tmp = y_stage
+            if prefer_external_jac and jacobian_fn is not None:
+                jacobian_fn(t2, y_stage, params, J_base, runtime_ws)
                 for i in range(n):
-                    y_tmp[i] = y_stage[i]
+                    for j in range(n):
+                        J_base[i, j] = -dt_gamma * J_base[i, j]
+                    J_base[i, i] = J_base[i, i] + 1.0
+            else:
+                for j in range(n):
+                    # y_tmp = y_stage
+                    for i in range(n):
+                        y_tmp[i] = y_stage[i]
 
-                base = y_stage[j]
-                abs_base = base if base >= 0.0 else -base
-                scale = abs_base if abs_base > 1.0 else 1.0
-                eps = jac_eps * scale
-                if eps == 0.0:
-                    eps = jac_eps
-                y_tmp[j] = y_tmp[j] + eps
+                    base = y_stage[j]
+                    abs_base = base if base >= 0.0 else -base
+                    scale = abs_base if abs_base > 1.0 else 1.0
+                    eps = jac_eps * scale
+                    if eps == 0.0:
+                        eps = jac_eps
+                    y_tmp[j] = y_tmp[j] + eps
 
-                rhs(t2, y_tmp, f_tmp, params, runtime_ws)
-                if not allfinite1d(f_tmp):
-                    return STEPFAIL
+                    rhs(t2, y_tmp, f_tmp, params, runtime_ws)
+                    if not allfinite1d(f_tmp):
+                        return STEPFAIL
 
-                inv_eps = 1.0 / eps
+                    inv_eps = 1.0 / eps
 
-                for i in range(n):
-                    df_ij = (f_tmp[i] - f_val[i]) * inv_eps
-                    if i == j:
-                        J_base[i, j] = 1.0 - dt_gamma * df_ij
-                    else:
-                        J_base[i, j] = -dt_gamma * df_ij
+                    for i in range(n):
+                        df_ij = (f_tmp[i] - f_val[i]) * inv_eps
+                        if i == j:
+                            J_base[i, j] = 1.0 - dt_gamma * df_ij
+                        else:
+                            J_base[i, j] = -dt_gamma * df_ij
 
             # --- Newton iterations using frozen J_base ---
             for _it in range(newton_max_iter):

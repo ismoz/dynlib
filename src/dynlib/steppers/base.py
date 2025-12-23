@@ -146,7 +146,13 @@ class StepperSpec(Protocol):
         """
         ...
     
-    def emit(self, rhs_fn: Callable, model_spec=None) -> Callable:
+    def emit(
+        self,
+        rhs_fn: Callable,
+        model_spec=None,
+        jacobian_fn: Callable | None = None,
+        jvp_fn: Callable | None = None,
+    ) -> Callable:
         """
         Generate a jittable stepper function.
         

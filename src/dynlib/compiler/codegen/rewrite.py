@@ -105,6 +105,7 @@ class _NameLowerer(ast.NodeTransformer):
         fn_defs: Dict[str, Tuple[Tuple[str, ...], ast.AST]],
         constants: Dict[str, float | int] | None = None,
         runtime_arg: str = "runtime_ws",
+        hoist_aux: bool = False,
     ):
         super().__init__()
         self.nmap = nmap
@@ -112,6 +113,7 @@ class _NameLowerer(ast.NodeTransformer):
         self.fn_defs = fn_defs
         self.constants = constants or BUILTIN_CONSTS
         self.runtime_arg = runtime_arg
+        self.hoist_aux = hoist_aux
 
     def visit_Name(self, node: ast.Name):
         if node.id in self.nmap.state_to_ix:
@@ -134,8 +136,10 @@ class _NameLowerer(ast.NodeTransformer):
         # Inline builtin constants as literals
         if node.id in self.constants:
             return ast.copy_location(ast.Constant(value=self.constants[node.id]), node)
-        # Inline aux by substituting its expression AST
+        # Aux: either treat as precomputed local (hoisted) or inline expression
         if node.id in self.aux_defs:
+            if self.hoist_aux:
+                return ast.copy_location(ast.Name(id=node.id, ctx=ast.Load()), node)
             cloned = self._clone(self.aux_defs[node.id])
             return self.visit(cloned)  # continue lowering the inlined aux
         # Allow math/builtins symbols to pass through (resolved at module scope)
@@ -653,6 +657,7 @@ def lower_expr_node(
     aux_defs: Dict[str, str] | None = None,
     fn_defs: Dict[str, Tuple[Tuple[str, ...], str]] | None = None,
     runtime_arg: str = "runtime_ws",
+    hoist_aux: bool = False,
 ) -> ast.AST:
     """Return a lowered AST node for the expression (supports 't', y_vec, p_vec, aux, functions)."""
     aux_defs = aux_defs or {}
@@ -665,6 +670,7 @@ def lower_expr_node(
         fn_ast,
         constants=nmap.constants,
         runtime_arg=runtime_arg,
+        hoist_aux=hoist_aux,
     ).visit(_parse_expr(expr))
     ast.fix_missing_locations(lowered)
     return lowered
@@ -676,6 +682,7 @@ def lower_expr_with_preamble(
     aux_defs: Dict[str, str] | None = None,
     fn_defs: Dict[str, Tuple[Tuple[str, ...], str]] | None = None,
     runtime_arg: str = "runtime_ws",
+    hoist_aux: bool = False,
 ) -> Tuple[List[ast.stmt], ast.AST]:
     """
     Lower an expression and return (preamble, expr_node), where preamble contains any
@@ -688,6 +695,7 @@ def lower_expr_with_preamble(
         aux_defs=aux_defs,
         fn_defs=fn_defs,
         runtime_arg=runtime_arg,
+        hoist_aux=hoist_aux,
     )
     sg = _SumGenLowerer()
     rewritten = sg.visit(lowered)

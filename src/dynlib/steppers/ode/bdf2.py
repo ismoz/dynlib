@@ -39,6 +39,8 @@ class BDF2JITSpec(ConfigMixin):
         newton_max_iter: int = 50
         # Base finite-difference scale for df/dy
         jac_eps: float = 1e-8
+        jacobian_mode: int = 0  # 0=internal FD, 1=external analytic
+        __enums__ = {"jacobian_mode": {"internal": 0, "external": 1}}
 
     class Workspace(NamedTuple):
         # multistep history (not used in BDF1)
@@ -68,7 +70,7 @@ class BDF2JITSpec(ConfigMixin):
                 aliases=("bdf2_jit",),
                 caps=StepperCaps(
                     dense_output=False,
-                    jacobian="internal",  # internal numeric J; no external Jacobian API
+                    jacobian="optional",  # external analytic Jacobian if provided
                 ),
             )
         self.meta = meta
@@ -98,7 +100,7 @@ class BDF2JITSpec(ConfigMixin):
             J=np.zeros((n_state, n_state), dtype=dtype),
         )
 
-    def emit(self, rhs_fn: Callable, model_spec=None) -> Callable:
+    def emit(self, rhs_fn: Callable, model_spec=None, jacobian_fn=None, jvp_fn=None) -> Callable:
         """
         Generate the BDF2 stepper closure that uses the NamedTuple workspace.
 
@@ -134,14 +136,19 @@ class BDF2JITSpec(ConfigMixin):
             t_new = t + dt
 
             # Unpack config (or use hard-coded defaults if empty)
-            if stepper_config.shape[0] > 0:
+            if stepper_config.shape[0] >= 4:
                 newton_tol = stepper_config[0]
                 newton_max_iter = int(stepper_config[1])
                 jac_eps = stepper_config[2]
+                jac_mode = int(stepper_config[3])
+                if jac_mode != 1:
+                    jac_mode = 0
             else:
                 newton_tol = 1e-8
                 newton_max_iter = 50
                 jac_eps = 1e-8
+                jac_mode = 0
+            prefer_external_jac = bool(jac_mode == 1 and jacobian_fn is not None)
 
             # ----------------- Predictor for Newton -----------------
             # Use explicit Euler for BDF1, explicit BDF2 for subsequent steps
@@ -211,43 +218,41 @@ class BDF2JITSpec(ConfigMixin):
                 if not allfinite1d(residual):
                     return STEPFAIL
 
-                # Build Jacobian J = dF/dy, using numeric df/dy and adding diagonal term
-                for j in range(n):
-                    # y_tmp = y_guess
+                # Build Jacobian J = dF/dy
+                factor = dt if step_idx == 0 else (2.0 / 3.0) * dt
+                if prefer_external_jac and jacobian_fn is not None:
+                    jacobian_fn(t_new, y_guess, params, J, runtime_ws)
                     for i in range(n):
-                        y_tmp[i] = y_guess[i]
+                        for j in range(n):
+                            J[i, j] = -factor * J[i, j]
+                        J[i, i] = J[i, i] + 1.0
+                else:
+                    for j in range(n):
+                        # y_tmp = y_guess
+                        for i in range(n):
+                            y_tmp[i] = y_guess[i]
 
-                    base = y_guess[j]
-                    abs_base = base if base >= 0.0 else -base
-                    # Scale eps with max(1, |y_j|) to improve numeric Jacobian.
-                    scale = abs_base if abs_base > 1.0 else 1.0
-                    eps = jac_eps * scale
-                    if eps == 0.0:
-                        eps = jac_eps
-                    y_tmp[j] = y_tmp[j] + eps
+                        base = y_guess[j]
+                        abs_base = base if base >= 0.0 else -base
+                        # Scale eps with max(1, |y_j|) to improve numeric Jacobian.
+                        scale = abs_base if abs_base > 1.0 else 1.0
+                        eps = jac_eps * scale
+                        if eps == 0.0:
+                            eps = jac_eps
+                        y_tmp[j] = y_tmp[j] + eps
 
-                    rhs(t_new, y_tmp, f_tmp, params, runtime_ws)
-                    # If the perturbed RHS is non-finite, abort this step.
-                    if not allfinite1d(f_tmp):
-                        return STEPFAIL
-                    inv_eps = 1.0 / eps
+                        rhs(t_new, y_tmp, f_tmp, params, runtime_ws)
+                        # If the perturbed RHS is non-finite, abort this step.
+                        if not allfinite1d(f_tmp):
+                            return STEPFAIL
+                        inv_eps = 1.0 / eps
 
-                    if step_idx == 0:
-                        # BDF1: F(y) = y - y0 - dt * f
                         for i in range(n):
                             df_ij = (f_tmp[i] - f_val[i]) * inv_eps
                             if i == j:
-                                J[i, j] = 1.0 - dt * df_ij
+                                J[i, j] = 1.0 - factor * df_ij
                             else:
-                                J[i, j] = -dt * df_ij
-                    else:
-                        # BDF2: F(y) = y - (4/3)y_n + (1/3)y_{n-1} - (2/3)dt f
-                        for i in range(n):
-                            df_ij = (f_tmp[i] - f_val[i]) * inv_eps
-                            if i == j:
-                                J[i, j] = 1.0 - (2.0/3.0)*dt * df_ij
-                            else:
-                                J[i, j] = - (2.0/3.0)*dt * df_ij
+                                J[i, j] = -factor * df_ij
 
                 # Solve J * delta = -residual using in-place Gaussian elimination
                 # We overwrite residual with delta.

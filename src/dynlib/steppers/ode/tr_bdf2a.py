@@ -57,6 +57,8 @@ class TRBDF2AdaptiveJITSpec(ConfigMixin):
         newton_max_iter: int = 50
         jac_eps: float = 1e-8
         dt_max: float = np.inf
+        jacobian_mode: int = 0  # 0=internal (FD), 1=external (analytic)
+        __enums__ = {"jacobian_mode": {"internal": 0, "external": 1}}
 
     class Workspace(NamedTuple):
         # Step counter (kept for symmetry with bdf2a, though not strictly needed)
@@ -107,7 +109,7 @@ class TRBDF2AdaptiveJITSpec(ConfigMixin):
                 aliases=("trbdf2a",),
                 caps=StepperCaps(
                     dense_output=False,
-                    jacobian="internal",
+                    jacobian="optional",
                 ),
             )
         self.meta = meta
@@ -138,7 +140,7 @@ class TRBDF2AdaptiveJITSpec(ConfigMixin):
             J_work=np.zeros((n_state, n_state), dtype=dtype),
         )
 
-    def emit(self, rhs_fn: Callable, model_spec=None) -> Callable:
+    def emit(self, rhs_fn: Callable, model_spec=None, jacobian_fn=None, jvp_fn=None) -> Callable:
         # Default config values (baked in as constants)
         default_cfg = self.default_config(model_spec)
         default_atol = default_cfg.atol
@@ -152,6 +154,7 @@ class TRBDF2AdaptiveJITSpec(ConfigMixin):
         default_newton_max_iter = default_cfg.newton_max_iter
         default_jac_eps = default_cfg.jac_eps
         default_dt_max = default_cfg.dt_max
+        default_jac_mode = default_cfg.jacobian_mode
 
         # TR-BDF2 parameter (L-stable choice)
         gamma = 2.0 - math.sqrt(2.0)
@@ -193,7 +196,7 @@ class TRBDF2AdaptiveJITSpec(ConfigMixin):
             step_idx = int(step_idx_arr[0])
 
             # Read runtime config if provided (same layout as bdf2a)
-            if stepper_config.size >= 11:
+            if stepper_config.size >= 12:
                 atol = stepper_config[0]
                 rtol = stepper_config[1]
                 safety = stepper_config[2]
@@ -205,6 +208,9 @@ class TRBDF2AdaptiveJITSpec(ConfigMixin):
                 newton_max_iter = int(stepper_config[8])
                 jac_eps = stepper_config[9]
                 dt_max = stepper_config[10]
+                jac_mode = int(stepper_config[11])
+                if jac_mode != 1:
+                    jac_mode = 0
             else:
                 atol = default_atol
                 rtol = default_rtol
@@ -217,11 +223,13 @@ class TRBDF2AdaptiveJITSpec(ConfigMixin):
                 newton_max_iter = default_newton_max_iter
                 jac_eps = default_jac_eps
                 dt_max = default_dt_max
+                jac_mode = default_jac_mode
 
             if max_tries < 1:
                 max_tries = 1
             if newton_max_iter < 1:
                 newton_max_iter = 1
+            prefer_external_jac = bool(jac_mode == 1 and jacobian_fn is not None)
 
             h = dt
             if h > dt_max:
@@ -245,44 +253,51 @@ class TRBDF2AdaptiveJITSpec(ConfigMixin):
                   mode 2: Backward Euler (c1, c2 unused)
                 """
 
-                # --- Build finite-difference Jacobian once at initial guess ---
+                # --- Build Jacobian once at initial guess (analytic if requested/available, else FD) ---
                 rhs(t_local, y_guess, f_val, params, runtime_ws)
                 if not allfinite1d(f_val):
                     return False
 
-                for j in range(n):
-                    orig_val = y_guess[j]
-                    abs_base = orig_val if orig_val >= 0.0 else -orig_val
-                    scale = abs_base if abs_base > 1.0 else 1.0
-                    eps = jac_eps * scale
+                # Determine scaling factor for this mode
+                if mode == 0:
+                    factor_fd = c1 * h_local
+                elif mode == 1:
+                    factor_fd = c1 * h_local
+                else:
+                    factor_fd = h_local
 
-                    y_guess[j] = orig_val + eps
-                    rhs(t_local, y_guess, f_tmp, params, runtime_ws)
-                    y_guess[j] = orig_val  # restore
-
-                    if not allfinite1d(f_tmp):
-                        return False
-
-                    inv_eps = 1.0 / eps
-
-                    if mode == 0:
-                        # J = I - θ h df/dy
-                        theta_loc = c1
-                        factor_fd = theta_loc * h_local
-                    elif mode == 1:
-                        # J = I - γ2 h df/dy
-                        gamma2_loc = c1
-                        factor_fd = gamma2_loc * h_local
-                    else:
-                        # Backward Euler: J = I - h df/dy
-                        factor_fd = h_local
-
+                if prefer_external_jac and jacobian_fn is not None:
+                    jacobian_fn(t_local, y_guess, params, J_base, runtime_ws)
+                    # Transform J_base in-place to (I - factor * df/dy)
                     for i in range(n):
-                        df_ij = (f_tmp[i] - f_val[i]) * inv_eps
-                        if i == j:
-                            J_base[i, j] = 1.0 - factor_fd * df_ij
-                        else:
-                            J_base[i, j] = -factor_fd * df_ij
+                        for j in range(n):
+                            J_base[i, j] = -factor_fd * J_base[i, j]
+                        J_base[i, i] = J_base[i, i] + 1.0
+                else:
+                    for j in range(n):
+                        orig_val = y_guess[j]
+                        abs_base = orig_val if orig_val >= 0.0 else -orig_val
+                        scale = abs_base if abs_base > 1.0 else 1.0
+                        eps = jac_eps * scale
+
+                        y_guess[j] = orig_val + eps
+                        rhs(t_local, y_guess, f_tmp, params, runtime_ws)
+                        y_guess[j] = orig_val  # restore
+
+                        if not allfinite1d(f_tmp):
+                            return False
+
+                        inv_eps = 1.0 / eps
+
+                        for i in range(n):
+                            df_ij = (f_tmp[i] - f_val[i]) * inv_eps
+                            if i == j:
+                                J_base[i, j] = 1.0 - factor_fd * df_ij
+                            else:
+                                J_base[i, j] = -factor_fd * df_ij
+
+                if not allfinite1d(J_base.ravel()):
+                    return False
 
                 # --- Newton iteration with frozen Jacobian J_base ---
                 for _it in range(newton_max_iter):

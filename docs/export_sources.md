@@ -8,20 +8,37 @@ Now you can easily **export and inspect** the generated source code to verify co
 
 ## Quick Start
 
+**Recommended approach:** Use the convenient `Model.export_sources()` method:
+
 ```python
 from dynlib import build
-from dynlib.compiler.build import export_model_sources
 
 # Compile your model
 model = build("my_model.toml", stepper="euler", jit=True)
 
-# Export all generated source files
-files = export_model_sources(model, "./compiled_sources")
+# Export all generated source files (preferred method)
+files = model.export_sources("./compiled_sources")
 
 # Inspect what was exported
 for component, filepath in files.items():
     print(f"{component}: {filepath}")
 ```
+
+<details>
+<summary>Alternative: Using the standalone function</summary>
+
+You can also import and use the standalone function:
+
+```python
+from dynlib import build
+from dynlib.compiler.build import export_model_sources
+
+model = build("my_model.toml", stepper="euler", jit=True)
+files = export_model_sources(model, "./compiled_sources")
+```
+
+However, the `model.export_sources()` method is more convenient and easier to discover.
+</details>
 
 ## What Gets Exported?
 
@@ -57,10 +74,9 @@ Export the sources and manually inspect them to ensure the DSL was compiled corr
 
 ```python
 from dynlib import build
-from dynlib.compiler.build import export_model_sources
 
 model = build("complex_model.toml", stepper="rk45")
-files = export_model_sources(model, "./verify")
+files = model.export_sources("./verify")
 
 # Read and check the RHS
 rhs_code = files["rhs"].read_text()
@@ -72,8 +88,10 @@ print(rhs_code)
 If your simulation produces unexpected results, inspect the generated code:
 
 ```python
+from dynlib import build
+
 model = build("problematic_model.toml", stepper="euler")
-export_model_sources(model, "./debug_output")
+model.export_sources("./debug_output")
 
 # Check the stepper implementation
 # Check if auxiliary variables are computed correctly
@@ -103,7 +121,7 @@ y = "-omega * x"
 """
 
 model = build(model_dsl, stepper="rk4")
-files = export_model_sources(model, "./learn")
+files = model.export_sources("./learn")
 
 # See exactly how "y = -omega * x" becomes Python code
 ```
@@ -122,7 +140,7 @@ model = build("production_model.toml", stepper="rk45", disk_cache=True)
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 archive_dir = Path(f"./model_archives/{timestamp}")
 
-files = export_model_sources(model, archive_dir)
+files = model.export_sources(archive_dir)
 print(f"Model archived to: {archive_dir}")
 ```
 
@@ -208,12 +226,11 @@ python examples/inspect_compilation.py
 
 ## API Reference
 
-### `export_model_sources(model, output_dir)`
+### `Model.export_sources(output_dir)` ⭐ Recommended
 
-Export compiled model sources to a directory.
+Export compiled model sources to a directory. This is the **preferred method** for exporting sources.
 
 **Parameters:**
-- `model` (FullModel): Compiled model from `build()`
 - `output_dir` (str | Path): Directory to write files to
 
 **Returns:**
@@ -229,14 +246,33 @@ Export compiled model sources to a directory.
 **Example:**
 ```python
 from dynlib import build
-from dynlib.compiler.build import export_model_sources
 
 model = build("model.toml", stepper="rk4")
-files = export_model_sources(model, "./output")
+files = model.export_sources("./output")
 
 # Access exported files
 rhs_file = files["rhs"]  # Path to rhs.py
 info_file = files["info"]  # Path to model_info.txt
+```
+
+### `export_model_sources(model, output_dir)` (Alternative)
+
+Standalone function version of the export functionality. **Consider using `model.export_sources()` instead** for better discoverability and convenience.
+
+**Parameters:**
+- `model` (FullModel): Compiled model from `build()`
+- `output_dir` (str | Path): Directory to write files to
+
+**Returns:**
+- `Dict[str, Path]`: Mapping of component names to file paths
+
+**Example:**
+```python
+from dynlib import build
+from dynlib.compiler.build import export_model_sources
+
+model = build("model.toml", stepper="rk4")
+files = export_model_sources(model, "./output")
 ```
 
 ## Tips
@@ -244,18 +280,18 @@ info_file = files["info"]  # Path to model_info.txt
 1. **Always check source availability first:**
    ```python
    if model.rhs_source:
-       export_model_sources(model, "./output")
+       model.export_sources("./output")
    ```
 
 2. **Use descriptive output directories:**
    ```python
-   export_model_sources(model, f"./debug_{model.spec_hash[:8]}")
+   model.export_sources(f"./debug_{model.spec_hash[:8]}")
    ```
 
 3. **Combine with version control:**
    ```python
    # Export to git-tracked directory for CI/CD verification
-   export_model_sources(model, "./tests/expected_output")
+   model.export_sources("./tests/expected_output")
    ```
 
 4. **For permanent storage, use disk_cache=True:**
@@ -264,5 +300,5 @@ info_file = files["info"]  # Path to model_info.txt
    model = build("model.toml", disk_cache=True)
    
    # Export for human inspection
-   export_model_sources(model, "./inspect")
+   model.export_sources("./inspect")
    ```
