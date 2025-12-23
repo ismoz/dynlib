@@ -2,6 +2,15 @@
 
 ---
 
+## [2.34.9] – 2025-12-24
+### Tests
+- Added comprehensive test coverage for external Jacobian mode in implicit steppers (`bdf2`, `bdf2a`, `tr-bdf2a`, 
+  `sdirk2`) via new test file `test_jacobian_external_mode.py`. Tests verify accuracy against analytic solutions,
+  consistency between internal and external modes, and correct behavior on both simple (1D exponential decay) and
+  complex (2D Van der Pol oscillator) systems.
+
+---
+
 ## [2.34.8] – 2025-12-23
 ### Changed
 - Modified steppers relying on Jacobian matrices (`bdf2`, `bdf2a`, `tr-bdf2a`, `sdirk`) so that they can utilize
