@@ -2,6 +2,14 @@
 
 ---
 
+## [2.34.7] – 2025-12-23
+### Changed
+- Each parameter result had its own result data class. Unified sweep results with a single template: `SweepResult` 
+  + `TrajectoryPayload`. Removed individual data classes like `ParamSweepTrajResult` and the `ParamSweepMLEResult`
+  introduced in the previous version. Future sweep analyses should use this template.
+
+---
+
 ## [2.34.6] – 2025-12-22
 ### Added
 - Lyapunov MLE parameter sweep functionality via `sweep.lyapunov_mle()` for computing maximum Lyapunov exponents 

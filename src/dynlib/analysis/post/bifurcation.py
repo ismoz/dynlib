@@ -9,12 +9,10 @@ This module intentionally separates:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+
+from dynlib.analysis.sweep import TrajectoryPayload, SweepResult
 
 import numpy as np
-
-if TYPE_CHECKING:
-    from dynlib.analysis.sweep import ParamSweepTrajResult
 
 __all__ = ["BifurcationResult", "BifurcationExtractor"]
 
@@ -75,7 +73,9 @@ class BifurcationExtractor:
         >>> bifurcation_diagram(result)  # Uses last 50 points
     """
 
-    def __init__(self, sweep_result: "ParamSweepTrajResult", var: str):
+    def __init__(self, sweep_result: "SweepResult", var: str):
+        if not isinstance(sweep_result.payload, TrajectoryPayload):
+            raise TypeError("BifurcationExtractor requires a trajectory sweep result")
         self._sweep = sweep_result
         self._var = var
         self._cached_all = None  # Lazy cache for .all() result
@@ -91,7 +91,7 @@ class BifurcationExtractor:
         return self._var
 
     @property
-    def sweep(self) -> "ParamSweepTrajResult":
+    def sweep(self) -> "SweepResult":
         return self._sweep
     
     # Duck-typing properties for direct use (defaults to .all() mode)

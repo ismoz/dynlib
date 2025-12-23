@@ -13,9 +13,8 @@ from dynlib.analysis.runtime import (
 )
 
 _SWEEP_EXPORTS = {
-    "ParamSweepScalarResult",
-    "ParamSweepTrajResult",
-    "ParamSweepMLEResult",
+    "SweepResult",
+    "TrajectoryPayload",
     "scalar",
     "traj",
     "lyapunov_mle",

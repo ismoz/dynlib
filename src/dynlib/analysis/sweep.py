@@ -1,8 +1,8 @@
-# src/dynlib/analysis/post/sweep.py
+# src/dynlib/analysis/sweep.py
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Iterable, Literal, Sequence, TYPE_CHECKING
+from typing import Iterable, Literal, Mapping, Sequence, TYPE_CHECKING
 import warnings
 import numpy as np
 
@@ -14,116 +14,75 @@ from dynlib.runtime.fastpath.capability import FastpathSupport, assess_capabilit
 
 
 class SweepRun:
-    """Single run from a parameter sweep with convenient access to time and variables.
-    
-    Attributes:
-        param_value: The parameter value for this run
-        t: Time array for this run
-        
-    Access variables by name:
-        run["x"]          -> 1D array of x values
-        run[["x", "y"]]   -> 2D array (N, 2) with x and y columns
-    """
-    
-    def __init__(self, param_value: float, t: np.ndarray, data: np.ndarray, 
-                 var_index: dict[str, int], record_vars: tuple[str, ...]):
+    """Single run from a parameter sweep with convenient access to time and variables."""
+
+    def __init__(
+        self,
+        param_value: float,
+        t: np.ndarray,
+        data: np.ndarray,
+        var_index: dict[str, int],
+        record_vars: tuple[str, ...],
+    ):
         self.param_value = param_value
         self.t = t
         self._data = data
         self._var_index = var_index
         self._record_vars = record_vars
-    
+
     def __getitem__(self, key: str | Sequence[str]) -> np.ndarray:
         """Access trajectory data by variable name(s)."""
         names = (key,) if isinstance(key, str) else tuple(key)
         missing = [nm for nm in names if nm not in self._var_index]
         if missing:
             raise KeyError(f"Unknown variable(s) {missing}; available: {self._record_vars}")
-        
+
         cols = [self._var_index[nm] for nm in names]
         if len(cols) == 1:
             return self._data[:, cols[0]]
         return self._data[:, cols]
-    
+
     def __repr__(self) -> str:
         return f"SweepRun(param={self.param_value}, t={self.t.shape[0]} points, vars={self._record_vars})"
 
 
 class SweepRunsView:
     """List-like view of all runs in a parameter sweep."""
-    
-    def __init__(self, parent: 'ParamSweepTrajResult'):
-        self._parent = parent
-    
+
+    def __init__(self, *, values: np.ndarray, payload: "TrajectoryPayload"):
+        self._values = values
+        self._payload = payload
+
     def __len__(self) -> int:
-        return len(self._parent.values)
-    
+        return len(self._values)
+
     def __getitem__(self, idx: int) -> SweepRun:
-        if idx < 0 or idx >= len(self._parent.values):
-            raise IndexError(f"Run index {idx} out of range [0, {len(self._parent.values)})")
+        if idx < 0 or idx >= len(self._values):
+            raise IndexError(f"Run index {idx} out of range [0, {len(self._values)})")
         return SweepRun(
-            param_value=float(self._parent.values[idx]),
-            t=self._parent.t_runs[idx],
-            data=self._parent.data[idx],
-            var_index=self._parent._var_index,
-            record_vars=self._parent.record_vars
+            param_value=float(self._values[idx]),
+            t=self._payload.t_runs[idx],
+            data=self._payload.data[idx],
+            var_index=self._payload._var_index,
+            record_vars=self._payload.record_vars,
         )
-    
+
     def __iter__(self):
         for i in range(len(self)):
             yield self[i]
-    
+
     def __repr__(self) -> str:
         return f"SweepRunsView({len(self)} runs)"
 
-@dataclass
-class ParamSweepScalarResult:
-    """Result from a scalar parameter sweep.
-    
-    Contains a single summary statistic for each parameter value, producing
-    a 1D curve suitable for bifurcation diagrams or equilibrium analysis.
-    
-    Attributes:
-        param_name: Name of the swept parameter
-        values: Array of M parameter values tested
-        var: Name of the recorded state variable
-        mode: Reduction mode applied ("final", "mean", "max", "min")
-        y: Array of M scalar outputs (one per parameter value)
-        meta: Simulation metadata (stepper, T, dt, etc.)
-    """
-    param_name: str
-    values: np.ndarray       # (M,)
-    var: str                 # "x"
-    mode: str                # "final" | "mean" | "max" | ...
-    y: np.ndarray            # (M,)
-    meta: dict
 
 @dataclass
-class ParamSweepTrajResult:
-    """Result from a trajectory parameter sweep.
-    
-    Contains full time-series data for each parameter value, preserving
-    complete dynamical behavior. Essential for analyzing transients,
-    phase portraits, and time-dependent phenomena.
-    
-    Attributes:
-        param_name: Name of the swept parameter
-        values: Array of M parameter values tested
-        record_vars: Tuple of recorded state variable names (e.g., ("x", "y", "z"))
-        t_runs: List of M time arrays (one per param value); may differ for adaptive steppers
-        data: List of M trajectory arrays, each shape (n_i, len(record_vars))
-        meta: Simulation metadata (stepper, T, dt, etc.)
-    
-    Access trajectories by variable name:
-        res["x"]          -> (N, M) array when runs have same length, else list
-        res[["x", "y"]]   -> (N, M, 2) array when stackable, else list
-    """
-    param_name: str
-    values: np.ndarray               # (M,)
-    record_vars: tuple[str, ...]     # ("x", "y", "z")
-    t_runs: list[np.ndarray]         # length M, each shape (n_i,)
-    data: list[np.ndarray]           # length M, each shape (n_i, len(vars))
-    meta: dict
+class TrajectoryPayload:
+    """Encapsulates trajectory data for parameter sweeps."""
+
+    record_vars: tuple[str, ...]
+    t_runs: list[np.ndarray]
+    data: list[np.ndarray]
+    values: np.ndarray
     _var_index: dict[str, int] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -146,13 +105,7 @@ class ParamSweepTrajResult:
         return stacked
 
     def __getitem__(self, key: str | Sequence[str]) -> np.ndarray | list[np.ndarray]:
-        """
-        Named access to trajectories by recorded variable.
-
-        Time is the leading axis when stacking succeeds:
-        - ``res["x"]`` -> shape (N, M) when runs share a length, else list of (n_i,)
-        - ``res[["x","y"]]`` -> shape (N, M, 2) when stackable, else list of (n_i, 2)
-        """
+        """Named access to trajectories by recorded variable."""
         names = (key,) if isinstance(key, str) else tuple(key)
         missing = [nm for nm in names if nm not in self._var_index]
         if missing:
@@ -165,7 +118,6 @@ class ParamSweepTrajResult:
                 return stacked[:, :, cols[0]].T
             return np.transpose(stacked[:, :, cols], (1, 0, 2))
 
-        # Ragged fallback: preserve per-run lengths
         out: list[np.ndarray] = []
         for arr in self.data:
             if len(cols) == 1:
@@ -174,7 +126,6 @@ class ParamSweepTrajResult:
                 out.append(arr[:, cols])
         return out
 
-    # ---- time axis convenience ----
     @property
     def t(self) -> np.ndarray:
         """Primary time axis (first run). Useful for plotting when grids match."""
@@ -189,76 +140,185 @@ class ParamSweepTrajResult:
 
     @property
     def runs(self) -> SweepRunsView:
-        """Access individual sweep runs with convenient time and variable access.
-        
-        Each run provides:
-            - .param_value: The parameter value for this run
-            - .t: Time array for this run
-            - ["x"]: Access variable x as 1D array
-            - [["x", "y"]]: Access multiple variables as 2D array
-        
-        Examples:
-            >>> # Access specific run
-            >>> run = res.runs[0]
-            >>> plot(run.t, run["x"])
-            
-            >>> # Iterate over all runs
-            >>> for run in res.runs:
-            ...     plot(run.t, run["x"], label=f"a={run.param_value}")
-            
-            >>> # Multi-variable access
-            >>> run = res.runs[2]
-            >>> xy = run[["x", "y"]]  # shape (N, 2)
-            >>> plot(xy[:, 0], xy[:, 1])
-        """
-        return SweepRunsView(self)
+        """Access individual sweep runs with convenient time and variable access."""
+        return SweepRunsView(values=self.values, payload=self)
+
+
+class SweepResult(Mapping[str, object]):
+    """Unified result for parameter sweeps (scalar, trajectory, Lyapunov, etc.)."""
+
+    def __init__(
+        self,
+        *,
+        param_name: str,
+        values: np.ndarray,
+        kind: str,
+        outputs: Mapping[str, object] | None = None,
+        traces: Mapping[str, object] | None = None,
+        meta: dict | None = None,
+        payload: object | None = None,
+    ):
+        self.param_name = param_name
+        self.values = np.asarray(values, dtype=float)
+        self.kind = kind
+        self.meta = meta or {}
+        self._outputs = dict(outputs or {})
+        self._traces = dict(traces or {})
+        self._payload = payload
+
+        self._output_names: tuple[str, ...] = tuple(self._outputs.keys())
+        self._trace_names: tuple[str, ...] = tuple(self._traces.keys())
+        self._core_keys = frozenset(
+            ["values", "param_name", "kind", "meta", "outputs", "traces", "payload", "output_names", "trace_names"]
+        )
+
+    # Mapping interface
+    def __getitem__(self, key: str) -> object:
+        if key == "values":
+            return self.values
+        if key == "param_name":
+            return self.param_name
+        if key == "kind":
+            return self.kind
+        if key == "meta":
+            return self.meta
+        if key == "outputs":
+            return self._outputs
+        if key == "traces":
+            return self._traces
+        if key == "payload":
+            return self._payload
+        if key == "output_names":
+            return self._output_names
+        if key == "trace_names":
+            return self._trace_names
+
+        if key in self._outputs:
+            return self._outputs[key]
+        if key in self._traces:
+            return self._traces[key]
+        if isinstance(self._payload, TrajectoryPayload) and key in self._payload._var_index:
+            return self._payload[key]
+
+        available = (
+            list(self._core_keys)
+            + list(self._output_names)
+            + list(self._trace_names)
+            + (list(self._payload.record_vars) if isinstance(self._payload, TrajectoryPayload) else [])
+        )
+        raise KeyError(f"Unknown field '{key}'. Available: {available}")
+
+    def __iter__(self):
+        yield from self._core_keys
+        yield from self._output_names
+        yield from self._trace_names
+        if isinstance(self._payload, TrajectoryPayload):
+            yield from self._payload.record_vars
+
+    def __len__(self) -> int:
+        payload_len = len(self._payload.record_vars) if isinstance(self._payload, TrajectoryPayload) else 0
+        return len(self._core_keys) + len(self._output_names) + len(self._trace_names) + payload_len
+
+    def __contains__(self, key: object) -> bool:
+        if not isinstance(key, str):
+            return False
+        return (
+            key in self._core_keys
+            or key in self._outputs
+            or key in self._traces
+            or (isinstance(self._payload, TrajectoryPayload) and key in self._payload._var_index)
+        )
+
+    # Attribute access
+    def __getattr__(self, name: str) -> object:
+        if name.startswith("_"):
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+        if name in self._outputs:
+            return self._outputs[name]
+        if name in self._traces:
+            return self._traces[name]
+        if isinstance(self._payload, TrajectoryPayload) and name in self._payload._var_index:
+            return self._payload[name]
+        available = (
+            list(self._output_names)
+            + list(self._trace_names)
+            + (list(self._payload.record_vars) if isinstance(self._payload, TrajectoryPayload) else [])
+        )
+        raise AttributeError(f"SweepResult has no attribute '{name}'. Available: {available}")
+
+    def __repr__(self) -> str:
+        return (
+            f"<SweepResult kind={self.kind!r}, param={self.param_name!r}, "
+            f"values={self.values.shape}, outputs={self._output_names}, traces={self._trace_names}>"
+        )
+
+    # Convenience passthroughs for trajectory payloads
+    @property
+    def payload(self) -> object | None:
+        return self._payload
+
+    @property
+    def outputs(self) -> Mapping[str, object]:
+        return self._outputs
+
+    @property
+    def traces(self) -> Mapping[str, object]:
+        return self._traces
+
+    @property
+    def output_names(self) -> tuple[str, ...]:
+        return self._output_names
+
+    @property
+    def trace_names(self) -> tuple[str, ...]:
+        return self._trace_names
+
+    @property
+    def record_vars(self) -> tuple[str, ...]:
+        if isinstance(self._payload, TrajectoryPayload):
+            return self._payload.record_vars
+        return tuple()
+
+    @property
+    def t(self) -> np.ndarray:
+        if isinstance(self._payload, TrajectoryPayload):
+            return self._payload.t
+        return np.empty((0,), dtype=float)
+
+    @property
+    def t_all(self) -> list[np.ndarray]:
+        if isinstance(self._payload, TrajectoryPayload):
+            return self._payload.t_all
+        return []
+
+    @property
+    def data(self) -> list[np.ndarray]:
+        if isinstance(self._payload, TrajectoryPayload):
+            return self._payload.data
+        return []
+
+    @property
+    def runs(self) -> SweepRunsView:
+        if not isinstance(self._payload, TrajectoryPayload):
+            raise AttributeError("runs is only available for trajectory sweep results")
+        return self._payload.runs
+
+    def stack(self) -> np.ndarray:
+        if not isinstance(self._payload, TrajectoryPayload):
+            raise AttributeError("stack is only available for trajectory sweep results")
+        return self._payload.stack()
+
+    def series(self, key: str | Sequence[str]) -> object:
+        """Named access helper mirroring __getitem__."""
+        return self[key]
 
     def bifurcation(self, var: str):
-        """Create a bifurcation extractor for a recorded variable.
-
-        This separates the parameter sweep runtime (``sweep.traj``) from
-        post-processing (tail/peaks/final extraction).
-
-        Example:
-            >>> res = sweep.traj(sim, param="r", values=r_values, record_vars=["x"], N=500)
-            >>> bif = res.bifurcation("x").tail(30)
-        """
+        """Create a bifurcation extractor for trajectory sweeps."""
+        if not isinstance(self._payload, TrajectoryPayload):
+            raise AttributeError("bifurcation is only available for trajectory sweep results")
         from dynlib.analysis.post.bifurcation import BifurcationExtractor
 
         return BifurcationExtractor(self, var)
-
-@dataclass
-class ParamSweepMLEResult:
-    """Result from a Lyapunov MLE parameter sweep.
-    
-    Contains converged maximum Lyapunov exponents for each parameter value,
-    plus optional convergence traces for analysis.
-    
-    Attributes:
-        param_name: Name of the swept parameter
-        values: Array of M parameter values tested
-        mle: Array of M converged maximum Lyapunov exponents
-        log_growth: List of M cumulative log growth values (final state)
-        steps: Array of M iteration counts (steps used for each run)
-        trace_runs: Optional list of M convergence trace arrays (if recorded)
-        meta: Simulation metadata (stepper, T, dt, etc.)
-    """
-    param_name: str
-    values: np.ndarray              # (M,)
-    mle: np.ndarray                 # (M,) - final converged values
-    log_growth: list[float]         # length M
-    steps: np.ndarray               # (M,) - iteration counts
-    trace_runs: list[np.ndarray] | None  # length M, each (n_i,) or None
-    meta: dict
-    
-    def stack_traces(self) -> np.ndarray:
-        """Stack convergence traces if all have same length, else raise."""
-        if self.trace_runs is None:
-            raise ValueError("No traces recorded (use record_interval to enable)")
-        lengths = {arr.shape[0] for arr in self.trace_runs}
-        if len(lengths) != 1:
-            raise ValueError("Cannot stack traces: lengths differ")
-        return np.stack(self.trace_runs, axis=0)  # (M, n)
 
 
 def _param_index(sim: Sim, name: str) -> int:
@@ -441,7 +501,7 @@ def scalar(
     transient: float | None = None,
     record_interval: int | None = None,
     max_steps: int | None = None,
-) -> ParamSweepScalarResult:
+) -> SweepResult:
     """Sweep a parameter and reduce each run to a single scalar value.
     
     Use this when you only need summary statistics (equilibria, averages, extrema)
@@ -467,7 +527,7 @@ def scalar(
         max_steps: Safety limit on total steps
     
     Returns:
-        ParamSweepScalarResult with arrays:
+        SweepResult(kind="scalar") with:
             - values: parameter values (M,)
             - y: scalar outputs (M,)
     
@@ -553,12 +613,13 @@ def scalar(
         transient=transient,
         record_interval=record_interval,
     )
-    return ParamSweepScalarResult(
+    meta.update(var=var, mode=mode)
+    return SweepResult(
         param_name=param,
         values=vals,
-        var=var,
-        mode=mode,
-        y=out,
+        kind="scalar",
+        outputs={"y": out},
+        traces={},
         meta=meta,
     )
 
@@ -578,7 +639,7 @@ def traj(
     max_steps: int | None = None,
     parallel_mode: Literal["auto", "threads", "none"] = "auto",
     max_workers: int | None = None,
-) -> ParamSweepTrajResult:
+) -> SweepResult:
     """Sweep a parameter and collect full time-series trajectories for each run.
     
     Use this when you need complete dynamical behavior: transients, oscillations,
@@ -602,11 +663,9 @@ def traj(
         max_workers: Maximum worker threads when parallel_mode uses threads (None = default)
     
     Returns:
-        ParamSweepTrajResult with:
+        SweepResult(kind="trajectory") with:
             - values: parameter values (M,)
-            - record_vars: recorded variable names
-            - t_runs: list of M time arrays
-            - data: list of M trajectory arrays, each (n_i, len(record_vars))
+            - payload: TrajectoryPayload containing record_vars, t_runs, data
         
         Access via indexing: res["x"] or res[["x", "y"]]
     
@@ -701,13 +760,21 @@ def traj(
         parallel_mode=parallel_mode,
         max_workers=max_workers,
     )
-    return ParamSweepTrajResult(
-        param_name=param,
-        values=vals,
+    payload = TrajectoryPayload(
         record_vars=record_vars_tuple,
         t_runs=t_list,
         data=data_list,
+        values=vals,
+    )
+    meta.update(record_vars=record_vars_tuple)
+    return SweepResult(
+        param_name=param,
+        values=vals,
+        kind="trajectory",
+        outputs={},
+        traces={},
         meta=meta,
+        payload=payload,
     )
 
 
@@ -726,7 +793,7 @@ def lyapunov_mle(
     parallel_mode: Literal["auto", "threads", "none"] = "auto",
     max_workers: int | None = None,
     analysis_kind: int = 1,
-) -> ParamSweepMLEResult:
+) -> SweepResult:
     """Sweep a parameter and compute maximum Lyapunov exponent for each value.
     
     Combines parameter sweep with Lyapunov analysis to characterize how chaos
@@ -749,12 +816,10 @@ def lyapunov_mle(
         analysis_kind: Lyapunov algorithm variant (default 1)
     
     Returns:
-        ParamSweepMLEResult with:
+        SweepResult(kind="mle") with:
             - values: parameter values (M,)
-            - mle: final MLE for each parameter (M,)
-            - trace_runs: optional list of M convergence traces
-            - log_growth: cumulative log growth for each run
-            - steps: iteration counts for each run
+            - outputs: mle, log_growth, steps
+            - traces: optional list of convergence traces (key 'mle')
     
     Example:
         >>> # Characterize chaos onset in logistic map
@@ -878,12 +943,20 @@ def lyapunov_mle(
         max_workers=max_workers,
         analysis_kind=analysis_kind,
     )
-    return ParamSweepMLEResult(
+    outputs = dict(
+        mle=mle_values,
+        log_growth=np.array(log_growth_list, dtype=float),
+        steps=steps_values,
+    )
+    traces: dict[str, object] = {}
+    if trace_list is not None:
+        traces["mle"] = trace_list
+
+    return SweepResult(
         param_name=param,
         values=vals,
-        mle=mle_values,
-        log_growth=log_growth_list,
-        steps=steps_values,
-        trace_runs=trace_list,
+        kind="mle",
+        outputs=outputs,
+        traces=traces,
         meta=meta,
     )

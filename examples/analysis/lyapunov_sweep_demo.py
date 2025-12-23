@@ -59,9 +59,15 @@ res = sweep.lyapunov_mle(
 )
 
 print(f"\nSweep completed!")
+print(f"  Sweep kind: {res.kind}")
 print(f"  MLE range: [{res.mle.min():.4f}, {res.mle.max():.4f}]")
 print(f"  Chaos onset (λ=0): r ≈ {r_values[np.argmin(np.abs(res.mle))]:.4f}")
 print(f"  MLE at r=4.0: {res.mle[-1]:.4f} (theoretical: {np.log(2):.4f})")
+
+# Optional: inspect recorded trace per-parameter (list of arrays)
+trace_runs = res.traces.get("mle")
+if trace_runs:
+    print(f"  Recorded {len(trace_runs)} convergence traces (first length={trace_runs[0].shape[0]})")
 
 # ===== Visualization =====
 theme.use("notebook")
