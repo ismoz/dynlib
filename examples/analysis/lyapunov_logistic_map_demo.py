@@ -20,7 +20,7 @@ from dynlib.plot import series, export, theme, fig
 
 
 # Single run with multiple analyses
-sim = setup("builtin://map/logistic", jit=True, disk_cache=False)
+sim = setup("builtin://map/logistic", jit=True, disk_cache=True)
 model = sim.model
 
 record_every = 1

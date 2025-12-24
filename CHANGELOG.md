@@ -2,6 +2,29 @@
 
 ---
 
+## [2.35.1] – 2025-12-24
+### Changed
+- Refactored analysis hook dispatch to eliminate `NumbaExperimentalFeatureWarning`. Analysis hooks (`pre_step`,
+  `post_step`) are now injected as global symbols (`ANALYSIS_PRE`, `ANALYSIS_POST`) into generated runner source
+  code via `exec()` with a custom namespace, making call targets statically resolvable by Numba instead of using 
+  first-class function arguments.
+- Runner variants are cached (64 entries max) keyed by (model_hash, stepper_name, analysis_signature_hash, 
+  runner_type, jit), ensuring the same runner/analysis combination compiles only once per parameter sweep. Cache
+  mechanism uses LRU (Least Recently Used) eviction.
+- Replaced `literal_unroll` over callable containers with explicit sequential call codegen for combined hooks, 
+  avoiding callable containers entirely.
+- When no analysis is active, base runner templates are used without any `analysis_kind` branching overhead.
+
+### Added
+- `signature(dtype) -> tuple` method to `AnalysisModule` protocol for stable cache key generation.
+- New module `dynlib.compiler.codegen.runner_variants` with `get_runner_variant()`, 
+  `get_runner_variant_discrete()`, `analysis_signature_hash()`, and `clear_variant_cache()` API.
+
+### Fixed
+- Resolved `NumbaExperimentalFeatureWarning` caused by first-class function types in analysis hook dispatch.
+
+---
+
 ## [2.35.0] – 2025-12-24
 ### Added
 - `lyapunov_spectrum()` analysis utility for performing Benettin QR / Shimada–Nagashima (reorthonormalization) 

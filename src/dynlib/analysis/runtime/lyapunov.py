@@ -209,6 +209,21 @@ class _LyapunovModule(AnalysisModule):
         self._n_state = int(n_state)
         self._mode = 0 if mode == "flow" else 1
 
+    def signature(self, dtype: np.dtype) -> tuple:
+        """
+        Return a hashable signature including mode and state dimension.
+        """
+        trace_width = self.trace.width if self.trace else 0
+        trace_stride = self.trace_stride
+        return (
+            "lyapunov_mle",
+            self._n_state,
+            self._mode,
+            trace_width,
+            trace_stride,
+            str(np.dtype(dtype)),
+        )
+
     def _ensure_jit_jvp(self):
         if self._jvp_jit is not None:
             return self._jvp_jit
@@ -609,6 +624,22 @@ class _LyapunovSpectrumModule(AnalysisModule):
             trace=TraceSpec(width=k, plan=trace_plan),
             hooks=hooks,
             analysis_kind=analysis_kind,
+        )
+
+    def signature(self, dtype: np.dtype) -> tuple:
+        """
+        Return a hashable signature including k, mode, and state dimension.
+        """
+        trace_width = self.trace.width if self.trace else 0
+        trace_stride = self.trace_stride
+        return (
+            "lyapunov_spectrum",
+            self._n_state,
+            self._k,
+            self._mode,
+            trace_width,
+            trace_stride,
+            str(np.dtype(dtype)),
         )
 
     def _ensure_jit_jvp(self):

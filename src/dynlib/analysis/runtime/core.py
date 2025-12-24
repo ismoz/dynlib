@@ -118,6 +118,25 @@ class AnalysisModule:
     def trace_stride(self) -> int:
         return self.trace.record_interval() if self.trace else 0
 
+    def signature(self, dtype: np.dtype) -> tuple:
+        """
+        Return a hashable signature for cache keying.
+        
+        The signature must include all parameters that affect the compiled hook
+        machine code or semantics. Subclasses should override to include
+        analysis-specific compile-time constants.
+        """
+        trace_width = self.trace.width if self.trace else 0
+        trace_stride = self.trace_stride
+        return (
+            self.name,
+            self.workspace_size,
+            self.output_size,
+            trace_width,
+            trace_stride,
+            str(np.dtype(dtype)),
+        )
+
     def trace_capacity(self, *, total_steps: int | None) -> int:
         return self.trace.capacity(total_steps=total_steps) if self.trace else 0
 
@@ -234,6 +253,13 @@ class CombinedAnalysis(AnalysisModule):
             hooks=python_hooks,
             analysis_kind=analysis_kind,
         )
+
+    def signature(self, dtype: np.dtype) -> tuple:
+        """
+        Return a hashable signature including all child module signatures.
+        """
+        child_sigs = tuple(mod.signature(dtype) for mod in self.modules)
+        return ("combined", child_sigs, str(np.dtype(dtype)))
 
     @staticmethod
     def _merge_requirements(modules: Sequence[AnalysisModule]) -> AnalysisRequirements:
@@ -360,162 +386,145 @@ class CombinedAnalysis(AnalysisModule):
         return _hook
 
     @staticmethod
-    def _compose_hook_jit(
-        *,
-        hooks: Sequence[AnalysisHooks],
-        ws_offsets: np.ndarray,
-        out_offsets: np.ndarray,
-        trace_offsets: np.ndarray,
-        trace_widths: np.ndarray,
-    ):
+    def _generate_combined_hook_source(
+        n_modules: int,
+        ws_offsets: Sequence[int],
+        out_offsets: Sequence[int],
+        trace_offsets: Sequence[int],
+        trace_widths: Sequence[int],
+        phase: str,
+    ) -> str:
         """
-        JIT-friendly hook that only closes over primitive offsets and compiled callables.
+        Generate source code for a combined hook with explicit sequential calls.
+        
+        This avoids containers of callables - each hook is a separate global symbol
+        (HOOK_0, HOOK_1, ...) that is injected at compile time.
         """
-        try:  # pragma: no cover - import guard for numba tooling
-            from numba import literal_unroll  # type: ignore
-        except Exception as exc:  # pragma: no cover
-            raise RuntimeError("CombinedAnalysis with jit=True requires numba") from exc
-
-        noop = analysis_noop_hook()
-        hook_funcs = tuple(h.pre_step or noop for h in hooks)
-
-        def _hook(
-            t: float,
-            dt: float,
-            step: int,
-            y_curr: np.ndarray,
-            y_prev: np.ndarray,
-            params: np.ndarray,
-            runtime_ws,
-            analysis_ws: np.ndarray,
-            analysis_out: np.ndarray,
-            trace_buf: np.ndarray,
-            trace_count: np.ndarray,
-            trace_cap: int,
-            trace_stride: int,
-        ) -> None:
-            idx = 0
-            for fn in literal_unroll(hook_funcs):
-                i = idx
-                ws0 = int(ws_offsets[i])
-                ws1 = int(ws_offsets[i + 1])
-                out0 = int(out_offsets[i])
-                out1 = int(out_offsets[i + 1])
-                trace_width = int(trace_widths[i])
-                trace0 = int(trace_offsets[i])
-                if trace_width > 0 and trace_buf.shape[0] > 0:
-                    trace_view = trace_buf[:, trace0 : trace0 + trace_width]
-                else:
-                    trace_view = trace_buf[:0, :0]
-                fn(
-                    t,
-                    dt,
-                    step,
-                    y_curr,
-                    y_prev,
-                    params,
-                    runtime_ws,
-                    analysis_ws[ws0:ws1],
-                    analysis_out[out0:out1],
-                    trace_view,
-                    trace_count,
-                    trace_cap,
-                    trace_stride,
-                )
-                idx += 1
-
-        return _hook
+        func_name = f"combined_{phase}_hook"
+        lines = [
+            f"def {func_name}(",
+            "    t, dt, step,",
+            "    y_curr, y_prev, params,",
+            "    runtime_ws,",
+            "    analysis_ws, analysis_out, trace_buf,",
+            "    trace_count, trace_cap, trace_stride,",
+            "):",
+        ]
+        
+        for i in range(n_modules):
+            ws0 = ws_offsets[i]
+            ws1 = ws_offsets[i + 1]
+            out0 = out_offsets[i]
+            out1 = out_offsets[i + 1]
+            trace_width = trace_widths[i]
+            trace0 = trace_offsets[i]
+            
+            # Generate the slice expressions
+            ws_slice = f"analysis_ws[{ws0}:{ws1}]"
+            out_slice = f"analysis_out[{out0}:{out1}]"
+            
+            if trace_width > 0:
+                trace_slice = f"trace_buf[:, {trace0}:{trace0 + trace_width}] if trace_buf.shape[0] > 0 else trace_buf[:0, :0]"
+            else:
+                trace_slice = "trace_buf[:0, :0]"
+            
+            lines.append(f"    HOOK_{i}(")
+            lines.append("        t, dt, step,")
+            lines.append("        y_curr, y_prev, params,")
+            lines.append("        runtime_ws,")
+            lines.append(f"        {ws_slice},")
+            lines.append(f"        {out_slice},")
+            lines.append(f"        {trace_slice},")
+            lines.append("        trace_count, trace_cap, trace_stride,")
+            lines.append("    )")
+        
+        return "\n".join(lines)
 
     @staticmethod
-    def _compose_hook_jit_post(
-        *,
-        hooks: Sequence[AnalysisHooks],
-        ws_offsets: np.ndarray,
-        out_offsets: np.ndarray,
-        trace_offsets: np.ndarray,
-        trace_widths: np.ndarray,
-    ):
-        try:  # pragma: no cover - import guard for numba tooling
-            from numba import literal_unroll  # type: ignore
-        except Exception as exc:  # pragma: no cover
-            raise RuntimeError("CombinedAnalysis with jit=True requires numba") from exc
-
-        noop = analysis_noop_hook()
-        hook_funcs = tuple(h.post_step or noop for h in hooks)
-
-        def _hook(
-            t: float,
-            dt: float,
-            step: int,
-            y_curr: np.ndarray,
-            y_prev: np.ndarray,
-            params: np.ndarray,
-            runtime_ws,
-            analysis_ws: np.ndarray,
-            analysis_out: np.ndarray,
-            trace_buf: np.ndarray,
-            trace_count: np.ndarray,
-            trace_cap: int,
-            trace_stride: int,
-        ) -> None:
-            idx = 0
-            for fn in literal_unroll(hook_funcs):
-                i = idx
-                ws0 = int(ws_offsets[i])
-                ws1 = int(ws_offsets[i + 1])
-                out0 = int(out_offsets[i])
-                out1 = int(out_offsets[i + 1])
-                trace_width = int(trace_widths[i])
-                trace0 = int(trace_offsets[i])
-                if trace_width > 0 and trace_buf.shape[0] > 0:
-                    trace_view = trace_buf[:, trace0 : trace0 + trace_width]
-                else:
-                    trace_view = trace_buf[:0, :0]
-                fn(
-                    t,
-                    dt,
-                    step,
-                    y_curr,
-                    y_prev,
-                    params,
-                    runtime_ws,
-                    analysis_ws[ws0:ws1],
-                    analysis_out[out0:out1],
-                    trace_view,
-                    trace_count,
-                    trace_cap,
-                    trace_stride,
-                )
-                idx += 1
-
-        return _hook
+    def _compile_combined_hook(
+        source: str,
+        func_name: str,
+        hooks: Sequence[Callable],
+        jit: bool,
+    ) -> Callable:
+        """
+        Compile a combined hook from generated source with hook functions as globals.
+        """
+        namespace = {}
+        for i, hook in enumerate(hooks):
+            namespace[f"HOOK_{i}"] = hook
+        
+        exec(source, namespace)
+        fn = namespace[func_name]
+        
+        if jit:
+            try:
+                from numba import njit
+                return njit(cache=False)(fn)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Failed to compile combined {func_name} in nopython mode"
+                ) from exc
+        
+        return fn
 
     def resolve_hooks(self, *, jit: bool, dtype: np.dtype) -> AnalysisHooks:
         if not jit:
             return self.hooks
-        ws_offsets, out_offsets, trace_offsets, trace_widths = self._compute_offsets(self.modules)
-        compiled_children = [mod.resolve_hooks(jit=True, dtype=dtype) for mod in self.modules]
-        composed = AnalysisHooks(
-            pre_step=self._compose_hook_jit(
-                hooks=compiled_children,
-                ws_offsets=ws_offsets,
-                out_offsets=out_offsets,
-                trace_offsets=trace_offsets,
-                trace_widths=trace_widths,
-            ),
-            post_step=self._compose_hook_jit_post(
-                hooks=compiled_children,
-                ws_offsets=ws_offsets,
-                out_offsets=out_offsets,
-                trace_offsets=trace_offsets,
-                trace_widths=trace_widths,
-            ),
-        )
+        
+        # Check cache first
         key = self._jit_key(dtype)
         cached = self._jit_cache.get(key)
         if cached is not None:
             return cached
-        return self._compile_hooks(composed, dtype)
+        
+        # Compute offsets for buffer slicing
+        ws_offsets, out_offsets, trace_offsets, trace_widths = self._compute_offsets(self.modules)
+        
+        # Resolve hooks for all child modules (compiles them if needed)
+        compiled_children = [mod.resolve_hooks(jit=True, dtype=dtype) for mod in self.modules]
+        
+        # Get the noop hook for modules without hooks
+        noop = analysis_noop_hook()
+        
+        # Extract pre and post hooks from children
+        pre_hooks = [h.pre_step or noop for h in compiled_children]
+        post_hooks = [h.post_step or noop for h in compiled_children]
+        
+        # Generate and compile the combined hooks using codegen (no callable containers)
+        pre_source = self._generate_combined_hook_source(
+            n_modules=len(self.modules),
+            ws_offsets=ws_offsets.tolist(),
+            out_offsets=out_offsets.tolist(),
+            trace_offsets=trace_offsets.tolist(),
+            trace_widths=trace_widths.tolist(),
+            phase="pre",
+        )
+        post_source = self._generate_combined_hook_source(
+            n_modules=len(self.modules),
+            ws_offsets=ws_offsets.tolist(),
+            out_offsets=out_offsets.tolist(),
+            trace_offsets=trace_offsets.tolist(),
+            trace_widths=trace_widths.tolist(),
+            phase="post",
+        )
+        
+        compiled_pre = self._compile_combined_hook(
+            pre_source,
+            "combined_pre_hook",
+            pre_hooks,
+            jit=True,
+        )
+        compiled_post = self._compile_combined_hook(
+            post_source,
+            "combined_post_hook",
+            post_hooks,
+            jit=True,
+        )
+        
+        composed = AnalysisHooks(pre_step=compiled_pre, post_step=compiled_post)
+        self._jit_cache[key] = composed
+        return composed
 
 
 @lru_cache(maxsize=1)

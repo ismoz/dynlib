@@ -16,6 +16,11 @@ from dynlib.runtime.workspace import make_runtime_workspace, snapshot_workspace
 from dynlib.runtime.sim import Segment, Sim
 from dynlib.runtime.results_api import ResultsView
 from dynlib.runtime.runner_api import DONE, GROW_REC, GROW_EVT, TRACE_OVERFLOW
+from dynlib.compiler.codegen.runner_variants import (
+    get_runner_variant,
+    get_runner_variant_discrete,
+    analysis_signature_hash,
+)
 
 __all__ = [
     "run_single_fastpath",
@@ -124,7 +129,8 @@ def _call_runner(
     n_aux = len(model.spec.aux)
     n_rec_states = len(state_rec_indices)
     n_rec_aux = len(aux_rec_indices)
-    is_jit_runner = _is_jitted_runner(model.runner)
+    is_jit = _is_jitted_runner(model.runner)
+    is_discrete = model.spec.kind == "map"
 
     rec_every = int(ctx.record_interval)
     total_steps = ctx.target_steps if ctx.target_steps is not None else math.ceil(max(0.0, ctx.t_end - ctx.t0) / ctx.dt)
@@ -160,6 +166,7 @@ def _call_runner(
     step_out = np.zeros((1,), dtype=np.int64)
     t_out = np.zeros((1,), dtype=np.float64)
 
+    # Analysis buffers (present even for base runner for ABI compatibility)
     if analysis is not None:
         analysis_kind = int(analysis.analysis_kind)
         ws_size = int(analysis.workspace_size)
@@ -182,10 +189,6 @@ def _call_runner(
             analysis_trace_cap = 0
             analysis_trace_stride = 0
         analysis_trace_count = np.zeros((1,), dtype=np.int64)
-        resolved_hooks = analysis.resolve_hooks(jit=is_jit_runner, dtype=dtype)
-        noop_hook = analysis_noop_hook()
-        analysis_dispatch_pre = resolved_hooks.pre_step or noop_hook
-        analysis_dispatch_post = resolved_hooks.post_step or noop_hook
     else:
         analysis_kind = 0
         analysis_ws = np.zeros((0,), dtype=dtype)
@@ -194,11 +197,27 @@ def _call_runner(
         analysis_trace_count = np.zeros((1,), dtype=np.int64)
         analysis_trace_cap = 0
         analysis_trace_stride = 0
-        noop_hook = analysis_noop_hook()
-        analysis_dispatch_pre = noop_hook
-        analysis_dispatch_post = noop_hook
 
-    status = model.runner(
+    # Get the appropriate runner variant (hooks baked in as globals, not passed as args)
+    if is_discrete:
+        runner = get_runner_variant_discrete(
+            model_hash=model.spec_hash,
+            stepper_name=model.stepper_name,
+            analysis=analysis,
+            dtype=dtype,
+            jit=is_jit,
+        )
+    else:
+        runner = get_runner_variant(
+            model_hash=model.spec_hash,
+            stepper_name=model.stepper_name,
+            analysis=analysis,
+            dtype=dtype,
+            jit=is_jit,
+        )
+
+    # Call the runner (note: no analysis_kind or hook dispatch arguments - hooks are baked in)
+    status = runner(
         float(ctx.t0),
         float(ctx.target_steps if ctx.target_steps is not None else ctx.t_end),
         float(ctx.dt),
@@ -230,9 +249,6 @@ def _call_runner(
         analysis_trace_count,
         int(analysis_trace_cap),
         int(analysis_trace_stride),
-        int(analysis_kind),
-        analysis_dispatch_pre,
-        analysis_dispatch_post,
         np.int64(0),
         np.int64(0),
         int(cap_rec),
