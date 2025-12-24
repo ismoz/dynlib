@@ -2,6 +2,15 @@
 
 ---
 
+## [2.35.2] – 2025-12-24
+### Fixed
+- Combined runtime analyses now share trace capacity correctly. Each module writes into its own slice with a
+  shared step-level cursor, preventing double-increment of `trace_count` and eliminating spurious
+  `TRACE_OVERFLOW` when multiple analyses with different trace widths run together. Both Python and generated
+  JIT hooks use the synchronized counter and import `numpy` explicitly in the generated namespace.
+
+---
+
 ## [2.35.1] – 2025-12-24
 ### Changed
 - Refactored analysis hook dispatch to eliminate `NumbaExperimentalFeatureWarning`. Analysis hooks (`pre_step`,

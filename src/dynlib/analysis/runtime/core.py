@@ -344,6 +344,10 @@ class CombinedAnalysis(AnalysisModule):
             trace_cap: int,
             trace_stride: int,
         ) -> None:
+            # Allow multiple analyses to share one trace buffer without double-counting.
+            base_count = int(trace_count[0])
+            curr_count = base_count
+            tmp_count = np.empty_like(trace_count)
             ws_offset = 0
             out_offset = 0
             trace_offset = 0
@@ -355,6 +359,12 @@ class CombinedAnalysis(AnalysisModule):
                     if mod.trace is not None:
                         trace_offset += mod.trace.width
                     continue
+
+                # Reuse the last slot if a prior module already wrote this step.
+                start_count = curr_count - 1 if curr_count > base_count else curr_count
+                if start_count < 0:
+                    start_count = 0
+                tmp_count[0] = start_count
 
                 ws_view = analysis_ws[ws_offset : ws_offset + mod.workspace_size]
                 out_view = analysis_out[out_offset : out_offset + mod.output_size]
@@ -374,14 +384,21 @@ class CombinedAnalysis(AnalysisModule):
                     ws_view,
                     out_view,
                     trace_view,
-                    trace_count,
+                    tmp_count,
                     trace_cap,
                     trace_stride,
                 )
+                new_count = int(tmp_count[0])
+                if new_count > trace_cap:
+                    curr_count = new_count
+                    break
+                if new_count > start_count:
+                    curr_count = max(curr_count, start_count + 1)
                 ws_offset += mod.workspace_size
                 out_offset += mod.output_size
                 if mod.trace is not None:
                     trace_offset += mod.trace.width
+            trace_count[0] = curr_count
 
         return _hook
 
@@ -409,6 +426,9 @@ class CombinedAnalysis(AnalysisModule):
             "    analysis_ws, analysis_out, trace_buf,",
             "    trace_count, trace_cap, trace_stride,",
             "):",
+            "    base_count = int(trace_count[0])",
+            "    curr_count = base_count",
+            "    tmp_count = np.empty_like(trace_count)",
         ]
         
         for i in range(n_modules):
@@ -427,17 +447,28 @@ class CombinedAnalysis(AnalysisModule):
                 trace_slice = f"trace_buf[:, {trace0}:{trace0 + trace_width}] if trace_buf.shape[0] > 0 else trace_buf[:0, :0]"
             else:
                 trace_slice = "trace_buf[:0, :0]"
-            
-            lines.append(f"    HOOK_{i}(")
-            lines.append("        t, dt, step,")
-            lines.append("        y_curr, y_prev, params,")
-            lines.append("        runtime_ws,")
-            lines.append(f"        {ws_slice},")
-            lines.append(f"        {out_slice},")
-            lines.append(f"        {trace_slice},")
-            lines.append("        trace_count, trace_cap, trace_stride,")
-            lines.append("    )")
-        
+            lines.append("    if curr_count <= trace_cap:")
+            lines.append("        start_count = curr_count - 1 if curr_count > base_count else curr_count")
+            lines.append("        if start_count < 0:")
+            lines.append("            start_count = 0")
+            lines.append("        tmp_count[0] = start_count")
+            lines.append(f"        HOOK_{i}(")
+            lines.append("            t, dt, step,")
+            lines.append("            y_curr, y_prev, params,")
+            lines.append("            runtime_ws,")
+            lines.append(f"            {ws_slice},")
+            lines.append(f"            {out_slice},")
+            lines.append(f"            {trace_slice},")
+            lines.append("            tmp_count, trace_cap, trace_stride,")
+            lines.append("        )")
+            lines.append("        new_count = int(tmp_count[0])")
+            lines.append("        if new_count > trace_cap:")
+            lines.append("            curr_count = new_count")
+            lines.append("        elif new_count > start_count and start_count + 1 > curr_count:")
+            lines.append("            curr_count = start_count + 1")
+            lines.append("")
+        lines.append("    trace_count[0] = curr_count")
+
         return "\n".join(lines)
 
     @staticmethod
@@ -450,7 +481,7 @@ class CombinedAnalysis(AnalysisModule):
         """
         Compile a combined hook from generated source with hook functions as globals.
         """
-        namespace = {}
+        namespace = {"np": np}
         for i, hook in enumerate(hooks):
             namespace[f"HOOK_{i}"] = hook
         
