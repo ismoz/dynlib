@@ -371,6 +371,11 @@ class CombinedAnalysis(AnalysisModule):
         """
         JIT-friendly hook that only closes over primitive offsets and compiled callables.
         """
+        try:  # pragma: no cover - import guard for numba tooling
+            from numba import literal_unroll  # type: ignore
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError("CombinedAnalysis with jit=True requires numba") from exc
+
         noop = analysis_noop_hook()
         hook_funcs = tuple(h.pre_step or noop for h in hooks)
 
@@ -389,8 +394,9 @@ class CombinedAnalysis(AnalysisModule):
             trace_cap: int,
             trace_stride: int,
         ) -> None:
-            n = len(hook_funcs)
-            for i in range(n):
+            idx = 0
+            for fn in literal_unroll(hook_funcs):
+                i = idx
                 ws0 = int(ws_offsets[i])
                 ws1 = int(ws_offsets[i + 1])
                 out0 = int(out_offsets[i])
@@ -401,7 +407,7 @@ class CombinedAnalysis(AnalysisModule):
                     trace_view = trace_buf[:, trace0 : trace0 + trace_width]
                 else:
                     trace_view = trace_buf[:0, :0]
-                hook_funcs[i](
+                fn(
                     t,
                     dt,
                     step,
@@ -416,6 +422,7 @@ class CombinedAnalysis(AnalysisModule):
                     trace_cap,
                     trace_stride,
                 )
+                idx += 1
 
         return _hook
 
@@ -428,6 +435,11 @@ class CombinedAnalysis(AnalysisModule):
         trace_offsets: np.ndarray,
         trace_widths: np.ndarray,
     ):
+        try:  # pragma: no cover - import guard for numba tooling
+            from numba import literal_unroll  # type: ignore
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError("CombinedAnalysis with jit=True requires numba") from exc
+
         noop = analysis_noop_hook()
         hook_funcs = tuple(h.post_step or noop for h in hooks)
 
@@ -446,8 +458,9 @@ class CombinedAnalysis(AnalysisModule):
             trace_cap: int,
             trace_stride: int,
         ) -> None:
-            n = len(hook_funcs)
-            for i in range(n):
+            idx = 0
+            for fn in literal_unroll(hook_funcs):
+                i = idx
                 ws0 = int(ws_offsets[i])
                 ws1 = int(ws_offsets[i + 1])
                 out0 = int(out_offsets[i])
@@ -458,7 +471,7 @@ class CombinedAnalysis(AnalysisModule):
                     trace_view = trace_buf[:, trace0 : trace0 + trace_width]
                 else:
                     trace_view = trace_buf[:0, :0]
-                hook_funcs[i](
+                fn(
                     t,
                     dt,
                     step,
@@ -473,6 +486,7 @@ class CombinedAnalysis(AnalysisModule):
                     trace_cap,
                     trace_stride,
                 )
+                idx += 1
 
         return _hook
 

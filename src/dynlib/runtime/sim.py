@@ -11,7 +11,7 @@ import json
 import logging
 from pathlib import Path
 import tempfile
-from typing import Any, Dict, Literal, Mapping, Optional, Tuple
+from typing import Any, Dict, Literal, Mapping, Optional, Sequence, Tuple
 import warnings
 
 import numpy as np
@@ -22,7 +22,7 @@ from .results_api import ResultsView
 from .runner_api import Status
 from .initial_step import WRMSConfig, make_wrms_config_from_stepper
 from dynlib.steppers.registry import get_stepper
-from dynlib.analysis.runtime import AnalysisModule
+from dynlib.analysis.runtime import AnalysisModule, CombinedAnalysis
 from dynlib.compiler.build import FullModel
 import tomllib
 
@@ -1950,26 +1950,43 @@ class Sim:
 
     def _resolve_analysis(self, analysis, *, record_interval: Optional[int]):
         """
-        Accept AnalysisModule instances directly or callable factories.
+        Accept AnalysisModule instances directly, callable factories, or sequences of either.
 
         When a callable is provided, invoke it with the compiled model and
         the current record_interval to allow analyses to align trace stride
-        with recording cadence.
+        with recording cadence. Sequences are materialized and combined into
+        a CombinedAnalysis to run in a single pass.
         """
-        if analysis is None or isinstance(analysis, AnalysisModule):
-            return analysis
-        if not callable(analysis):
-            raise TypeError("analysis must be an AnalysisModule or callable factory")
 
-        sig = inspect.signature(analysis)
-        kwargs = {}
-        if "model" in sig.parameters:
-            kwargs["model"] = self.model
-        elif "sim" in sig.parameters:
-            kwargs["sim"] = self
-        if "record_interval" in sig.parameters:
-            kwargs["record_interval"] = record_interval
-        return analysis(**kwargs)
+        def _materialize(target):
+            if target is None or isinstance(target, AnalysisModule):
+                return target
+            if not callable(target):
+                raise TypeError("analysis must be an AnalysisModule or callable factory")
+            sig = inspect.signature(target)
+            kwargs = {}
+            if "model" in sig.parameters:
+                kwargs["model"] = self.model
+            elif "sim" in sig.parameters:
+                kwargs["sim"] = self
+            if "record_interval" in sig.parameters:
+                kwargs["record_interval"] = record_interval
+            return target(**kwargs)
+
+        if analysis is None:
+            return None
+
+        if isinstance(analysis, Sequence) and not isinstance(analysis, (str, bytes)):
+            if len(analysis) == 0:
+                raise ValueError("analysis sequence cannot be empty")
+            modules = tuple(_materialize(item) for item in analysis)
+            if any(mod is None for mod in modules):
+                raise ValueError("analysis sequence produced None entries")
+            if len(modules) == 1:
+                return modules[0]
+            return CombinedAnalysis(modules)
+
+        return _materialize(analysis)
 
     def _load_inline_presets(self) -> None:
         """Auto-populate presets bank from model.spec.presets."""

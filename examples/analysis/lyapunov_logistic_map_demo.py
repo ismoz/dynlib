@@ -2,7 +2,7 @@
 Lyapunov exponent calculation for the logistic map.
 
 Demonstrates the runtime analysis system for computing maximum Lyapunov exponents (MLE)
-in discrete dynamical systems using the high-level Sim.run() API.
+and Lyapunov spectrum in discrete dynamical systems using the high-level Sim.run() API.
 
 The Lyapunov exponent λ characterizes divergence of nearby trajectories:
     - λ > 0: Chaotic behavior 
@@ -15,30 +15,32 @@ For the logistic map at r=4: λ = ln(2) ≈ 0.6931
 from __future__ import annotations
 import numpy as np
 from dynlib import setup
-from dynlib.analysis.runtime import lyapunov_mle
+from dynlib.analysis.runtime import lyapunov_mle, lyapunov_spectrum
 from dynlib.plot import series, export, theme, fig
 
 
-sim = setup("builtin://map/logistic", jit=True)
-model = sim.model  # keep dtype/params handy below
+# Single run with multiple analyses
+sim = setup("builtin://map/logistic", jit=True, disk_cache=False)
+model = sim.model
 
 record_every = 1
-lyap_analysis = lyapunov_mle(record_interval=record_every)
 
-# Run simulation using the high-level Sim API
-print("\nComputing Lyapunov exponent with Sim.run()...")
+# Run simulation using the high-level Sim API with multiple analyses
+print("\nComputing Lyapunov exponents with Sim.run()...")
 print(f"  Parameter: r = 4.0")
 print(f"  Iterations: 5000")
 print(f"  Initial condition: x = 0.4")
+print(f"  Analyses: MLE and Spectrum")
 
 sim.assign(x=0.4, r=4.0)
 sim.run(
     N=5000,
     dt=1.0,
     record_interval=record_every,
-    analysis=lyap_analysis,
+    analysis=[lyapunov_mle(record_interval=record_every), 
+              lyapunov_spectrum(k=1, record_interval=record_every)],
 )
-result_view = sim.results()
+result = sim.results()
 
 # Extract runtime analysis results
 print("\n" + "="*60)
@@ -46,33 +48,48 @@ print("RESULTS")
 print("="*60)
 
 # Get analysis result with ergonomic named access
-lyap = result_view.analysis["lyapunov_mle"]
+lyap = result.analysis["lyapunov_mle"]
+spectrum = result.analysis["lyapunov_spectrum"]
 
 # Direct access to final MLE (auto-computed from trace)
 mle = lyap.mle  # Final converged value from trace
 log_growth = lyap.log_growth
 n_steps = int(lyap.steps)
 
+# Get spectrum results (lyapunov_spectrum stores the final value in the trace)
+spectrum_steps = int(spectrum.steps)
+
 theoretical_mle = np.log(2.0)
-
-print(f"Computed MLE:      {mle:.10f}")
-print(f"Theoretical MLE:   {theoretical_mle:.10f} (ln(2))")
-print(f"Relative error:    {abs(mle - theoretical_mle)/theoretical_mle * 100:.4f}%")
-print(f"Total iterations:  {n_steps}")
-
-# Get trajectory and Lyapunov trace
-x_trajectory = result_view["x"]
+x_trajectory = result["x"]
 lyap_trace = lyap["mle"]  # Full trace array (use bracket for arrays)
+spectrum_trace = spectrum["lyap0"]  # Spectrum trace for first exponent
 
 # Note: trace may have one less point than trajectory if recording starts at t0
-n_points = min(len(x_trajectory), len(lyap_trace))
+n_points = min(len(x_trajectory), len(lyap_trace), len(spectrum_trace))
 iterations = np.arange(n_points)
+
+# Get final spectrum value from trace (after data is loaded)
+# spectrum trace has alternating zeros, so find the last non-zero value
+nonzero_indices = np.nonzero(spectrum_trace)[0]
+spectrum_mle = spectrum_trace[nonzero_indices[-1]] if len(nonzero_indices) > 0 else 0
+
+print("\nMaximum Lyapunov Exponent (MLE):")
+print(f"  Computed MLE:      {mle:.10f}")
+print(f"  Theoretical MLE:   {theoretical_mle:.10f} (ln(2))")
+print(f"  Relative error:    {abs(mle - theoretical_mle)/theoretical_mle * 100:.4f}%")
+print(f"  Total iterations:  {n_steps}")
+
+print("\nLyapunov Spectrum:")
+print(f"  Spectrum λ₀:       {spectrum_mle:.10f}")
+print(f"  Theoretical λ₀:    {theoretical_mle:.10f} (ln(2))")
+print(f"  Relative error:    {abs(spectrum_mle - theoretical_mle)/theoretical_mle * 100:.4f}%")
+print(f"  Total iterations:  {spectrum_steps}")
 
 # Visualize
 theme.use("notebook")
 theme.update(grid=True)
 
-fig_obj = fig.grid(rows=2, cols=1, size=(10, 8))
+fig_obj = fig.grid(rows=3, cols=1, size=(10, 12))
 
 # Plot trajectory (first 500 iterations)
 series.plot(
@@ -115,6 +132,41 @@ fig_obj[1, 0].text(
     0.98, 0.05,
     f'Computed: λ = {mle:.6f}',
     transform=fig_obj[1, 0].transAxes,
+    fontsize=11,
+    verticalalignment='bottom',
+    horizontalalignment='right',
+    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+)
+
+# Plot Lyapunov spectrum convergence
+series.plot(
+    x=iterations,
+    y=spectrum_trace[:n_points],
+    style="line",
+    ax=fig_obj[2, 0],
+    xlabel="Iteration (n)",
+    ylabel="$\\lambda$ (Spectrum)",
+    title="Lyapunov Spectrum Convergence",
+    lw=1.5,
+    color="C2",
+)
+
+# Add theoretical value
+fig_obj[2, 0].axhline(
+    y=theoretical_mle,
+    color='red',
+    linestyle='--',
+    linewidth=2,
+    label=f'Theoretical: λ = ln(2) ≈ {theoretical_mle:.4f}'
+)
+fig_obj[2, 0].legend(fontsize=10)
+
+# Annotate final value from spectrum
+spectrum_final = spectrum_trace[n_points-1] if n_points > 0 else 0
+fig_obj[2, 0].text(
+    0.98, 0.05,
+    f'Computed: λ = {spectrum_final:.6f}',
+    transform=fig_obj[2, 0].transAxes,
     fontsize=11,
     verticalalignment='bottom',
     horizontalalignment='right',

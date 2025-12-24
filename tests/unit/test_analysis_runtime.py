@@ -69,6 +69,36 @@ def _counter_analysis():
         hooks=hooks,
     )
 
+def _increment_factory(name: str):
+    """Simple runtime analysis factory that increments per step."""
+    def _post(
+        t, dt, step, y_curr, y_prev, params, runtime_ws, analysis_ws, analysis_out, trace_buf, trace_count, trace_cap, trace_stride
+    ):
+        if analysis_out.shape[0]:
+            analysis_out[0] += 1.0
+        if trace_buf.shape[0] > 0 and trace_stride > 0 and (step % trace_stride == 0):
+            idx = int(trace_count[0])
+            if idx < trace_cap:
+                trace_buf[idx, 0] = step
+                trace_count[0] = idx + 1
+            else:
+                trace_count[0] = trace_cap + 1
+
+    def _factory(model=None, record_interval=None):
+        plan = FixedTracePlan(stride=int(record_interval) if record_interval is not None else 1)
+        return AnalysisModule(
+            name=name,
+            requirements=AnalysisRequirements(fixed_step=True),
+            workspace_size=0,
+            output_size=1,
+            output_names=(f"{name}_out",),
+            trace=TraceSpec(width=1, plan=plan),
+            trace_names=(f"{name}_trace",),
+            hooks=AnalysisHooks(post_step=_post),
+        )
+
+    return _factory
+
 
 def _build_map_model(jit: bool = False) -> FullModel:
     toml_str = """
@@ -170,6 +200,58 @@ def test_sim_run_preserves_analysis():
     assert trace.shape[0] == raw.step_count_final
     assert counter["stride"] == 1
 
+
+def test_sim_resolves_analysis_sequence_factories():
+    model = _build_map_model(jit=False)
+    sim = Sim(model)
+
+    sim.run(
+        N=5,
+        dt=1.0,
+        record=True,
+        record_interval=2,
+        max_steps=5,
+        cap_rec=8,
+        cap_evt=1,
+        analysis=[_increment_factory("a"), _increment_factory("b")],
+    )
+
+    raw = sim.raw_results()
+    obs = sim.results().analysis
+    assert set(obs.keys()) == {"a", "b"}
+    assert obs["a"].out is not None and obs["b"].out is not None
+    assert obs["a"].out[0] == pytest.approx(raw.step_count_final)
+    assert obs["b"].out[0] == pytest.approx(raw.step_count_final)
+    assert obs["a"].stride == 2
+    assert obs["b"].trace is not None and obs["a"].trace is not None
+    assert obs["a"].trace.shape == obs["b"].trace.shape
+
+
+def test_combined_analysis_runs_with_jit():
+    model = _build_map_model(jit=True)
+    sim = Sim(model)
+
+    sim.run(
+        N=4,
+        dt=1.0,
+        record=True,
+        record_interval=1,
+        max_steps=4,
+        cap_rec=8,
+        cap_evt=1,
+        analysis=[_increment_factory("a"), _increment_factory("b")],
+    )
+
+    raw = sim.raw_results()
+    obs = sim.results().analysis
+    assert obs["a"].out is not None and obs["b"].out is not None
+    assert obs["a"].out[0] == pytest.approx(raw.step_count_final)
+    assert obs["b"].out[0] == pytest.approx(raw.step_count_final)
+    assert obs["a"].trace is not None and obs["b"].trace is not None
+    assert obs["a"].trace.shape[1] == 1 and obs["b"].trace.shape[1] == 1
+    assert obs["a"].trace.shape[0] >= raw.step_count_final
+    assert obs["a"].trace.shape == obs["b"].trace.shape
+
 def test_fastpath_gate_rejects_python_only_observer():
     toml_str = """
 [model]
@@ -226,7 +308,12 @@ def test_lyapunov_matches_wrapper_and_fastpath():
     assert model.jvp is not None
     sim = Sim(model)
 
-    analysis_mod = lyapunov_mle(jvp=model.jvp, n_state=1, trace_plan=FixedTracePlan(stride=1))
+    analysis_mod = lyapunov_mle(
+        jvp=model.jvp,
+        n_state=1,
+        trace_plan=FixedTracePlan(stride=1),
+        mode="map",
+    )
 
     wrapper_res = run_with_wrapper(
         runner=model.runner,
@@ -298,8 +385,11 @@ def test_lyapunov_defaults_from_model_and_record_interval():
 
 
 def test_lyapunov_requires_jvp_or_model():
-    with pytest.raises(ValueError):
-        lyapunov_mle()
+    factory = lyapunov_mle()
+    assert callable(factory)
+    model = _build_map_model(jit=False)
+    mod = factory(model)
+    assert isinstance(mod, AnalysisModule)
 
 
 def test_sim_resolves_analysis_factory_and_passes_record_interval():

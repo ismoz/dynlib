@@ -9,7 +9,7 @@ from .core import (
     TraceSpec,
     analysis_noop_hook,
 )
-from .lyapunov import lyapunov_mle
+from .lyapunov import lyapunov_mle, lyapunov_spectrum
 
 __all__ = [
     "AnalysisHooks",
@@ -19,4 +19,5 @@ __all__ = [
     "TraceSpec",
     "analysis_noop_hook",
     "lyapunov_mle",
+    "lyapunov_spectrum",
 ]

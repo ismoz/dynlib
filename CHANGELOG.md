@@ -2,6 +2,21 @@
 
 ---
 
+## [2.35.0] – 2025-12-24
+### Added
+- `lyapunov_spectrum()` analysis utility for performing Benettin QR / Shimada–Nagashima (reorthonormalization) 
+  method Lyapunov Spectrum analysis.
+- Introduced `mode` option to `lyapunov_mle` and `lyapunov_spectrum` analyses which can be `auto`, `flow`, or `map`.
+  `auto` (default) mode can detect type of Lyapunov exponent calculation from the DSL model type.
+
+### Known Issues
+- Analyses hooks cause `NumbaExperimentalFeatureWarning` because they are passed as first-class functions to the 
+  jitted runner.
+- Analyses occasionally cause `TRACE_OVERFLOW` which should not be possible.
+- `flow` mod analyses use Euler integration regardless of the `Sim` stepper.
+
+---
+
 ## [2.34.10] – 2025-12-24
 ### Changed
 - Removed the legacy `dynlib.runtime.model.Model` dataclass. `Sim` now expects the `FullModel` returned by `build()`, 
