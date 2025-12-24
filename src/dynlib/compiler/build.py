@@ -147,6 +147,7 @@ class FullModel:
     uses_lag: bool = False
     equations_use_lag: bool = False
     make_stepper_workspace: Optional[Callable[[], object]] = None
+    stepper_spec: Optional[object] = None  # StepperSpec for accessing capabilities
 
     def export_sources(self, output_dir: Union[str, Path]) -> Dict[str, Path]:
         """
@@ -422,7 +423,7 @@ def _warmup_jit_runner(
     are called by the runner, ensuring everything is warmed up.
     """
     from dynlib.runtime.buffers import allocate_pools
-    from dynlib.analysis.runtime import analysis_noop_hook
+    from dynlib.analysis.runtime import analysis_noop_hook, analysis_noop_variational_step
     
     dtype_np = np.dtype(dtype)
     n_state = len(spec.states)
@@ -477,6 +478,8 @@ def _warmup_jit_runner(
     analysis_kind = np.int32(0)
     analysis_dispatch_pre = analysis_noop_hook()
     analysis_dispatch_post = analysis_noop_hook()
+    variational_step_enabled = np.int32(0)
+    variational_step_fn = analysis_noop_variational_step()
     
     user_break_flag = np.zeros((1,), dtype=np.int32)
     status_out = np.zeros((1,), dtype=np.int32)
@@ -510,6 +513,7 @@ def _warmup_jit_runner(
             analysis_trace_count, int(analysis_trace_cap), int(analysis_trace_stride),
             int(analysis_kind),
             analysis_dispatch_pre, analysis_dispatch_post,
+            int(variational_step_enabled), variational_step_fn,
             np.int64(0), np.int64(0), int(rec.cap_rec), int(ev.cap_evt),
             user_break_flag, status_out, hint_out,
             i_out, step_out, t_out,
@@ -1027,6 +1031,7 @@ def build(
         uses_lag=spec.uses_lag,
         equations_use_lag=spec.equations_use_lag,
         make_stepper_workspace=_make_stepper_workspace,
+        stepper_spec=stepper_spec,
     )
 
 

@@ -10,6 +10,7 @@ from typing import Callable, Iterable, Optional, Sequence, Tuple
 import numpy as np
 
 from dynlib.runtime.fastpath.plans import TracePlan
+from dynlib.runtime.runner_api import OK
 
 __all__ = [
     "AnalysisRequirements",
@@ -18,6 +19,7 @@ __all__ = [
     "AnalysisModule",
     "CombinedAnalysis",
     "analysis_noop_hook",
+    "analysis_noop_variational_step",
 ]
 
 
@@ -32,6 +34,7 @@ class AnalysisRequirements:
     requires_event_log: bool = False
     accept_reject: bool = False
     mutates_state: bool = False
+    variational_in_step: bool = False
 
 
 @dataclass(frozen=True)
@@ -270,6 +273,7 @@ class CombinedAnalysis(AnalysisModule):
         requires_event_log = any(mod.requirements.requires_event_log for mod in modules)
         accept_reject = any(mod.requirements.accept_reject for mod in modules)
         mutates_state = any(mod.requirements.mutates_state for mod in modules)
+        variational_in_step = any(mod.requirements.variational_in_step for mod in modules)
         return AnalysisRequirements(
             fixed_step=fixed_step,
             need_jvp=need_jvp,
@@ -278,6 +282,7 @@ class CombinedAnalysis(AnalysisModule):
             requires_event_log=requires_event_log,
             accept_reject=accept_reject,
             mutates_state=mutates_state,
+            variational_in_step=variational_in_step,
         )
 
     @staticmethod
@@ -587,6 +592,74 @@ def analysis_noop_hook():
             return None
 
         return _noop
+    except Exception:  # pragma: no cover - fallback when numba absent
+        def _noop(
+            t: float,
+            dt: float,
+            step: int,
+            y_curr,
+            y_prev,
+            params,
+            runtime_ws,
+            analysis_ws,
+            analysis_out,
+            trace_buf,
+            trace_count,
+            trace_cap: int,
+            trace_stride: int,
+        ) -> None:
+            return None
+
+        return _noop
+
+
+@lru_cache(maxsize=1)
+def analysis_noop_variational_step():
+    """
+    No-op variational stepper matching runner ABI.
+    """
+    try:  # pragma: no cover - numba may be missing
+        from numba import njit  # type: ignore
+
+        @njit(inline="always")
+        def _noop(
+            t: float,
+            dt: float,
+            y_curr,
+            rhs,
+            params,
+            runtime_ws,
+            stepper_ws,
+            stepper_config,
+            y_prop,
+            t_prop,
+            dt_next,
+            err_est,
+            analysis_ws,
+        ):
+            return OK
+
+        return _noop
+    except Exception:  # pragma: no cover - fallback when numba absent
+        def _noop(
+            t: float,
+            dt: float,
+            y_curr,
+            rhs,
+            params,
+            runtime_ws,
+            stepper_ws,
+            stepper_config,
+            y_prop,
+            t_prop,
+            dt_next,
+            err_est,
+            analysis_ws,
+        ):
+            return OK
+
+        return _noop
+
     except Exception:  # pragma: no cover - fallback when numba absent
         def _noop(
             t: float,

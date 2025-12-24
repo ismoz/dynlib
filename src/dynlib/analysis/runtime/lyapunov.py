@@ -3,16 +3,26 @@
 from __future__ import annotations
 
 import math
-from typing import Callable, Literal, Optional, TYPE_CHECKING
+from typing import Callable, Literal, Optional, TYPE_CHECKING, NamedTuple
 import numpy as np
 
 from dynlib.runtime.fastpath.plans import FixedTracePlan
+from dynlib.runtime.runner_api import OK
 from .core import AnalysisHooks, AnalysisModule, AnalysisRequirements, TraceSpec
 
 if TYPE_CHECKING:  # pragma: no cover - type checking only
     from dynlib.compiler.build import FullModel
 
 __all__ = ["lyapunov_mle", "lyapunov_spectrum"]
+
+
+# Simple workspace for variational stepping (numba-compatible)
+class _VariationalWorkspace(NamedTuple):
+    v_stage: np.ndarray
+    kv1: np.ndarray
+    kv2: np.ndarray
+    kv3: np.ndarray
+    kv4: np.ndarray
 
 
 def _default_tangent(n_state: int) -> np.ndarray:
@@ -55,8 +65,17 @@ def _make_hooks(
     jvp_fn: Callable[[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, object], None],
     init_vec: np.ndarray,
     n_state: int,
-    mode: int,  # 0: flow (Euler), 1: map (J*v)
+    mode: int,  # 0: flow (Euler fallback), 1: map (J*v)
+    variational_step_fn: Optional[Callable] = None,  # Optional RK4/RK2/etc variational step
+    runner_handles_variational: bool = False,
+    variational_mode: int = 0,  # 0: euler, 1: combined, 2: tangent_only
 ) -> AnalysisHooks:
+    """
+    Create analysis hooks for Lyapunov MLE computation.
+    
+    If variational_step_fn is provided (for flow mode with compatible stepper),
+    it will be used instead of the Euler fallback, ensuring method consistency.
+    """
     def _pre_step(
         t: float,
         dt: float,
@@ -72,7 +91,7 @@ def _make_hooks(
         trace_cap: int,
         trace_stride: int,
     ) -> None:
-        if analysis_ws.shape[0] >= 2 * n_state and step == 0 and analysis_out.shape[0] > 1:
+        if analysis_ws.shape[0] >= 2 * n_state and step == 0 and analysis_out.shape[0] > 3:
             any_nonzero = False
             for i in range(n_state):
                 if analysis_ws[i] != 0.0:
@@ -84,8 +103,8 @@ def _make_hooks(
             analysis_ws[n_state : 2 * n_state] = 0.0
             analysis_out[0] = 0.0
             analysis_out[1] = 0.0
-            if analysis_out.shape[0] > 2:
-                analysis_out[2] = 0.0
+            analysis_out[2] = 0.0
+            analysis_out[3] = float(variational_mode)  # Store mode metadata
 
     def _post_step(
         t: float,
@@ -102,19 +121,40 @@ def _make_hooks(
         trace_cap: int,
         trace_stride: int,
     ) -> None:
-        if analysis_ws.shape[0] < 2 * n_state or analysis_out.shape[0] < 2:
+        min_ws_size = 7 * n_state if variational_step_fn is not None else 2 * n_state
+        if analysis_ws.shape[0] < min_ws_size or analysis_out.shape[0] < 2:
             return
+            
         vec = analysis_ws[:n_state]
         out_vec = analysis_ws[n_state : 2 * n_state]
-        jvp_fn(t, y_curr, params, vec, out_vec, runtime_ws)
-
-        if mode == 0:
-            # flow: Euler step on variational equation
-            for i in range(n_state):
-                out_vec[i] = vec[i] + dt * out_vec[i]
+        
+        if mode == 0:  # flow mode
+            if runner_handles_variational:
+                # Runner already propagated out_vec in-step.
+                pass
+            elif variational_step_fn is not None:
+                # Use stepper-provided tangent integration (RK4-style, etc.)
+                # Allocate workspace buffers from analysis_ws
+                v_stage = analysis_ws[2*n_state : 3*n_state]
+                kv1 = analysis_ws[3*n_state : 4*n_state]
+                kv2 = analysis_ws[4*n_state : 5*n_state]
+                kv3 = analysis_ws[5*n_state : 6*n_state]
+                kv4 = analysis_ws[6*n_state : 7*n_state]
+                
+                # Create workspace as NamedTuple (Numba-compatible)
+                var_ws = _VariationalWorkspace(v_stage, kv1, kv2, kv3, kv4)
+                
+                # Call tangent step: integrates vec → out_vec
+                # Signature: (t, dt, y_curr, v_curr, v_prop, params, runtime_ws, ws)
+                variational_step_fn(t, dt, y_curr, vec, out_vec, params, runtime_ws, var_ws)
+            else:
+                # Fallback: Euler on variational equation
+                jvp_fn(t, y_curr, params, vec, out_vec, runtime_ws)
+                for i in range(n_state):
+                    out_vec[i] = vec[i] + dt * out_vec[i]
         else:
-            # map: out_vec already holds J*v
-            pass
+            # map: out_vec = J*v
+            jvp_fn(t, y_curr, params, vec, out_vec, runtime_ws)
 
         norm_sq = 0.0
         for i in range(n_state):
@@ -177,29 +217,84 @@ class _LyapunovModule(AnalysisModule):
         self,
         *,
         jvp: Callable[[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, object], None],
+        model_spec,
+        stepper_spec,
+        rhs_fn,
         n_state: int,
         trace_plan: FixedTracePlan,
         analysis_kind: int,
         mode: Literal["flow", "map"],
+        variational_step_fn: Optional[Callable] = None,
+        use_variational_stepping: bool = False,
+        variational_combined_step_fn: Optional[Callable] = None,
+        use_variational_combined: bool = False,
     ) -> None:
         if mode not in ("flow", "map"):
             raise ValueError("lyapunov_mle mode must be 'flow' or 'map'")
         self._jvp_py = jvp
         self._jvp_jit = None
+        self._variational_step_py = variational_step_fn
+        self._variational_step_jit = None
+        self._variational_step_combined_py = variational_combined_step_fn
+        self._variational_step_combined_jit = None
+        self._runner_variational_step_py = None
+        self._runner_variational_step_jit = None
+        self._use_variational_combined = use_variational_combined and variational_combined_step_fn is not None
+        self._use_variational = (
+            use_variational_stepping and variational_step_fn is not None and not self._use_variational_combined
+        )
+        self._stepper_spec = stepper_spec
+        self._model_spec = model_spec
+        self._rhs_fn = rhs_fn
+        
+        # Determine variational mode for metadata
+        if use_variational_combined and variational_combined_step_fn is not None:
+            variational_mode = 1  # combined
+        elif use_variational_stepping and variational_step_fn is not None and not use_variational_combined:
+            variational_mode = 2  # tangent_only
+        else:
+            variational_mode = 0  # euler
+        
         init_vec = _default_tangent(n_state)
         hooks = _make_hooks(
             jvp_fn=jvp,
             init_vec=init_vec,
             n_state=n_state,
             mode=0 if mode == "flow" else 1,
+            variational_step_fn=variational_step_fn if self._use_variational else None,
+            runner_handles_variational=self._use_variational_combined,
+            variational_mode=variational_mode,
         )
-        reqs = AnalysisRequirements(fixed_step=True, need_jvp=True, mutates_state=False)
+        
+        # Workspace layout:
+        # [0:n_state] - current tangent vector
+        # [n_state:2*n_state] - output/work tangent vector  
+        # If using variational stepping (RK4):
+        # [2*n_state:3*n_state] - v_stage
+        # [3*n_state:4*n_state] - kv1
+        # [4*n_state:5*n_state] - kv2
+        # [5*n_state:6*n_state] - kv3
+        # [6*n_state:7*n_state] - kv4
+        if self._use_variational_combined:
+            workspace_size = 2 * n_state
+        elif self._use_variational:
+            workspace_size = 7 * n_state
+        else:
+            workspace_size = 2 * n_state
+        
+        reqs = AnalysisRequirements(
+            fixed_step=True,
+            need_jvp=True,
+            mutates_state=False,
+            variational_in_step=self._use_variational_combined,
+        )
+        
         super().__init__(
             name="lyapunov_mle",
             requirements=reqs,
-            workspace_size=2 * n_state,
-            output_size=3,
-            output_names=("log_growth", "denom", "steps"),
+            workspace_size=workspace_size,
+            output_size=4,
+            output_names=("log_growth", "denom", "steps", "variational_mode"),
             trace_names=("mle",),
             trace=TraceSpec(width=1, plan=trace_plan),
             hooks=hooks,
@@ -219,6 +314,8 @@ class _LyapunovModule(AnalysisModule):
             "lyapunov_mle",
             self._n_state,
             self._mode,
+            int(self._use_variational),
+            int(self._use_variational_combined),
             trace_width,
             trace_stride,
             str(np.dtype(dtype)),
@@ -243,6 +340,137 @@ class _LyapunovModule(AnalysisModule):
                 "lyapunov_mle requires a numba-compatible Jacobian-vector product for JIT execution"
             ) from exc
         return self._jvp_jit
+    
+    def _ensure_jit_variational_step(self):
+        """JIT compile the variational step function if needed."""
+        if self._variational_step_jit is not None:
+            return self._variational_step_jit
+        if self._variational_step_py is None or not self._use_variational:
+            return None
+        
+        # Re-emit tangent step with the jitted JVP to avoid closures over Python JVP.
+        step_fn = None
+        jvp_jit = self._ensure_jit_jvp()
+        if self._stepper_spec is not None and hasattr(self._stepper_spec, "emit_tangent_step"):
+            try:
+                step_fn = self._stepper_spec.emit_tangent_step(
+                    jvp_fn=jvp_jit,
+                    model_spec=self._model_spec,
+                )
+            except Exception:
+                step_fn = None
+        if step_fn is None:
+            step_fn = self._variational_step_py
+        
+        # Check if already jitted
+        dispatcher = getattr(step_fn, "signatures", None)
+        if dispatcher is not None:
+            self._variational_step_jit = step_fn
+            return self._variational_step_jit
+        
+        py_target = getattr(step_fn, "py_func", step_fn)
+        try:
+            from numba import njit
+        except Exception:
+            # Cannot JIT; disable variational stepping for jit path
+            self._variational_step_jit = None
+            return None
+        try:
+            self._variational_step_jit = njit(cache=False)(py_target)
+        except Exception:
+            # If JIT fails, disable variational stepping for jit path (falls back to Euler)
+            self._variational_step_jit = None
+        return self._variational_step_jit
+
+    def _ensure_variational_combined(self, jit: bool):
+        if not self._use_variational_combined:
+            return None
+        if jit and self._variational_step_combined_jit is not None:
+            return self._variational_step_combined_jit
+        if not jit and self._variational_step_combined_py is not None:
+            return self._variational_step_combined_py
+
+        base_fn = self._variational_step_combined_py
+        if base_fn is None:
+            return None
+
+        target_fn = base_fn
+        dispatcher = getattr(base_fn, "signatures", None)
+
+        if jit:
+            if dispatcher is None and self._stepper_spec is not None and hasattr(self._stepper_spec, "emit_step_with_variational"):
+                try:
+                    target_fn = self._stepper_spec.emit_step_with_variational(
+                        rhs_fn=self._rhs_fn,
+                        jvp_fn=self._ensure_jit_jvp(),
+                        model_spec=self._model_spec,
+                    )
+                    dispatcher = getattr(target_fn, "signatures", None)
+                except Exception:
+                    target_fn = base_fn
+
+            if dispatcher is not None:
+                self._variational_step_combined_jit = target_fn
+                return target_fn
+
+            try:
+                from numba import njit
+                self._variational_step_combined_jit = njit(cache=False)(getattr(target_fn, "py_func", target_fn))
+            except Exception:
+                self._variational_step_combined_jit = None
+            return self._variational_step_combined_jit
+
+        # non-jit path
+        self._variational_step_combined_py = target_fn
+        return target_fn
+
+    def _make_runner_variational_step(self, combined_fn: Callable) -> Callable:
+        n_state = self._n_state
+
+        def _runner_var_step(
+            t, dt,
+            y_curr,
+            rhs,
+            params,
+            runtime_ws,
+            stepper_ws,
+            stepper_config,
+            y_prop, t_prop, dt_next, err_est,
+            analysis_ws,
+        ):
+            v_curr = analysis_ws[:n_state]
+            v_prop = analysis_ws[n_state:2 * n_state]
+            combined_fn(t, dt, y_curr, v_curr, y_prop, v_prop, params, runtime_ws, stepper_ws)
+            t_prop[0] = t + dt
+            dt_next[0] = dt
+            err_est[0] = 0.0
+            return OK
+
+        return _runner_var_step
+
+    def runner_variational_step(self, *, jit: bool):
+        if not self._use_variational_combined:
+            return None
+        if jit:
+            if self._runner_variational_step_jit is not None:
+                return self._runner_variational_step_jit
+            combined = self._ensure_variational_combined(jit=True)
+            if combined is None:
+                return None
+            wrapper = self._make_runner_variational_step(combined)
+            try:
+                from numba import njit
+                self._runner_variational_step_jit = njit(cache=False)(wrapper)
+            except Exception:
+                self._runner_variational_step_jit = None
+            return self._runner_variational_step_jit
+
+        if self._runner_variational_step_py is None:
+            combined = self._ensure_variational_combined(jit=False)
+            if combined is None:
+                return None
+            self._runner_variational_step_py = self._make_runner_variational_step(combined)
+        return self._runner_variational_step_py
 
     def resolve_hooks(self, *, jit: bool, dtype: np.dtype) -> AnalysisHooks:
         if not jit:
@@ -255,11 +483,24 @@ class _LyapunovModule(AnalysisModule):
             return cached
 
         jvp_jit = self._ensure_jit_jvp()
+        variational_jit = self._ensure_jit_variational_step() if self._use_variational else None
+        
+        # Determine variational mode for JIT path
+        if self._use_variational_combined:
+            variational_mode = 1
+        elif self._use_variational:
+            variational_mode = 2
+        else:
+            variational_mode = 0
+        
         jit_hooks = _make_hooks(
             jvp_fn=jvp_jit,
             init_vec=self._init_vec,
             n_state=self._n_state,
             mode=self._mode,
+            variational_step_fn=variational_jit,
+            runner_handles_variational=self._use_variational_combined,
+            variational_mode=variational_mode,
         )
         return self._compile_hooks(jit_hooks, dtype)
 
@@ -349,13 +590,57 @@ def lyapunov_mle(
             record_interval=record_interval,
             who="lyapunov_mle",
         )
+        
+        # Check if stepper supports variational stepping (for flow mode only)
+        variational_step_fn = None
+        use_variational = False
+        variational_combined_fn = None
+        use_variational_combined = False
+        if mode_use == "flow":
+            stepper_spec = getattr(model_coerced, "stepper_spec", None)
+            if stepper_spec is not None:
+                stepper_meta = getattr(stepper_spec, "meta", None)
+                if stepper_meta is not None:
+                    caps = getattr(stepper_meta, "caps", None)
+                    if caps is not None and getattr(caps, "variational_stepping", False):
+                        # Prefer combined state+tangent stepping when available
+                        if hasattr(stepper_spec, "emit_step_with_variational"):
+                            try:
+                                variational_combined_fn = stepper_spec.emit_step_with_variational(
+                                    rhs_fn=getattr(model_coerced, "rhs", None),
+                                    jvp_fn=jvp_use,
+                                    model_spec=getattr(model_coerced, "spec", None),
+                                )
+                                use_variational_combined = variational_combined_fn is not None
+                            except Exception:
+                                variational_combined_fn = None
+                                use_variational_combined = False
+                        # Fallback: tangent-only variational stepping
+                        if not use_variational_combined and hasattr(stepper_spec, "emit_tangent_step"):
+                            try:
+                                if jvp_use is not None:
+                                    variational_step_fn = stepper_spec.emit_tangent_step(
+                                        jvp_fn=jvp_use,
+                                        model_spec=getattr(model_coerced, "spec", None)
+                                    )
+                                    use_variational = variational_step_fn is not None
+                            except Exception:
+                                # If variational stepping fails, fall back to Euler
+                                pass
 
         return _LyapunovModule(
             jvp=jvp_use,
+            model_spec=getattr(model_coerced, "spec", None),
+            stepper_spec=stepper_spec if (use_variational or use_variational_combined) else None,
+            rhs_fn=getattr(model_coerced, "rhs", None),
             n_state=int(n_state_use),
             trace_plan=plan_use,
             analysis_kind=analysis_kind,
             mode=mode_use,
+            variational_step_fn=variational_step_fn,
+            use_variational_stepping=use_variational,
+            variational_combined_step_fn=variational_combined_fn,
+            use_variational_combined=use_variational_combined,
         )
 
     # Build immediately when model or jvp/n_state is supplied.
@@ -371,6 +656,9 @@ def lyapunov_mle(
         )
         return _LyapunovModule(
             jvp=jvp,
+            model_spec=None,
+            stepper_spec=None,
+            rhs_fn=None,
             n_state=int(n_state),
             trace_plan=plan_use,
             analysis_kind=analysis_kind,
@@ -394,16 +682,23 @@ def _make_hooks_spectrum(
     n_state: int,
     k: int,
     mode: int,  # 0: flow (Euler), 1: map (J*v)
+    variational_step_fn: Optional[Callable] = None,
+    runner_handles_variational: bool = False,
+    variational_mode: int = 0,  # 0: euler, 1: combined, 2: tangent_only
 ) -> AnalysisHooks:
     """
     Workspace layout:
         analysis_ws[0 : n_state*k]               -> V (current orthonormal basis), shape (n_state, k)
         analysis_ws[n_state*k : 2*n_state*k]     -> W (work), shape (n_state, k)
+        if variational_step_fn:
+            analysis_ws[2*n_state*k : 2*n_state*k + 5*n_state] -> variational buffers
+                v_stage, kv1, kv2, kv3, kv4
 
-    Output layout (length k+2):
+    Output layout (length k+3):
         analysis_out[0:k]     -> accum_log_diag[j] = sum log(R_jj)
         analysis_out[k]       -> denom (total_time for flow, steps for map)
         analysis_out[k+1]     -> steps (integer-ish stored as float)
+        analysis_out[k+2]     -> variational_mode (metadata)
     """
 
     def _pre_step(
@@ -423,13 +718,22 @@ def _make_hooks_spectrum(
     ) -> None:
         if step != 0:
             return
-        need_ws = 2 * n_state * k
-        need_out = k + 2
+        need_ws = 2 * n_state * k + (5 * n_state if variational_step_fn is not None else 0)
+        need_out = k + 3
         if analysis_ws.shape[0] < need_ws or analysis_out.shape[0] < need_out:
             return
 
         V = analysis_ws[: n_state * k].reshape((n_state, k))
         W = analysis_ws[n_state * k : 2 * n_state * k].reshape((n_state, k))
+        var_ws = None
+        if variational_step_fn is not None:
+            start = 2 * n_state * k
+            v_stage = analysis_ws[start : start + n_state]
+            kv1 = analysis_ws[start + n_state : start + 2 * n_state]
+            kv2 = analysis_ws[start + 2 * n_state : start + 3 * n_state]
+            kv3 = analysis_ws[start + 3 * n_state : start + 4 * n_state]
+            kv4 = analysis_ws[start + 4 * n_state : start + 5 * n_state]
+            var_ws = _VariationalWorkspace(v_stage, kv1, kv2, kv3, kv4)
 
         # Initialize only if V is all zeros (allows user to pre-seed).
         any_nonzero = False
@@ -454,6 +758,7 @@ def _make_hooks_spectrum(
             analysis_out[j] = 0.0
         analysis_out[k] = 0.0
         analysis_out[k + 1] = 0.0
+        analysis_out[k + 2] = float(variational_mode)  # Store mode metadata
 
     def _post_step(
         t: float,
@@ -470,8 +775,8 @@ def _make_hooks_spectrum(
         trace_cap: int,
         trace_stride: int,
     ) -> None:
-        need_ws = 2 * n_state * k
-        need_out = k + 2
+        need_ws = 2 * n_state * k + (5 * n_state if variational_step_fn is not None else 0)
+        need_out = k + 3
         if analysis_ws.shape[0] < need_ws or analysis_out.shape[0] < need_out:
             return
 
@@ -480,21 +785,25 @@ def _make_hooks_spectrum(
 
         # -------- propagate tangent basis columns into W --------
         # tmp_out is W[:, j], reused per column.
-        for j in range(k):
-            # Compute J*v into W[:, j]
-            v_col = V[:, j]
-            w_col = W[:, j]
-            jvp_fn(t, y_curr, params, v_col, w_col, runtime_ws)
+        if not runner_handles_variational:
+            for j in range(k):
+                # Compute J*v into W[:, j]
+                v_col = V[:, j]
+                w_col = W[:, j]
+                if mode == 0 and variational_step_fn is not None:
+                    variational_step_fn(t, dt, y_curr, v_col, w_col, params, runtime_ws, var_ws)
+                else:
+                    jvp_fn(t, y_curr, params, v_col, w_col, runtime_ws)
 
-            if mode == 0:
-                # flow: Euler step for variational equation: v <- v + dt * (J*v)
-                # Use W as the "new vectors"
-                for i in range(n_state):
-                    w_col[i] = v_col[i] + dt * w_col[i]
-            else:
-                # map: W already holds J*v
-                # nothing else to do
-                pass
+                    if mode == 0:
+                        # flow: Euler step for variational equation: v <- v + dt * (J*v)
+                        # Use W as the "new vectors"
+                        for i in range(n_state):
+                            w_col[i] = v_col[i] + dt * w_col[i]
+                    else:
+                        # map: W already holds J*v
+                        # nothing else to do
+                        pass
 
         # -------- Modified Gram–Schmidt (QR) on W (in place) --------
         # We only need diag(R); Q overwrites W and then we copy back to V.
@@ -570,12 +879,19 @@ class _LyapunovSpectrumModule(AnalysisModule):
         self,
         *,
         jvp: Callable[[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, object], None],
+        model_spec,
+        stepper_spec,
+        rhs_fn,
         n_state: int,
         k: int,
         mode: Literal["flow", "map"],
         trace_plan: FixedTracePlan,
         analysis_kind: int,
         init_basis: Optional[np.ndarray] = None,
+        variational_step_fn: Optional[Callable] = None,
+        use_variational_stepping: bool = False,
+        variational_combined_step_fn: Optional[Callable] = None,
+        use_variational_combined: bool = False,
     ) -> None:
         if k <= 0:
             raise ValueError("lyapunov_spectrum requires k >= 1")
@@ -588,6 +904,19 @@ class _LyapunovSpectrumModule(AnalysisModule):
 
         self._jvp_py = jvp
         self._jvp_jit = None
+        self._variational_step_py = variational_step_fn
+        self._variational_step_jit = None
+        self._variational_step_combined_py = variational_combined_step_fn
+        self._variational_step_combined_jit = None
+        self._runner_variational_step_py = None
+        self._runner_variational_step_jit = None
+        self._use_variational_combined = use_variational_combined and variational_combined_step_fn is not None and mode == "flow"
+        self._use_variational = (
+            use_variational_stepping and variational_step_fn is not None and mode == "flow" and not self._use_variational_combined
+        )
+        self._stepper_spec = stepper_spec
+        self._model_spec = model_spec
+        self._rhs_fn = rhs_fn
         self._n_state = int(n_state)
         self._k = int(k)
         self._mode = 0 if mode == "flow" else 1
@@ -600,25 +929,42 @@ class _LyapunovSpectrumModule(AnalysisModule):
                 raise ValueError(f"init_basis must have shape ({n_state}, {k})")
         self._init_basis = B
 
+        # Determine variational mode for metadata
+        if use_variational_combined and variational_combined_step_fn is not None:
+            variational_mode = 1  # combined
+        elif use_variational_stepping and variational_step_fn is not None and not use_variational_combined:
+            variational_mode = 2  # tangent_only
+        else:
+            variational_mode = 0  # euler
+
         hooks = _make_hooks_spectrum(
             jvp_fn=jvp,
             init_basis=B,
             n_state=n_state,
             k=k,
             mode=self._mode,
+            variational_step_fn=variational_step_fn if self._use_variational else None,
+            runner_handles_variational=self._use_variational_combined,
+            variational_mode=variational_mode,
         )
 
-        reqs = AnalysisRequirements(fixed_step=True, need_jvp=True, mutates_state=False)
+        reqs = AnalysisRequirements(
+            fixed_step=True,
+            need_jvp=True,
+            mutates_state=False,
+            variational_in_step=self._use_variational_combined,
+        )
 
-        # outputs: accum logs + denom + steps
-        output_names = tuple([f"log_r{i}" for i in range(k)] + ["denom", "steps"])
+        # outputs: accum logs + denom + steps + variational_mode
+        output_names = tuple([f"log_r{i}" for i in range(k)] + ["denom", "steps", "variational_mode"])
         trace_names = tuple([f"lyap{i}" for i in range(k)])
 
         super().__init__(
             name="lyapunov_spectrum",
             requirements=reqs,
-            workspace_size=2 * n_state * k,
-            output_size=k + 2,
+            workspace_size=(2 * n_state * k)
+            + (0 if self._use_variational_combined else (5 * n_state if self._use_variational else 0)),
+            output_size=k + 3,
             output_names=output_names,
             trace_names=trace_names,
             trace=TraceSpec(width=k, plan=trace_plan),
@@ -637,6 +983,8 @@ class _LyapunovSpectrumModule(AnalysisModule):
             self._n_state,
             self._k,
             self._mode,
+            int(self._use_variational),
+            int(self._use_variational_combined),
             trace_width,
             trace_stride,
             str(np.dtype(dtype)),
@@ -660,6 +1008,134 @@ class _LyapunovSpectrumModule(AnalysisModule):
                 "lyapunov_spectrum requires a numba-compatible JVP for JIT execution"
             ) from exc
         return self._jvp_jit
+    
+    def _ensure_variational_combined(self, jit: bool):
+        if not self._use_variational_combined:
+            return None
+        if jit and self._variational_step_combined_jit is not None:
+            return self._variational_step_combined_jit
+        if not jit and self._variational_step_combined_py is not None:
+            return self._variational_step_combined_py
+
+        base_fn = self._variational_step_combined_py
+        if base_fn is None:
+            return None
+
+        target_fn = base_fn
+        dispatcher = getattr(base_fn, "signatures", None)
+
+        if jit:
+            if dispatcher is None and self._stepper_spec is not None and hasattr(self._stepper_spec, "emit_step_with_variational"):
+                try:
+                    target_fn = self._stepper_spec.emit_step_with_variational(
+                        rhs_fn=self._rhs_fn,
+                        jvp_fn=self._ensure_jit_jvp(),
+                        model_spec=self._model_spec,
+                    )
+                    dispatcher = getattr(target_fn, "signatures", None)
+                except Exception:
+                    target_fn = base_fn
+
+            if dispatcher is not None:
+                self._variational_step_combined_jit = target_fn
+                return target_fn
+
+            try:
+                from numba import njit
+                self._variational_step_combined_jit = njit(cache=False)(getattr(target_fn, "py_func", target_fn))
+            except Exception:
+                self._variational_step_combined_jit = None
+            return self._variational_step_combined_jit
+
+        self._variational_step_combined_py = target_fn
+        return target_fn
+
+    def _make_runner_variational_step(self, combined_fn: Callable) -> Callable:
+        n_state = self._n_state
+        k = self._k
+
+        def _runner_var_step(
+            t, dt,
+            y_curr,
+            rhs,
+            params,
+            runtime_ws,
+            stepper_ws,
+            stepper_config,
+            y_prop, t_prop, dt_next, err_est,
+            analysis_ws,
+        ):
+            V = analysis_ws[: n_state * k].reshape((n_state, k))
+            W = analysis_ws[n_state * k : 2 * n_state * k].reshape((n_state, k))
+            for j in range(k):
+                combined_fn(t, dt, y_curr, V[:, j], y_prop, W[:, j], params, runtime_ws, stepper_ws)
+            t_prop[0] = t + dt
+            dt_next[0] = dt
+            err_est[0] = 0.0
+            return OK
+
+        return _runner_var_step
+
+    def runner_variational_step(self, *, jit: bool):
+        if not self._use_variational_combined:
+            return None
+        if jit:
+            if self._runner_variational_step_jit is not None:
+                return self._runner_variational_step_jit
+            combined = self._ensure_variational_combined(jit=True)
+            if combined is None:
+                return None
+            wrapper = self._make_runner_variational_step(combined)
+            try:
+                from numba import njit
+                self._runner_variational_step_jit = njit(cache=False)(wrapper)
+            except Exception:
+                self._runner_variational_step_jit = None
+            return self._runner_variational_step_jit
+
+        if self._runner_variational_step_py is None:
+            combined = self._ensure_variational_combined(jit=False)
+            if combined is None:
+                return None
+            self._runner_variational_step_py = self._make_runner_variational_step(combined)
+        return self._runner_variational_step_py
+    
+    def _ensure_jit_variational_step(self):
+        """JIT compile tangent step if available; disable on failure."""
+        if self._variational_step_jit is not None or not self._use_variational:
+            return self._variational_step_jit
+        if self._variational_step_py is None:
+            return None
+        
+        step_fn = None
+        jvp_jit = self._ensure_jit_jvp()
+        if self._stepper_spec is not None and hasattr(self._stepper_spec, "emit_tangent_step"):
+            try:
+                step_fn = self._stepper_spec.emit_tangent_step(
+                    jvp_fn=jvp_jit,
+                    model_spec=self._model_spec,
+                )
+            except Exception:
+                step_fn = None
+        if step_fn is None:
+            step_fn = self._variational_step_py
+        
+        dispatcher = getattr(step_fn, "signatures", None)
+        if dispatcher is not None:
+            self._variational_step_jit = step_fn
+            return self._variational_step_jit
+        
+        py_target = getattr(step_fn, "py_func", step_fn)
+        try:
+            from numba import njit
+        except Exception:
+            self._variational_step_jit = None
+            return None
+        try:
+            self._variational_step_jit = njit(cache=False)(py_target)
+        except Exception:
+            self._variational_step_jit = None
+        return self._variational_step_jit
 
     def resolve_hooks(self, *, jit: bool, dtype: np.dtype) -> AnalysisHooks:
         if not jit:
@@ -670,12 +1146,25 @@ class _LyapunovSpectrumModule(AnalysisModule):
             return cached
 
         jvp_jit = self._ensure_jit_jvp()
+        variational_jit = self._ensure_jit_variational_step() if self._use_variational else None
+        
+        # Determine variational mode for JIT path
+        if self._use_variational_combined:
+            variational_mode = 1
+        elif self._use_variational:
+            variational_mode = 2
+        else:
+            variational_mode = 0
+        
         jit_hooks = _make_hooks_spectrum(
             jvp_fn=jvp_jit,
             init_basis=self._init_basis,
             n_state=self._n_state,
             k=self._k,
             mode=self._mode,
+            variational_step_fn=variational_jit,
+            runner_handles_variational=self._use_variational_combined,
+            variational_mode=variational_mode,
         )
         return self._compile_hooks(jit_hooks, dtype)
 
@@ -740,14 +1229,53 @@ def lyapunov_spectrum(
             who="lyapunov_spectrum",
         )
 
+        # Optional variational stepping (flow only)
+        variational_step_fn = None
+        use_variational = False
+        variational_combined_fn = None
+        use_variational_combined = False
+        stepper_spec = getattr(model_coerced, "stepper_spec", None)
+        if mode_use == "flow" and stepper_spec is not None:
+            stepper_meta = getattr(stepper_spec, "meta", None)
+            caps = getattr(stepper_meta, "caps", None) if stepper_meta is not None else None
+            if caps is not None and getattr(caps, "variational_stepping", False):
+                if hasattr(stepper_spec, "emit_step_with_variational"):
+                    try:
+                        variational_combined_fn = stepper_spec.emit_step_with_variational(
+                            rhs_fn=getattr(model_coerced, "rhs", None),
+                            jvp_fn=jvp_use,
+                            model_spec=getattr(model_coerced, "spec", None),
+                        )
+                        use_variational_combined = variational_combined_fn is not None
+                    except Exception:
+                        variational_combined_fn = None
+                        use_variational_combined = False
+                if not use_variational_combined and hasattr(stepper_spec, "emit_tangent_step"):
+                    try:
+                        variational_step_fn = stepper_spec.emit_tangent_step(
+                            jvp_fn=jvp_use,
+                            model_spec=getattr(model_coerced, "spec", None),
+                        )
+                        use_variational = variational_step_fn is not None
+                    except Exception:
+                        variational_step_fn = None
+                        use_variational = False
+
         return _LyapunovSpectrumModule(
             jvp=jvp_use,
+            model_spec=getattr(model_coerced, "spec", None),
+            stepper_spec=stepper_spec if (use_variational or use_variational_combined) else None,
+            rhs_fn=getattr(model_coerced, "rhs", None),
             n_state=int(n_state_use),
             k=int(k),
             mode=mode_use,
             trace_plan=plan_use,
             analysis_kind=analysis_kind,
             init_basis=init_basis,
+            variational_step_fn=variational_step_fn,
+            use_variational_stepping=use_variational,
+            variational_combined_step_fn=variational_combined_fn,
+            use_variational_combined=use_variational_combined,
         )
 
     if model is not None:
@@ -765,6 +1293,9 @@ def lyapunov_spectrum(
         )
         return _LyapunovSpectrumModule(
             jvp=jvp,
+            model_spec=None,
+            stepper_spec=None,
+            rhs_fn=None,
             n_state=int(n_state),
             k=int(k),
             mode=_resolve_mode(mode=mode, model_like=None, who="lyapunov_spectrum"),

@@ -7,7 +7,7 @@ from typing import Iterable, Literal, Optional, Sequence
 import math
 import numpy as np
 
-from dynlib.analysis.runtime import AnalysisModule, analysis_noop_hook
+from dynlib.analysis.runtime import AnalysisModule, analysis_noop_hook, analysis_noop_variational_step
 from dynlib.runtime.fastpath.plans import RecordingPlan
 from dynlib.runtime.fastpath.capability import assess_capability, FastpathSupport
 from dynlib.runtime.results import Results
@@ -167,6 +167,9 @@ def _call_runner(
     t_out = np.zeros((1,), dtype=np.float64)
 
     # Analysis buffers (present even for base runner for ABI compatibility)
+    variational_step_enabled = 0
+    variational_step_fn = analysis_noop_variational_step()
+
     if analysis is not None:
         analysis_kind = int(analysis.analysis_kind)
         ws_size = int(analysis.workspace_size)
@@ -189,6 +192,12 @@ def _call_runner(
             analysis_trace_cap = 0
             analysis_trace_stride = 0
         analysis_trace_count = np.zeros((1,), dtype=np.int64)
+        runner_var = getattr(analysis, "runner_variational_step", None)
+        if callable(runner_var):
+            var_fn = runner_var(jit=is_jit)
+            if var_fn is not None:
+                variational_step_enabled = 1
+                variational_step_fn = var_fn
     else:
         analysis_kind = 0
         analysis_ws = np.zeros((0,), dtype=dtype)
@@ -197,6 +206,8 @@ def _call_runner(
         analysis_trace_count = np.zeros((1,), dtype=np.int64)
         analysis_trace_cap = 0
         analysis_trace_stride = 0
+        variational_step_enabled = 0
+        variational_step_fn = analysis_noop_variational_step()
 
     # Get the appropriate runner variant (hooks baked in as globals, not passed as args)
     if is_discrete:
@@ -249,6 +260,8 @@ def _call_runner(
         analysis_trace_count,
         int(analysis_trace_cap),
         int(analysis_trace_stride),
+        int(variational_step_enabled),
+        variational_step_fn,
         np.int64(0),
         np.int64(0),
         int(cap_rec),

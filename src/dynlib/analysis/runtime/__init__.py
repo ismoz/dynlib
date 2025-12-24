@@ -8,6 +8,7 @@ from .core import (
     CombinedAnalysis,
     TraceSpec,
     analysis_noop_hook,
+    analysis_noop_variational_step,
 )
 from .lyapunov import lyapunov_mle, lyapunov_spectrum
 
@@ -18,6 +19,7 @@ __all__ = [
     "CombinedAnalysis",
     "TraceSpec",
     "analysis_noop_hook",
+    "analysis_noop_variational_step",
     "lyapunov_mle",
     "lyapunov_spectrum",
 ]

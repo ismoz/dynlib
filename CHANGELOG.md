@@ -2,6 +2,35 @@
 
 ---
 
+## [2.35.3] – 2025-12-24
+### Added
+- Variational stepping support (simultaneous numerical integration of both the original dynamical system and 
+  its variational / tangent equations using the same numerical method) for RK4 stepper via 
+  `emit_step_with_variational()` and `emit_tangent_step()` methods.
+
+### Changed
+- Lyapunov exponent analysis (`lyapunov_mle` and `lyapunov_spectrum`) now automatically uses variational 
+  stepping when the chosen stepper supports it (currently RK4), otherwise falls back to Euler integration.
+- When computing Lyapunov exponents, the analysis tracks how small perturbations grow over time by integrating 
+  "tangent vectors" (directional derivatives). For accurate results, both the main system and tangent vectors 
+  should use the same numerical method. This update enables RK4 to integrate tangent vectors with full 
+  4th-order accuracy instead of 1st-order Euler, significantly improving reliability for continuous systems.
+
+### Fixed
+- Lyapunov exponent calculations now use the same numerical method (e.g., RK4) for both the system state and 
+  the tangent vectors, ensuring mathematical consistency and improved accuracy. Previously, tangent vectors 
+  were always integrated using Euler method regardless of the chosen stepper.
+
+### Tests
+- Added comprehensive test suite (`test_rk4_variational.py`) covering RK4 variational mode selection, runtime 
+  verification, Euler fallback behavior for steppers without variational support, and numerical accuracy 
+  validation with known linear systems.
+
+### Known Issues
+- Only RK4 stepper is supported for variational stepping. Other fixed step steppers should be modified similarly.
+
+---
+
 ## [2.35.2] – 2025-12-24
 ### Fixed
 - Combined runtime analyses now share trace capacity correctly. Each module writes into its own slice with a

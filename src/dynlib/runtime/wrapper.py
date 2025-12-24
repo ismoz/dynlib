@@ -19,7 +19,7 @@ from dynlib.runtime.workspace import (
     restore_workspace,
 )
 from dynlib.runtime.initial_step import WRMSConfig, choose_initial_dt_wrms
-from dynlib.analysis.runtime import AnalysisModule, analysis_noop_hook
+from dynlib.analysis.runtime import AnalysisModule, analysis_noop_hook, analysis_noop_variational_step
 
 __all__ = ["run_with_wrapper"]
 
@@ -242,6 +242,14 @@ def run_with_wrapper(
         noop_hook = analysis_noop_hook()
         analysis_dispatch_pre = resolved_hooks.pre_step or noop_hook
         analysis_dispatch_post = resolved_hooks.post_step or noop_hook
+        variational_step_enabled = np.int32(0)
+        variational_step_fn = analysis_noop_variational_step()
+        runner_var = getattr(analysis, "runner_variational_step", None)
+        if callable(runner_var):
+            var_fn = runner_var(jit=is_jit_runner)
+            if var_fn is not None:
+                variational_step_enabled = np.int32(1)
+                variational_step_fn = var_fn
     else:
         analysis_kind = 0
         analysis_ws = np.zeros((0,), dtype=dtype)
@@ -253,6 +261,8 @@ def run_with_wrapper(
         noop_hook = analysis_noop_hook()
         analysis_dispatch_pre = noop_hook
         analysis_dispatch_post = noop_hook
+        variational_step_enabled = np.int32(0)
+        variational_step_fn = analysis_noop_variational_step()
     analysis_modules = tuple(getattr(analysis, "modules", (analysis,))) if analysis is not None else None
 
     def _analysis_meta(overflow: bool = False):
@@ -302,6 +312,7 @@ def run_with_wrapper(
             analysis_trace_count, int(analysis_trace_cap), int(analysis_trace_stride),
             int(analysis_kind),
             analysis_dispatch_pre, analysis_dispatch_post,
+            int(variational_step_enabled), variational_step_fn,
             i_start, step_start, int(cap_rec), int(cap_evt),
             user_break_flag, status_out, hint_out,
             i_out, step_out, t_out,

@@ -27,6 +27,7 @@ class StepperCaps:
     jacobian: JacobianPolicy = "none"    # how this impl uses external Jacobian
     jit_capable: bool = True             # can be jitted
     requires_scipy: bool = False
+    variational_stepping: bool = False   # supports emit_step_with_variational for Lyapunov analysis
     # future:
     # mass_matrix: bool = False
     # fsal: bool = False

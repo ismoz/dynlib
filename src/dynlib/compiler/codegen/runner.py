@@ -156,6 +156,7 @@ def runner(
     analysis_trace_count, analysis_trace_cap, analysis_trace_stride,
     analysis_kind,
     analysis_dispatch_pre, analysis_dispatch_post,
+    variational_step_enabled, variational_step_fn,
     # cursors & caps
     i_start, step_start, cap_rec, cap_evt,
     # control/outs (len-1)
@@ -174,6 +175,7 @@ def runner(
     Returns status code (int32).
     """
     has_analysis = analysis_kind != 0
+    use_variational_step = bool(variational_step_enabled)
     pre_hook = analysis_dispatch_pre
     post_hook = analysis_dispatch_post
     trace_cap_int = int(analysis_trace_cap) if has_analysis else 0
@@ -314,13 +316,25 @@ def runner(
             return DONE
         
         # 3. Stepper attempt (fixed-step: single call; adaptive may loop internally)
-        step_status = stepper(
-            t, dt, y_curr, rhs, params,
-            runtime_ws,
-            stepper_ws,
-            stepper_config,
-            y_prop, t_prop, dt_next, err_est
-        )
+        if use_variational_step:
+            step_status = variational_step_fn(
+                t, dt, y_curr, rhs, params,
+                runtime_ws,
+                stepper_ws,
+                stepper_config,
+                y_prop, t_prop, dt_next, err_est,
+                analysis_ws,
+            )
+        else:
+            step_status = stepper(
+                t, dt, y_curr, rhs, params,
+                runtime_ws,
+                stepper_ws,
+                stepper_config,
+                y_prop, t_prop, dt_next, err_est
+            )
+        if step_status is None:
+            step_status = OK
         
         # Check for stepper failure/termination
         # Steppers return: OK (accepted step) or terminal codes (STEPFAIL, NAN_DETECTED)

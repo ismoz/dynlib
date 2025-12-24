@@ -157,6 +157,7 @@ def runner_base(
     # analysis buffers (unused in base runner but kept for ABI compatibility)
     analysis_ws, analysis_out, analysis_trace,
     analysis_trace_count, analysis_trace_cap, analysis_trace_stride,
+    variational_step_enabled, variational_step_fn,
     # cursors & caps
     i_start, step_start, cap_rec, cap_evt,
     # control/outs (len-1)
@@ -170,6 +171,7 @@ def runner_base(
     """
     Base continuous runner: no analysis hooks, zero overhead.
     """
+    use_variational_step = bool(variational_step_enabled)
     # Initialize loop state
     t = float(t0)
     dt = float(dt_init)
@@ -244,13 +246,25 @@ def runner_base(
             dt = remaining
 
         # Stepper attempt
-        step_status = stepper(
-            t, dt, y_curr, rhs, params,
-            runtime_ws,
-            stepper_ws,
-            stepper_config,
-            y_prop, t_prop, dt_next, err_est
-        )
+        if use_variational_step:
+            step_status = variational_step_fn(
+                t, dt, y_curr, rhs, params,
+                runtime_ws,
+                stepper_ws,
+                stepper_config,
+                y_prop, t_prop, dt_next, err_est,
+                analysis_ws,
+            )
+        else:
+            step_status = stepper(
+                t, dt, y_curr, rhs, params,
+                runtime_ws,
+                stepper_ws,
+                stepper_config,
+                y_prop, t_prop, dt_next, err_est
+            )
+        if step_status is None:
+            step_status = OK
         
         if step_status != OK:
             i_out[0] = i
@@ -383,6 +397,7 @@ def runner_analysis(
     # analysis buffers
     analysis_ws, analysis_out, analysis_trace,
     analysis_trace_count, analysis_trace_cap, analysis_trace_stride,
+    variational_step_enabled, variational_step_fn,
     # cursors & caps
     i_start, step_start, cap_rec, cap_evt,
     # control/outs (len-1)
@@ -398,6 +413,7 @@ def runner_analysis(
     """
     trace_cap_int = int(analysis_trace_cap)
     trace_stride_int = int(analysis_trace_stride)
+    use_variational_step = bool(variational_step_enabled)
     
     # Initialize loop state
     t = float(t0)
@@ -489,13 +505,25 @@ def runner_analysis(
             dt = remaining
 
         # Stepper attempt
-        step_status = stepper(
-            t, dt, y_curr, rhs, params,
-            runtime_ws,
-            stepper_ws,
-            stepper_config,
-            y_prop, t_prop, dt_next, err_est
-        )
+        if use_variational_step:
+            step_status = variational_step_fn(
+                t, dt, y_curr, rhs, params,
+                runtime_ws,
+                stepper_ws,
+                stepper_config,
+                y_prop, t_prop, dt_next, err_est,
+                analysis_ws,
+            )
+        else:
+            step_status = stepper(
+                t, dt, y_curr, rhs, params,
+                runtime_ws,
+                stepper_ws,
+                stepper_config,
+                y_prop, t_prop, dt_next, err_est
+            )
+        if step_status is None:
+            step_status = OK
         
         if step_status != OK:
             i_out[0] = i
@@ -644,6 +672,7 @@ def runner_discrete_base(
     # analysis buffers (unused in base runner but kept for ABI compatibility)
     analysis_ws, analysis_out, analysis_trace,
     analysis_trace_count, analysis_trace_cap, analysis_trace_stride,
+    variational_step_enabled, variational_step_fn,
     # cursors & caps
     i_start, step_start, cap_rec, cap_evt,
     # control/outs (len-1)
@@ -657,6 +686,7 @@ def runner_discrete_base(
     """
     Base discrete runner: no analysis hooks, zero overhead.
     """
+    use_variational_step = bool(variational_step_enabled)
     # Initialize loop state
     t = float(t0)
     dt = float(dt_init)
@@ -726,13 +756,25 @@ def runner_discrete_base(
             m += 1
 
         # Stepper attempt
-        step_status = stepper(
-            t, dt, y_curr, rhs, params,
-            runtime_ws,
-            stepper_ws,
-            stepper_config,
-            y_prop, t_prop, dt_next, err_est
-        )
+        if use_variational_step:
+            step_status = variational_step_fn(
+                t, dt, y_curr, rhs, params,
+                runtime_ws,
+                stepper_ws,
+                stepper_config,
+                y_prop, t_prop, dt_next, err_est,
+                analysis_ws,
+            )
+        else:
+            step_status = stepper(
+                t, dt, y_curr, rhs, params,
+                runtime_ws,
+                stepper_ws,
+                stepper_config,
+                y_prop, t_prop, dt_next, err_est
+            )
+        if step_status is None:
+            step_status = OK
         
         if step_status != OK:
             i_out[0] = i
@@ -867,6 +909,7 @@ def runner_discrete_analysis(
     # analysis buffers
     analysis_ws, analysis_out, analysis_trace,
     analysis_trace_count, analysis_trace_cap, analysis_trace_stride,
+    variational_step_enabled, variational_step_fn,
     # cursors & caps
     i_start, step_start, cap_rec, cap_evt,
     # control/outs (len-1)
@@ -882,6 +925,7 @@ def runner_discrete_analysis(
     """
     trace_cap_int = int(analysis_trace_cap)
     trace_stride_int = int(analysis_trace_stride)
+    use_variational_step = bool(variational_step_enabled)
     
     # Initialize loop state
     t = float(t0)
@@ -968,13 +1012,25 @@ def runner_discrete_analysis(
             return TRACE_OVERFLOW
 
         # Stepper attempt
-        step_status = stepper(
-            t, dt, y_curr, rhs, params,
-            runtime_ws,
-            stepper_ws,
-            stepper_config,
-            y_prop, t_prop, dt_next, err_est
-        )
+        if use_variational_step:
+            step_status = variational_step_fn(
+                t, dt, y_curr, rhs, params,
+                runtime_ws,
+                stepper_ws,
+                stepper_config,
+                y_prop, t_prop, dt_next, err_est,
+                analysis_ws,
+            )
+        else:
+            step_status = stepper(
+                t, dt, y_curr, rhs, params,
+                runtime_ws,
+                stepper_ws,
+                stepper_config,
+                y_prop, t_prop, dt_next, err_est
+            )
+        if step_status is None:
+            step_status = OK
         
         if step_status != OK:
             i_out[0] = i

@@ -136,6 +136,7 @@ runner(
   analysis_ws: dtype[:], analysis_out: dtype[:], analysis_trace: dtype[:, :],
   analysis_trace_count: int64[1], analysis_trace_cap: int64, analysis_trace_stride: int64,
   analysis_kind: int32, analysis_dispatch_pre, analysis_dispatch_post,
+  variational_step_enabled: int32, variational_step_fn,
   # cursors & caps
   i_start: int64, step_start: int64, cap_rec: int64, cap_evt: int64,
   # control/outs (len-1)
@@ -162,6 +163,14 @@ Rules:
 - T is float64; Y/EVT_LOG_DATA is model dtype; STEP:int64, FLAGS:int32, EVT_CODE/EVT_INDEX:int32.
 - runtime_ws: NamedTuple owned by the runner/DSL (e.g., lag buffers).
 - stepper_ws: NamedTuple owned by the stepper implementation.
+- t_prop is model dtype; committed t written to T as float64.
+- Variational: when variational_step_enabled!=0, runner calls variational_step_fn
+  instead of stepper. Signature:
+      variational_step_fn(t, dt, y_curr, rhs, params, runtime_ws, stepper_ws,
+                          stepper_config, y_prop, t_prop, dt_next, err_est,
+                          analysis_ws) -> int32|None
+  It must write y_prop/t_prop/dt_next/err_est and propagate tangent data in
+  analysis_ws. Returning None is treated as OK.
 - t_prop is model dtype; committed t written to T as float64.
 - Analysis: analysis_kind==0 disables hooks. Dispatch runs pre_step after pre-events
   (y_prev/y_curr ready) and post_step after commit + aux update. analysis_trace_count
