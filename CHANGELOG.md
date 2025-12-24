@@ -5,7 +5,7 @@
 ## [2.35.0] – 2025-12-24
 ### Added
 - `lyapunov_spectrum()` analysis utility for performing Benettin QR / Shimada–Nagashima (reorthonormalization) 
-  method Lyapunov Spectrum analysis.
+  style Lyapunov spectrum analysis.
 - Introduced `mode` option to `lyapunov_mle` and `lyapunov_spectrum` analyses which can be `auto`, `flow`, or `map`.
   `auto` (default) mode can detect type of Lyapunov exponent calculation from the DSL model type.
 
