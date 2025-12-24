@@ -8,13 +8,12 @@ from dynlib.runtime.fastpath.runner import (
     fastpath_batch_for_sim,
 )
 from dynlib.runtime.sim import Sim
-from dynlib.runtime.model import Model
 from dynlib.dsl.parser import parse_model_v2
 from dynlib.dsl.spec import build_spec
-from dynlib.compiler.build import build
+from dynlib.compiler.build import build, FullModel
 
 
-def _build_simple_model(jit: bool = False) -> Model:
+def _build_simple_model(jit: bool = False) -> FullModel:
     toml_str = """
 [model]
 type = "ode"
@@ -38,29 +37,7 @@ x = "-a * x"
 """
     data = tomllib.loads(toml_str)
     spec = build_spec(parse_model_v2(data))
-    full_model = build(spec, stepper=spec.sim.stepper, jit=jit)
-    return Model(
-        spec=full_model.spec,
-        stepper_name=full_model.stepper_name,
-        workspace_sig=full_model.workspace_sig,
-        rhs=full_model.rhs,
-        events_pre=full_model.events_pre,
-        events_post=full_model.events_post,
-        update_aux=full_model.update_aux,
-        stepper=full_model.stepper,
-        runner=full_model.runner,
-        spec_hash=full_model.spec_hash,
-        dtype=full_model.dtype,
-        rhs_source=full_model.rhs_source,
-        events_pre_source=full_model.events_pre_source,
-        events_post_source=full_model.events_post_source,
-        update_aux_source=full_model.update_aux_source,
-        stepper_source=full_model.stepper_source,
-        lag_state_info=full_model.lag_state_info,
-        uses_lag=full_model.uses_lag,
-        equations_use_lag=full_model.equations_use_lag,
-        make_stepper_workspace=full_model.make_stepper_workspace,
-    )
+    return build(spec, stepper=spec.sim.stepper, jit=jit)
 
 
 @pytest.fixture
@@ -212,29 +189,7 @@ x = "r * x * (1.0 - x)"
     data = tomllib.loads(toml_str)
     spec = build_spec(parse_model_v2(data))
     full_model = build(spec, stepper=spec.sim.stepper, jit=True)
-    model = Model(
-        spec=full_model.spec,
-        stepper_name=full_model.stepper_name,
-        workspace_sig=full_model.workspace_sig,
-        rhs=full_model.rhs,
-        events_pre=full_model.events_pre,
-        events_post=full_model.events_post,
-        update_aux=full_model.update_aux,
-        stepper=full_model.stepper,
-        runner=full_model.runner,
-        spec_hash=full_model.spec_hash,
-        dtype=full_model.dtype,
-        rhs_source=full_model.rhs_source,
-        events_pre_source=full_model.events_pre_source,
-        events_post_source=full_model.events_post_source,
-        update_aux_source=full_model.update_aux_source,
-        stepper_source=full_model.stepper_source,
-        lag_state_info=full_model.lag_state_info,
-        uses_lag=full_model.uses_lag,
-        equations_use_lag=full_model.equations_use_lag,
-        make_stepper_workspace=full_model.make_stepper_workspace,
-    )
-    sim = Sim(model)
+    sim = Sim(full_model)
     
     plan = FixedStridePlan(stride=1)
     ic = sim.state_vector(source="session", copy=True)

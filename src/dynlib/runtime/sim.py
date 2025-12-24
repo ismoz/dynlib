@@ -16,7 +16,6 @@ import warnings
 
 import numpy as np
 
-from .model import Model
 from .wrapper import run_with_wrapper
 from .results import Results
 from .results_api import ResultsView
@@ -24,6 +23,7 @@ from .runner_api import Status
 from .initial_step import WRMSConfig, make_wrms_config_from_stepper
 from dynlib.steppers.registry import get_stepper
 from dynlib.analysis.runtime import AnalysisModule
+from dynlib.compiler.build import FullModel
 import tomllib
 
 try:  # pragma: no cover - available on 3.8+
@@ -304,10 +304,10 @@ class _ResultAccumulator:
 
 class Sim:
     """
-    Simulation facade around a compiled Model with resumable session state and optional snapshots.
+    Simulation facade around a compiled FullModel with resumable session state and optional snapshots.
     """
 
-    def __init__(self, model: Model):
+    def __init__(self, model: FullModel):
         self._logger = logging.getLogger(__name__)
         self.model = model
         self._raw_results: Optional[Results] = None

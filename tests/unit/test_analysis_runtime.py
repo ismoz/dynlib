@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import tomllib
 
-from dynlib.compiler.build import build
+from dynlib.compiler.build import build, FullModel
 from dynlib.dsl.parser import parse_model_v2
 from dynlib.dsl.spec import build_spec
 from dynlib.analysis.runtime import (
@@ -15,7 +15,6 @@ from dynlib.analysis.runtime import (
 from dynlib.runtime.fastpath import FixedStridePlan, FixedTracePlan
 from dynlib.runtime.fastpath.capability import assess_capability
 from dynlib.runtime.fastpath.runner import fastpath_for_sim
-from dynlib.runtime.model import Model
 from dynlib.runtime.wrapper import run_with_wrapper
 from dynlib.runtime.sim import Sim
 from dynlib.compiler.codegen import runner as runner_codegen
@@ -71,7 +70,7 @@ def _counter_analysis():
     )
 
 
-def _build_map_model(jit: bool = False) -> Model:
+def _build_map_model(jit: bool = False) -> FullModel:
     toml_str = """
 [model]
 type = "map"
@@ -97,33 +96,7 @@ exprs = [
 """
     data = tomllib.loads(toml_str)
     spec = build_spec(parse_model_v2(data))
-    full_model = build(spec, stepper=spec.sim.stepper, jit=jit)
-    return Model(
-        spec=full_model.spec,
-        stepper_name=full_model.stepper_name,
-        workspace_sig=full_model.workspace_sig,
-        rhs=full_model.rhs,
-        events_pre=full_model.events_pre,
-        events_post=full_model.events_post,
-        update_aux=full_model.update_aux,
-        stepper=full_model.stepper,
-        runner=full_model.runner,
-        spec_hash=full_model.spec_hash,
-        dtype=full_model.dtype,
-        jvp=full_model.jvp,
-        jacobian=full_model.jacobian,
-        rhs_source=full_model.rhs_source,
-        events_pre_source=full_model.events_pre_source,
-        events_post_source=full_model.events_post_source,
-        update_aux_source=full_model.update_aux_source,
-        stepper_source=full_model.stepper_source,
-        jvp_source=full_model.jvp_source,
-        jacobian_source=full_model.jacobian_source,
-        lag_state_info=full_model.lag_state_info,
-        uses_lag=full_model.uses_lag,
-        equations_use_lag=full_model.equations_use_lag,
-        make_stepper_workspace=full_model.make_stepper_workspace,
-    )
+    return build(spec, stepper=spec.sim.stepper, jit=jit)
 
 
 def test_wrapper_analysis_survives_reentry():
@@ -222,20 +195,7 @@ x = "-a * x"
     data = tomllib.loads(toml_str)
     spec = build_spec(parse_model_v2(data))
     full_model = build(spec, stepper=spec.sim.stepper, jit=False)
-    model = Model(
-        spec=full_model.spec,
-        stepper_name=full_model.stepper_name,
-        workspace_sig=full_model.workspace_sig,
-        rhs=full_model.rhs,
-        events_pre=full_model.events_pre,
-        events_post=full_model.events_post,
-        update_aux=full_model.update_aux,
-        stepper=full_model.stepper,
-        runner=full_model.runner,
-        spec_hash=full_model.spec_hash,
-        dtype=full_model.dtype,
-    )
-    simple_sim = Sim(model)
+    simple_sim = Sim(full_model)
 
     analysis_module = AnalysisModule(
         name="py-only",

@@ -4,8 +4,7 @@ import pytest
 
 from dynlib.dsl.parser import parse_model_v2
 from dynlib.dsl.spec import build_spec
-from dynlib.compiler.build import build
-from dynlib.runtime.model import Model
+from dynlib.compiler.build import build, FullModel
 from dynlib.runtime.sim import Sim
 
 # Simple test model with multiple states and aux variables
@@ -68,27 +67,12 @@ y = "0.5 * y + 0.1 * x"
 """
 
 
-def _build_model(toml_string: str, jit: bool = False) -> Model:
+def _build_model(toml_string: str, jit: bool = False) -> FullModel:
     """Helper to build a model from TOML string."""
     import tomllib
     data = tomllib.loads(toml_string)
     spec = build_spec(parse_model_v2(data))
-    full_model = build(spec, stepper=spec.sim.stepper, jit=jit)
-    return Model(
-        spec=full_model.spec,
-        spec_hash=full_model.spec_hash,
-        stepper_name=full_model.stepper_name,
-        workspace_sig=full_model.workspace_sig,
-        rhs=full_model.rhs,
-        events_pre=full_model.events_pre,
-        events_post=full_model.events_post,
-        update_aux=full_model.update_aux,
-        runner=full_model.runner,
-        stepper=full_model.stepper,
-        dtype=full_model.dtype,
-        lag_state_info=getattr(full_model, "lag_state_info", None),
-        make_stepper_workspace=getattr(full_model, "make_stepper_workspace", None),
-    )
+    return build(spec, stepper=spec.sim.stepper, jit=jit)
 
 
 class TestSelectiveRecording:
@@ -465,4 +449,3 @@ class TestSelectiveRecording:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

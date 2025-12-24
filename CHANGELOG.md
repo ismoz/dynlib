@@ -2,6 +2,18 @@
 
 ---
 
+## [2.34.10] – 2025-12-24
+### Changed
+- Removed the legacy `dynlib.runtime.model.Model` dataclass. `Sim` now expects the `FullModel` returned by `build()`, 
+  eliminating the duplicate runtime model type. Maintaining both `Model` and `FullModel` class was hard. For example 
+  `export_sources()` shortcut was attached to the old `Model` class instead of the newer `FullModel` class.
+- Updated `export_sources.md` doc file and `export_sources_demo.py` example.
+
+### Tests
+- Replaced `Model` class usage with `FullModel` class.
+
+---
+
 ## [2.34.9] – 2025-12-24
 ### Tests
 - Added comprehensive test coverage for external Jacobian mode in implicit steppers (`bdf2`, `bdf2a`, `tr-bdf2a`, 

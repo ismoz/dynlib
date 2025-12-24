@@ -8,49 +8,27 @@ import tomllib
 from dynlib.compiler.build import build
 from dynlib.dsl.parser import parse_model_v2
 from dynlib.dsl.spec import build_spec
-from dynlib.runtime.model import Model
 from dynlib.runtime.results import Results
 from dynlib.runtime.runner_api import Status
 from dynlib.runtime.sim import Sim
+from dynlib.compiler.build import FullModel
 
 
-def _load_model(toml_name: str) -> Model:
+def _load_model(toml_name: str) -> FullModel:
     data_dir = Path(__file__).resolve().parent.parent / "data" / "models"
     with open(data_dir / toml_name, "rb") as fh:
         data = tomllib.load(fh)
     spec = build_spec(parse_model_v2(data))
-    built = build(spec, stepper=spec.sim.stepper, jit=True)
-    return Model(
-        spec=built.spec,
-        stepper_name=built.stepper_name,
-        workspace_sig=built.workspace_sig,
-        rhs=built.rhs,
-        events_pre=built.events_pre,
-        events_post=built.events_post,
-        update_aux=built.update_aux,
-        stepper=built.stepper,
-        runner=built.runner,
-        spec_hash=built.spec_hash,
-        dtype=built.dtype,
-        rhs_source=built.rhs_source,
-        events_pre_source=built.events_pre_source,
-        events_post_source=built.events_post_source,
-        update_aux_source=built.update_aux_source,
-        stepper_source=built.stepper_source,
-        lag_state_info=built.lag_state_info,
-        uses_lag=built.uses_lag,
-        equations_use_lag=built.equations_use_lag,
-        make_stepper_workspace=built.make_stepper_workspace,
-    )
+    return build(spec, stepper=spec.sim.stepper, jit=True)
 
 
 @pytest.fixture(scope="module")
-def decay_model() -> Model:
+def decay_model() -> FullModel:
     return _load_model("decay.toml")
 
 
 @pytest.fixture()
-def fresh_sim(decay_model: Model) -> Sim:
+def fresh_sim(decay_model: FullModel) -> Sim:
     return Sim(decay_model)
 
 

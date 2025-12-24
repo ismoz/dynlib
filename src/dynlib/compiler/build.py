@@ -148,6 +148,47 @@ class FullModel:
     equations_use_lag: bool = False
     make_stepper_workspace: Optional[Callable[[], object]] = None
 
+    def export_sources(self, output_dir: Union[str, Path]) -> Dict[str, Path]:
+        """
+        Export all source code files to a directory for inspection.
+        
+        Args:
+            output_dir: Directory path where source files will be written
+            
+        Returns:
+            Dictionary mapping component names to their file paths
+            
+        Example:
+            >>> model = build("decay.toml", stepper="euler")
+            >>> files = model.export_sources("./compiled_sources")
+            >>> print(files)
+            {'rhs': Path('./compiled_sources/rhs.py'), 
+             'events_pre': Path('./compiled_sources/events_pre.py'), ...}
+        """
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        exported = {}
+        
+        # Export each component's source if available
+        components = [
+            ("rhs", self.rhs_source),
+            ("events_pre", self.events_pre_source),
+            ("events_post", self.events_post_source),
+            ("update_aux", self.update_aux_source),
+            ("stepper", self.stepper_source),
+            ("jvp", self.jvp_source),
+            ("jacobian", self.jacobian_source),
+        ]
+        
+        for name, source in components:
+            if source is not None:
+                file_path = output_path / f"{name}.py"
+                file_path.write_text(source, encoding="utf-8")
+                exported[name] = file_path
+        
+        return exported
+
 @dataclass
 class _StepperCacheEntry:
     fn: Callable

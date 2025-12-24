@@ -3,37 +3,36 @@
 Demonstration of compiled model source code export functionality.
 
 This example shows how to:
-1. Build a compiled model
+1. Build a compiled model using setup()
 2. Export the generated Python source code for inspection
 3. Verify the compilation is correct
 """
 
 from pathlib import Path
 import tempfile
-from dynlib import build
-from dynlib.compiler.build import export_model_sources
+from dynlib import setup
 
 def main():
     # Use an existing test model
     model_path = Path(__file__).parent.parent / "tests" / "data" / "models" / "decay.toml"
     
-    # Build the model with JIT compilation
+    # Setup simulation with JIT compilation
     print(f"Building model from: {model_path.name}")
-    model = build(str(model_path), stepper="euler", jit=True, disk_cache=False)
+    sim = setup(str(model_path), stepper="euler", jit=True, disk_cache=False)
     
     # Check if source code is available
     print(f"\nSource code availability:")
-    print(f"  RHS source: {'✓' if model.rhs_source else '✗'}")
-    print(f"  Events pre source: {'✓' if model.events_pre_source else '✗'}")
-    print(f"  Events post source: {'✓' if model.events_post_source else '✗'}")
-    print(f"  Stepper source: {'✓' if model.stepper_source else '✗'}")
+    print(f"  RHS source: {'✓' if sim.model.rhs_source else '✗'}")
+    print(f"  Events pre source: {'✓' if sim.model.events_pre_source else '✗'}")
+    print(f"  Events post source: {'✓' if sim.model.events_post_source else '✗'}")
+    print(f"  Stepper source: {'✓' if sim.model.stepper_source else '✗'}")
     
     # Export sources to a temporary directory
     with tempfile.TemporaryDirectory() as tmpdir:
         export_dir = Path(tmpdir) / "compiled_model"
         print(f"\nExporting sources to: {export_dir}")
         
-        exported_files = export_model_sources(model, export_dir)
+        exported_files = sim.model.export_sources(export_dir)
         
         print(f"\nExported files:")
         for component, filepath in exported_files.items():

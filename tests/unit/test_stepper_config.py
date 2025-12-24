@@ -3,33 +3,15 @@ import dataclasses
 import numpy as np
 import pytest
 
-from dynlib.compiler.build import build
+from dynlib.compiler.build import build, FullModel
 from dynlib.runtime.sim import Sim
-from dynlib.runtime.model import Model
 from dynlib.steppers.registry import get_stepper
 
 
 def _make_sim(model_toml: str, *, stepper_override: str | None = None, jit: bool = False):
     """Build a Sim + FullModel pair from inline TOML."""
     full_model = build(f"inline: {model_toml}", stepper=stepper_override, jit=jit)
-    model = Model(
-        spec=full_model.spec,
-        stepper_name=full_model.stepper_name,
-        workspace_sig=full_model.workspace_sig,
-        rhs=full_model.rhs,
-        events_pre=full_model.events_pre,
-        events_post=full_model.events_post,
-        update_aux=full_model.update_aux,
-        stepper=full_model.stepper,
-        runner=full_model.runner,
-        spec_hash=full_model.spec_hash,
-        dtype=full_model.dtype,
-        lag_state_info=full_model.lag_state_info,
-        uses_lag=full_model.uses_lag,
-        equations_use_lag=full_model.equations_use_lag,
-        make_stepper_workspace=full_model.make_stepper_workspace,
-    )
-    return Sim(model), full_model
+    return Sim(full_model), full_model
 
 
 def test_rk45_runtime_config():
@@ -62,25 +44,7 @@ rtol = 1e-4
 
     full_model = build(f"inline: {model_toml}", jit=False)
 
-    model = Model(
-        spec=full_model.spec,
-        stepper_name=full_model.stepper_name,
-        workspace_sig=full_model.workspace_sig,
-        rhs=full_model.rhs,
-        events_pre=full_model.events_pre,
-        events_post=full_model.events_post,
-        update_aux=full_model.update_aux,
-        stepper=full_model.stepper,
-        runner=full_model.runner,
-        spec_hash=full_model.spec_hash,
-        dtype=full_model.dtype,
-        lag_state_info=full_model.lag_state_info,
-        uses_lag=full_model.uses_lag,
-        equations_use_lag=full_model.equations_use_lag,
-        make_stepper_workspace=full_model.make_stepper_workspace,
-    )
-
-    sim = Sim(model)
+    sim = Sim(full_model)
 
     def run_with_tols(atol: float, rtol: float):
         """
@@ -150,24 +114,7 @@ record = true
 """
 
     full_model = build(f"inline: {model_toml}", jit=False)
-    model = Model(
-        spec=full_model.spec,
-        stepper_name=full_model.stepper_name,
-        workspace_sig=full_model.workspace_sig,
-        rhs=full_model.rhs,
-        events_pre=full_model.events_pre,
-        events_post=full_model.events_post,
-        update_aux=full_model.update_aux,
-        stepper=full_model.stepper,
-        runner=full_model.runner,
-        spec_hash=full_model.spec_hash,
-        dtype=full_model.dtype,
-        lag_state_info=full_model.lag_state_info,
-        uses_lag=full_model.uses_lag,
-        equations_use_lag=full_model.equations_use_lag,
-        make_stepper_workspace=full_model.make_stepper_workspace,
-    )
-    sim = Sim(model)
+    sim = Sim(full_model)
 
     import warnings
     with warnings.catch_warnings(record=True) as w:
@@ -211,24 +158,7 @@ rtol = 1e-5
 
     # Build with JIT enabled
     full_model = build(f"inline: {model_toml}", jit=False)
-    model = Model(
-        spec=full_model.spec,
-        stepper_name=full_model.stepper_name,
-        workspace_sig=full_model.workspace_sig,
-        rhs=full_model.rhs,
-        events_pre=full_model.events_pre,
-        events_post=full_model.events_post,
-        update_aux=full_model.update_aux,
-        stepper=full_model.stepper,
-        runner=full_model.runner,
-        spec_hash=full_model.spec_hash,
-        dtype=full_model.dtype,
-        lag_state_info=full_model.lag_state_info,
-        uses_lag=full_model.uses_lag,
-        equations_use_lag=full_model.equations_use_lag,
-        make_stepper_workspace=full_model.make_stepper_workspace,
-    )
-    sim = Sim(model)
+    sim = Sim(full_model)
 
     x_exact = np.exp(-1.0)  # since a = 2, t_end = 0.5 → a*t_end = 1
 
@@ -377,4 +307,3 @@ max_factor = 4.25
     assert cfg.safety == pytest.approx(0.45)
     assert cfg.max_factor == pytest.approx(4.25)
     np.testing.assert_allclose(sim.stepper_config(), rk45_spec.pack_config(cfg))
-

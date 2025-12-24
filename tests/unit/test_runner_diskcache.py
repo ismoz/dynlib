@@ -16,7 +16,6 @@ from dynlib.compiler.build import build
 from dynlib.compiler.paths import load_config, resolve_cache_root
 from dynlib.dsl.parser import parse_model_v2
 from dynlib.dsl.spec import build_spec
-from dynlib.runtime.model import Model
 from dynlib.runtime.sim import Sim
 
 
@@ -50,31 +49,6 @@ def _build_spec():
     return build_spec(normal)
 
 
-def _to_runtime(full) -> Model:
-    return Model(
-        spec=full.spec,
-        stepper_name=full.stepper_name,
-        workspace_sig=full.workspace_sig,
-        rhs=full.rhs,
-        events_pre=full.events_pre,
-        events_post=full.events_post,
-        update_aux=full.update_aux,
-        stepper=full.stepper,
-        runner=full.runner,
-        spec_hash=full.spec_hash,
-        dtype=full.dtype,
-        rhs_source=full.rhs_source,
-        events_pre_source=full.events_pre_source,
-        events_post_source=full.events_post_source,
-        update_aux_source=full.update_aux_source,
-        stepper_source=full.stepper_source,
-        lag_state_info=full.lag_state_info,
-        uses_lag=full.uses_lag,
-        equations_use_lag=full.equations_use_lag,
-        make_stepper_workspace=full.make_stepper_workspace,
-    )
-
-
 def _configure_cache(monkeypatch: pytest.MonkeyPatch, root: Path) -> Path:
     cache_root = root / "jit-cache"
     config_path = root / "dynlib.toml"
@@ -85,8 +59,7 @@ def _configure_cache(monkeypatch: pytest.MonkeyPatch, root: Path) -> Path:
 
 
 def _run_sim(full_model) -> None:
-    model = _to_runtime(full_model)
-    sim = Sim(model)
+    sim = Sim(full_model)
     sim.run(max_steps=8)
 
 
@@ -104,35 +77,12 @@ import tomllib
 from dynlib.compiler.build import build
 from dynlib.dsl.parser import parse_model_v2
 from dynlib.dsl.spec import build_spec
-from dynlib.runtime.model import Model
 from dynlib.runtime.sim import Sim
 
 MODEL = tomllib.loads({MODEL_SRC!r})
 spec = build_spec(parse_model_v2(MODEL))
 full = build(spec, stepper='euler', jit=True, disk_cache=True)
-model = Model(
-    spec=full.spec,
-    stepper_name=full.stepper_name,
-    workspace_sig=full.workspace_sig,
-    rhs=full.rhs,
-    events_pre=full.events_pre,
-    events_post=full.events_post,
-    update_aux=full.update_aux,
-    stepper=full.stepper,
-    runner=full.runner,
-    spec_hash=full.spec_hash,
-    dtype=full.dtype,
-    rhs_source=full.rhs_source,
-    events_pre_source=full.events_pre_source,
-    events_post_source=full.events_post_source,
-    update_aux_source=full.update_aux_source,
-    stepper_source=full.stepper_source,
-    lag_state_info=full.lag_state_info,
-    uses_lag=full.uses_lag,
-    equations_use_lag=full.equations_use_lag,
-    make_stepper_workspace=full.make_stepper_workspace,
-)
-Sim(model).run(max_steps=4)
+Sim(full).run(max_steps=4)
 """
 
 

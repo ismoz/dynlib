@@ -10,7 +10,7 @@ from dynlib.runtime.fastpath.plans import FixedTracePlan
 from .core import AnalysisHooks, AnalysisModule, AnalysisRequirements, TraceSpec
 
 if TYPE_CHECKING:  # pragma: no cover - type checking only
-    from dynlib.runtime.model import Model
+    from dynlib.compiler.build import FullModel
 
 __all__ = ["lyapunov_mle"]
 
@@ -92,8 +92,8 @@ def _make_hooks(
     return AnalysisHooks(pre_step=_pre_step, post_step=_post_step)
 
 
-def _coerce_model(model_like) -> "Model" | None:
-    """Extract a Model instance from a Model or Sim-like object."""
+def _coerce_model(model_like) -> "FullModel" | None:
+    """Extract a FullModel instance from a FullModel or Sim-like object."""
     if model_like is None:
         return None
     # Sim exposes the compiled model via ``.model``; accept both forms for convenience.
@@ -203,8 +203,8 @@ def lyapunov_mle(
     
     Parameters
     ----------
-    model : Model or Sim, optional
-        Model object. If provided, returns AnalysisModule directly. If None, returns factory.
+    model : FullModel or Sim, optional
+        Compiled model. If provided, returns AnalysisModule directly. If None, returns factory.
     jvp : callable, optional
         Jacobian-vector product function. If None, extracted from model.
     n_state : int, optional

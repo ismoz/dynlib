@@ -96,27 +96,7 @@ stepper = "euler"
     uri = f"inline: {inline_model}"
     full_model = build(uri, jit=False)
     
-    # Convert to legacy Model for Sim
-    from dynlib.runtime.model import Model
-    model = Model(
-        spec=full_model.spec,
-        stepper_name=full_model.stepper_name,
-        workspace_sig=full_model.workspace_sig,
-        rhs=full_model.rhs,
-        events_pre=full_model.events_pre,
-        events_post=full_model.events_post,
-        update_aux=full_model.update_aux,
-        stepper=full_model.stepper,
-        runner=full_model.runner,
-        spec_hash=full_model.spec_hash,
-        dtype=full_model.dtype,
-        lag_state_info=full_model.lag_state_info,
-        uses_lag=full_model.uses_lag,
-        equations_use_lag=full_model.equations_use_lag,
-        make_stepper_workspace=full_model.make_stepper_workspace,
-    )
-    
-    sim = Sim(model)
+    sim = Sim(full_model)
     sim.run()
     results = sim.raw_results()
     
@@ -517,26 +497,7 @@ def test_load_existing_decay_model():
     
     full_model = build(str(model_path), jit=False)
     
-    from dynlib.runtime.model import Model
-    model = Model(
-        spec=full_model.spec,
-        stepper_name=full_model.stepper_name,
-        workspace_sig=full_model.workspace_sig,
-        rhs=full_model.rhs,
-        events_pre=full_model.events_pre,
-        events_post=full_model.events_post,
-        update_aux=full_model.update_aux,
-        stepper=full_model.stepper,
-        runner=full_model.runner,
-        spec_hash=full_model.spec_hash,
-        dtype=full_model.dtype,
-        lag_state_info=full_model.lag_state_info,
-        uses_lag=full_model.uses_lag,
-        equations_use_lag=full_model.equations_use_lag,
-        make_stepper_workspace=full_model.make_stepper_workspace,
-    )
-    
-    sim = Sim(model)
+    sim = Sim(full_model)
     sim.run()
     results = sim.raw_results()
     

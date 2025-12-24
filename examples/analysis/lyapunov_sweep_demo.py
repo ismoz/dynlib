@@ -23,8 +23,8 @@ from dynlib.plot import series, export, theme, fig, bifurcation_diagram
 sim = setup("builtin://map/logistic", jit=True, disk_cache=False)
 
 # Parameter sweep configuration
-r_values = np.linspace(2.5, 4.0, 300)  # Increased resolution for better visualization
-record_every = 10  # Record convergence trace every 10 steps
+r_values = np.linspace(2.5, 4.0, 1000)  
+record_every = 1
 
 print(f"Computing bifurcation diagram and Lyapunov exponents for {len(r_values)} parameter values...")
 print(f"  Parameter range: r ∈ [{r_values[0]:.2f}, {r_values[-1]:.2f}]")
@@ -39,10 +39,10 @@ sweep_bif = sweep.traj(
     param="r",
     values=r_values,
     record_vars=["x"],
-    N=100,
+    N=200,
     transient=300,
 )
-result_bif = sweep_bif.bifurcation("x").tail(80)
+result_bif = sweep_bif.bifurcation("x")
 
 # Then, run parameter sweep with MLE analysis
 print("\nComputing Lyapunov exponents...")

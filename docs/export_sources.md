@@ -8,7 +8,7 @@ Now you can easily **export and inspect** the generated source code to verify co
 
 ## Quick Start
 
-**Recommended approach:** Use the convenient `Model.export_sources()` method:
+**Recommended approach:** Use `export_sources()` on the model object:
 
 ```python
 from dynlib import build
@@ -24,10 +24,22 @@ for component, filepath in files.items():
     print(f"{component}: {filepath}")
 ```
 
+**Alternative: Using `setup()` to create a Sim:**
+
+```python
+from dynlib import setup
+
+# Setup simulation (combines build + Sim creation)
+sim = setup("my_model.toml", stepper="euler", jit=True)
+
+# Export sources through the model attribute
+files = sim.model.export_sources("./compiled_sources")
+```
+
 <details>
 <summary>Alternative: Using the standalone function</summary>
 
-You can also import and use the standalone function:
+You can also import and use the standalone function (exports additional `model_info.txt`):
 
 ```python
 from dynlib import build
@@ -35,6 +47,7 @@ from dynlib.compiler.build import export_model_sources
 
 model = build("my_model.toml", stepper="euler", jit=True)
 files = export_model_sources(model, "./compiled_sources")
+# Also includes files["info"] with model metadata
 ```
 
 However, the `model.export_sources()` method is more convenient and easier to discover.
@@ -42,13 +55,18 @@ However, the `model.export_sources()` method is more convenient and easier to di
 
 ## What Gets Exported?
 
-The `export_model_sources()` function exports:
+The `export_sources()` method exports all available compiled source code:
 
 1. **`rhs.py`** - The right-hand side function (derivatives for ODE, next state for maps)
 2. **`events_pre.py`** - Pre-step event handler
-3. **`events_post.py`** - Post-step event handler  
-4. **`stepper.py`** - The numerical integration stepper function
-5. **`model_info.txt`** - Summary of the model specification
+3. **`events_post.py`** - Post-step event handler
+4. **`update_aux.py`** - Auxiliary variable updater
+5. **`stepper.py`** - The numerical integration stepper function (if available)
+6. **`jvp.py`** - Jacobian-vector product function (if available)
+7. **`jacobian.py`** - Dense Jacobian filler function (if available)
+
+Note: The standalone `export_model_sources()` function additionally exports:
+- **`model_info.txt`** - Summary of the model specification
 
 ## Source Code Availability
 
@@ -167,10 +185,12 @@ Running `export_model_sources()` on a simple decay model produces:
 ```
 exported_model/
 ├── rhs.py                # Generated RHS function
-├── events_pre.py         # Pre-step events (empty if none)
-├── events_post.py        # Post-step events (empty if none)
-├── stepper.py            # Numerical integrator
-└── model_info.txt        # Model metadata
+├── events_pre.py         # Pre-step events
+├── events_post.py        # Post-step events
+└── update_aux.py         # Auxiliary variable updater
+
+Note: `stepper.py`, `jvp.py`, and `jacobian.py` may also be present if sources are available.
+The `model_info.txt` file is only created by the standalone `export_model_sources()` function.
 ```
 
 **`rhs.py` content:**
@@ -237,11 +257,15 @@ Export compiled model sources to a directory. This is the **preferred method** f
 - `Dict[str, Path]`: Mapping of component names to file paths
 
 **Exported Components:**
-- `"rhs"`: RHS function source
-- `"events_pre"`: Pre-event handler source
-- `"events_post"`: Post-event handler source  
-- `"stepper"`: Stepper function source
-- `"info"`: Model metadata text file
+- `"rhs"`: RHS function source (if available)
+- `"events_pre"`: Pre-event handler source (if available)
+- `"events_post"`: Post-event handler source (if available)
+- `"update_aux"`: Auxiliary variable updater source (if available)
+- `"stepper"`: Stepper function source (if available)
+- `"jvp"`: Jacobian-vector product source (if available)
+- `"jacobian"`: Dense Jacobian function source (if available)
+
+Note: Only components with available source code are exported. The standalone `export_model_sources()` function also exports an `"info"` key with model metadata.
 
 **Example:**
 ```python
@@ -252,7 +276,8 @@ files = model.export_sources("./output")
 
 # Access exported files
 rhs_file = files["rhs"]  # Path to rhs.py
-info_file = files["info"]  # Path to model_info.txt
+if "stepper" in files:
+    stepper_file = files["stepper"]  # Path to stepper.py
 ```
 
 ### `export_model_sources(model, output_dir)` (Alternative)
