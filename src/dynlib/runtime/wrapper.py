@@ -278,18 +278,20 @@ def run_with_wrapper(
             overflow=overflow,
         )
 
-    def _finalize_analysis_trace_view() -> tuple[np.ndarray | None, int | None]:
+    def _finalize_analysis_trace_view() -> tuple[np.ndarray | None, int | None, int]:
         if analysis is None or analysis_trace.shape[0] == 0:
-            return None, None
+            return None, None, 0
         filled_raw = int(analysis_trace_count[0])
         trace_view = analysis_trace[:filled_raw, :]
         filled = trace_view.shape[0]
+        offset = 0
         if analysis.trace:
             sl = analysis.finalize_trace(filled_raw)
             if sl is not None:
                 trace_view = trace_view[sl]
                 filled = trace_view.shape[0]
-        return trace_view, filled
+                offset = int(sl.start) if sl.start is not None else 0
+        return trace_view, filled, offset
 
     # Track the committed (t, dt) so re-entries resume from the correct point.
     t_curr = float(t0)
@@ -336,7 +338,7 @@ def run_with_wrapper(
             }
             final_dt = float(dt_next[0]) if step_curr > 0 else float(dt_curr)
             t_final = float(t_out[0])
-            trace_view, trace_filled = _finalize_analysis_trace_view()
+            trace_view, trace_filled, trace_offset = _finalize_analysis_trace_view()
             analysis_out_payload = analysis_out if (analysis is not None and analysis_out.size > 0) else None
             analysis_stride_payload = int(analysis_trace_stride) if (analysis is not None and int(analysis_trace_stride) > 0) else None
             return Results(
@@ -358,6 +360,7 @@ def run_with_wrapper(
                 analysis_trace=trace_view,
                 analysis_trace_filled=trace_filled,
                 analysis_trace_stride=analysis_stride_payload,
+                analysis_trace_offset=trace_offset,
                 analysis_modules=analysis_modules,
                 analysis_meta=_analysis_meta(status_value == TRACE_OVERFLOW),
             )
@@ -446,7 +449,7 @@ def run_with_wrapper(
                 "runtime": snapshot_workspace(runtime_ws),
             }
             final_dt = float(dt_next[0]) if step_curr > 0 else float(dt_curr)
-            trace_view, trace_filled = _finalize_analysis_trace_view()
+            trace_view, trace_filled, trace_offset = _finalize_analysis_trace_view()
             analysis_out_payload = analysis_out if (analysis is not None and analysis_out.size > 0) else None
             analysis_stride_payload = int(analysis_trace_stride) if (analysis is not None and int(analysis_trace_stride) > 0) else None
             return Results(
@@ -467,6 +470,7 @@ def run_with_wrapper(
                 analysis_trace=trace_view,
                 analysis_trace_filled=trace_filled,
                 analysis_trace_stride=analysis_stride_payload,
+                analysis_trace_offset=trace_offset,
                 analysis_modules=analysis_modules,
                 analysis_meta=_analysis_meta(status_value == TRACE_OVERFLOW),
             )

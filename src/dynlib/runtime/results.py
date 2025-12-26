@@ -59,6 +59,7 @@ class Results:
     analysis_trace: np.ndarray | None = None
     analysis_trace_filled: int | None = None
     analysis_trace_stride: int | None = None
+    analysis_trace_offset: int | None = None
     analysis_modules: tuple[object, ...] | None = None
     analysis_meta: Mapping[str, object] | None = None
 

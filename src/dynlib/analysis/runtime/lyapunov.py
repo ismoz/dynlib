@@ -8,6 +8,7 @@ import numpy as np
 
 from dynlib.runtime.fastpath.plans import FixedTracePlan
 from dynlib.runtime.runner_api import OK
+from dynlib.steppers.registry import list_steppers
 from .core import AnalysisHooks, AnalysisModule, AnalysisRequirements, TraceSpec
 
 if TYPE_CHECKING:  # pragma: no cover - type checking only
@@ -38,6 +39,13 @@ def _default_basis(n_state: int, k: int) -> np.ndarray:
     for j in range(k):
         Q[j, j] = 1.0
     return Q
+
+
+def _supported_variational_steppers() -> str:
+    names = list_steppers(variational_stepping=True)
+    if not names:
+        return "<none>"
+    return ", ".join(sorted(set(names)))
 
 
 def _resolve_mode(
@@ -121,7 +129,12 @@ def _make_hooks(
         trace_cap: int,
         trace_stride: int,
     ) -> None:
-        min_ws_size = 7 * n_state if variational_step_fn is not None else 2 * n_state
+        if runner_handles_variational:
+            min_ws_size = 2 * n_state
+        elif variational_step_fn is not None:
+            min_ws_size = 7 * n_state
+        else:
+            min_ws_size = 2 * n_state
         if analysis_ws.shape[0] < min_ws_size or analysis_out.shape[0] < 2:
             return
             
@@ -148,10 +161,7 @@ def _make_hooks(
                 # Signature: (t, dt, y_curr, v_curr, v_prop, params, runtime_ws, ws)
                 variational_step_fn(t, dt, y_curr, vec, out_vec, params, runtime_ws, var_ws)
             else:
-                # Fallback: Euler on variational equation
-                jvp_fn(t, y_curr, params, vec, out_vec, runtime_ws)
-                for i in range(n_state):
-                    out_vec[i] = vec[i] + dt * out_vec[i]
+                raise RuntimeError("Variational stepping requested without stepper support")
         else:
             # map: out_vec = J*v
             jvp_fn(t, y_curr, params, vec, out_vec, runtime_ws)
@@ -598,35 +608,36 @@ def lyapunov_mle(
         use_variational_combined = False
         if mode_use == "flow":
             stepper_spec = getattr(model_coerced, "stepper_spec", None)
-            if stepper_spec is not None:
-                stepper_meta = getattr(stepper_spec, "meta", None)
-                if stepper_meta is not None:
-                    caps = getattr(stepper_meta, "caps", None)
-                    if caps is not None and getattr(caps, "variational_stepping", False):
-                        # Prefer combined state+tangent stepping when available
-                        if hasattr(stepper_spec, "emit_step_with_variational"):
-                            try:
-                                variational_combined_fn = stepper_spec.emit_step_with_variational(
-                                    rhs_fn=getattr(model_coerced, "rhs", None),
-                                    jvp_fn=jvp_use,
-                                    model_spec=getattr(model_coerced, "spec", None),
-                                )
-                                use_variational_combined = variational_combined_fn is not None
-                            except Exception:
-                                variational_combined_fn = None
-                                use_variational_combined = False
-                        # Fallback: tangent-only variational stepping
-                        if not use_variational_combined and hasattr(stepper_spec, "emit_tangent_step"):
-                            try:
-                                if jvp_use is not None:
-                                    variational_step_fn = stepper_spec.emit_tangent_step(
-                                        jvp_fn=jvp_use,
-                                        model_spec=getattr(model_coerced, "spec", None)
-                                    )
-                                    use_variational = variational_step_fn is not None
-                            except Exception:
-                                # If variational stepping fails, fall back to Euler
-                                pass
+            supported = _supported_variational_steppers()
+            if stepper_spec is None:
+                raise ValueError(
+                    f"Selected stepper does not support variational stepping; results would be inconsistent. Use {supported}"
+                )
+            stepper_meta = getattr(stepper_spec, "meta", None)
+            caps = getattr(stepper_meta, "caps", None) if stepper_meta is not None else None
+            if caps is None or not getattr(caps, "variational_stepping", False):
+                raise ValueError(
+                    f"Selected stepper does not support variational stepping; results would be inconsistent. Use {supported}"
+                )
+            # Prefer combined state+tangent stepping when available
+            if hasattr(stepper_spec, "emit_step_with_variational"):
+                variational_combined_fn = stepper_spec.emit_step_with_variational(
+                    rhs_fn=getattr(model_coerced, "rhs", None),
+                    jvp_fn=jvp_use,
+                    model_spec=getattr(model_coerced, "spec", None),
+                )
+                use_variational_combined = variational_combined_fn is not None
+            # Fallback to tangent-only variational stepping (still within stepper)
+            if not use_variational_combined and hasattr(stepper_spec, "emit_tangent_step"):
+                variational_step_fn = stepper_spec.emit_tangent_step(
+                    jvp_fn=jvp_use,
+                    model_spec=getattr(model_coerced, "spec", None)
+                )
+                use_variational = variational_step_fn is not None
+            if not use_variational and not use_variational_combined:
+                raise ValueError(
+                    f"Selected stepper does not support variational stepping; results would be inconsistent. Use {supported}"
+                )
 
         return _LyapunovModule(
             jvp=jvp_use,
@@ -734,6 +745,15 @@ def _make_hooks_spectrum(
             kv3 = analysis_ws[start + 3 * n_state : start + 4 * n_state]
             kv4 = analysis_ws[start + 4 * n_state : start + 5 * n_state]
             var_ws = _VariationalWorkspace(v_stage, kv1, kv2, kv3, kv4)
+        var_ws = None
+        if variational_step_fn is not None:
+            start = 2 * n_state * k
+            v_stage = analysis_ws[start : start + n_state]
+            kv1 = analysis_ws[start + n_state : start + 2 * n_state]
+            kv2 = analysis_ws[start + 2 * n_state : start + 3 * n_state]
+            kv3 = analysis_ws[start + 3 * n_state : start + 4 * n_state]
+            kv4 = analysis_ws[start + 4 * n_state : start + 5 * n_state]
+            var_ws = _VariationalWorkspace(v_stage, kv1, kv2, kv3, kv4)
 
         # Initialize only if V is all zeros (allows user to pre-seed).
         any_nonzero = False
@@ -790,20 +810,12 @@ def _make_hooks_spectrum(
                 # Compute J*v into W[:, j]
                 v_col = V[:, j]
                 w_col = W[:, j]
-                if mode == 0 and variational_step_fn is not None:
+                if mode == 0:
+                    if variational_step_fn is None:
+                        raise RuntimeError("Variational stepping requested without stepper support")
                     variational_step_fn(t, dt, y_curr, v_col, w_col, params, runtime_ws, var_ws)
                 else:
                     jvp_fn(t, y_curr, params, v_col, w_col, runtime_ws)
-
-                    if mode == 0:
-                        # flow: Euler step for variational equation: v <- v + dt * (J*v)
-                        # Use W as the "new vectors"
-                        for i in range(n_state):
-                            w_col[i] = v_col[i] + dt * w_col[i]
-                    else:
-                        # map: W already holds J*v
-                        # nothing else to do
-                        pass
 
         # -------- Modified Gram–Schmidt (QR) on W (in place) --------
         # We only need diag(R); Q overwrites W and then we copy back to V.
@@ -1235,31 +1247,35 @@ def lyapunov_spectrum(
         variational_combined_fn = None
         use_variational_combined = False
         stepper_spec = getattr(model_coerced, "stepper_spec", None)
-        if mode_use == "flow" and stepper_spec is not None:
+        if mode_use == "flow":
+            supported = _supported_variational_steppers()
+            if stepper_spec is None:
+                raise ValueError(
+                    f"Selected stepper does not support variational stepping; results would be inconsistent. Use {supported}"
+                )
             stepper_meta = getattr(stepper_spec, "meta", None)
             caps = getattr(stepper_meta, "caps", None) if stepper_meta is not None else None
-            if caps is not None and getattr(caps, "variational_stepping", False):
-                if hasattr(stepper_spec, "emit_step_with_variational"):
-                    try:
-                        variational_combined_fn = stepper_spec.emit_step_with_variational(
-                            rhs_fn=getattr(model_coerced, "rhs", None),
-                            jvp_fn=jvp_use,
-                            model_spec=getattr(model_coerced, "spec", None),
-                        )
-                        use_variational_combined = variational_combined_fn is not None
-                    except Exception:
-                        variational_combined_fn = None
-                        use_variational_combined = False
-                if not use_variational_combined and hasattr(stepper_spec, "emit_tangent_step"):
-                    try:
-                        variational_step_fn = stepper_spec.emit_tangent_step(
-                            jvp_fn=jvp_use,
-                            model_spec=getattr(model_coerced, "spec", None),
-                        )
-                        use_variational = variational_step_fn is not None
-                    except Exception:
-                        variational_step_fn = None
-                        use_variational = False
+            if caps is None or not getattr(caps, "variational_stepping", False):
+                raise ValueError(
+                    f"Selected stepper does not support variational stepping; results would be inconsistent. Use {supported}"
+                )
+            if hasattr(stepper_spec, "emit_step_with_variational"):
+                variational_combined_fn = stepper_spec.emit_step_with_variational(
+                    rhs_fn=getattr(model_coerced, "rhs", None),
+                    jvp_fn=jvp_use,
+                    model_spec=getattr(model_coerced, "spec", None),
+                )
+                use_variational_combined = variational_combined_fn is not None
+            if not use_variational_combined and hasattr(stepper_spec, "emit_tangent_step"):
+                variational_step_fn = stepper_spec.emit_tangent_step(
+                    jvp_fn=jvp_use,
+                    model_spec=getattr(model_coerced, "spec", None),
+                )
+                use_variational = variational_step_fn is not None
+            if not use_variational and not use_variational_combined:
+                raise ValueError(
+                    f"Selected stepper does not support variational stepping; results would be inconsistent. Use {supported}"
+                )
 
         return _LyapunovSpectrumModule(
             jvp=jvp_use,

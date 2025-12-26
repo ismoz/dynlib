@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, NamedTuple
 import numpy as np
 
-from ..base import StepperMeta
+from ..base import StepperMeta, StepperCaps
 from ..config_base import ConfigMixin
 from dynlib.runtime.runner_api import OK
 
@@ -43,11 +43,13 @@ class EulerSpec(ConfigMixin):
                 embedded_order=None,
                 stiff=False,
                 aliases=("fwd_euler", "forward_euler"),
+                caps=StepperCaps(variational_stepping=True),
             )
         self.meta = meta
 
     class Workspace(NamedTuple):
         dy: np.ndarray
+        kv: np.ndarray
 
     def workspace_type(self) -> type | None:
         return EulerSpec.Workspace
@@ -60,6 +62,7 @@ class EulerSpec(ConfigMixin):
     ) -> Workspace:
         return EulerSpec.Workspace(
             dy=np.zeros((n_state,), dtype=dtype),
+            kv=np.zeros((n_state,), dtype=dtype),
         )
 
     def emit(self, rhs_fn: Callable, model_spec=None) -> Callable:
@@ -111,6 +114,61 @@ class EulerSpec(ConfigMixin):
             return OK
         
         return euler_stepper
+
+    def emit_tangent_step(
+        self,
+        jvp_fn: Callable,
+        model_spec=None
+    ) -> Callable:
+        """
+        Generate an Euler tangent-only stepping function.
+        """
+        def euler_tangent_step(
+            t, dt,
+            y_curr,
+            v_curr,
+            v_prop,
+            params,
+            runtime_ws,
+            ws,
+        ):
+            kv = ws.kv
+            jvp_fn(t, y_curr, params, v_curr, kv, runtime_ws)
+            n = v_curr.size
+            for i in range(n):
+                v_prop[i] = v_curr[i] + dt * kv[i]
+        return euler_tangent_step
+
+    def emit_step_with_variational(
+        self,
+        rhs_fn: Callable,
+        jvp_fn: Callable,
+        model_spec=None
+    ) -> Callable:
+        """
+        Generate combined state + tangent Euler stepper.
+        """
+        def euler_step_with_variational(
+            t, dt,
+            y_curr, v_curr,
+            y_prop, v_prop,
+            params, runtime_ws, ws,
+        ):
+            dy = ws.dy
+            kv = ws.kv
+
+            # State update
+            rhs_fn(t, y_curr, dy, params, runtime_ws)
+            n = y_curr.size
+            for i in range(n):
+                y_prop[i] = y_curr[i] + dt * dy[i]
+
+            # Tangent update
+            jvp_fn(t, y_curr, params, v_curr, kv, runtime_ws)
+            for i in range(n):
+                v_prop[i] = v_curr[i] + dt * kv[i]
+
+        return euler_step_with_variational
 
 
 # Auto-register on module import (optional; can also register explicitly in __init__.py)

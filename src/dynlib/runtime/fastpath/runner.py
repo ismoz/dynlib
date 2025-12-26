@@ -296,6 +296,7 @@ def _call_runner(
 
     analysis_trace_view = None
     analysis_trace_filled = None
+    analysis_trace_offset = None
     analysis_out_payload = None
     analysis_stride_payload = None
     analysis_modules = None
@@ -310,12 +311,15 @@ def _call_runner(
         if analysis_trace.shape[0] > 0:
             trace_view = analysis_trace[:filled_raw, :]
             analysis_trace_filled = trace_view.shape[0]
+            trace_offset = 0
             if analysis.trace:
                 sl = analysis.finalize_trace(filled_raw)
                 if sl is not None:
                     trace_view = trace_view[sl]
                     analysis_trace_filled = trace_view.shape[0]
+                    trace_offset = int(sl.start) if sl.start is not None else 0
             analysis_trace_view = trace_view
+            analysis_trace_offset = trace_offset
         analysis_meta = build_analysis_metadata(
             analysis_modules,
             analysis_kind=analysis_kind,
@@ -369,6 +373,7 @@ def _call_runner(
         analysis_trace=analysis_trace_view,
         analysis_trace_filled=analysis_trace_filled,
         analysis_trace_stride=analysis_stride_payload,
+        analysis_trace_offset=analysis_trace_offset,
         analysis_modules=analysis_modules,
         analysis_meta=analysis_meta,
     )

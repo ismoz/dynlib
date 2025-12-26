@@ -362,25 +362,45 @@ def _apply_tick_fontsizes(ax: plt.Axes, *, xtick_fs: float | None, ytick_fs: flo
             tick.set_fontsize(float(ytick_fs))
 
 
-def _apply_time_decor(
+def _apply_decor(
     ax: plt.Axes,
-    vlines: list[float | tuple[float, str]] | None,
-    bands: list[tuple[float, float] | tuple[float, float, str]] | None,
+    *,
+    vlines: list[float | tuple[float, str]] | None = None,
+    vbands: list[tuple[float, float] | tuple[float, float, str]] | None = None,
     vlines_kwargs: Mapping[str, Any] | None = None,
+    hlines: list[float | tuple[float, str]] | None = None,
+    hbands: list[tuple[float, float] | tuple[float, float, str]] | None = None,
+    hlines_kwargs: Mapping[str, Any] | None = None,
 ) -> None:
-    if bands:
-        for band in bands:
+    # --- Vertical Bands ---
+    if vbands:
+        for band in vbands:
             if len(band) == 2:
                 start, end = band
                 color = "C0"
             elif len(band) == 3:
                 start, end, color = band
             else:
-                raise ValueError(f"Band tuple must have 2 or 3 elements, got {len(band)}")
+                raise ValueError(f"vband tuple must have 2 or 3 elements, got {len(band)}")
             if start >= end:
-                raise ValueError(f"Band start time must be less than end time, got start={start}, end={end}")
+                raise ValueError(f"vband start must be less than end, got start={start}, end={end}")
             ax.axvspan(start, end, color=color, alpha=0.1)
 
+    # --- Horizontal Bands ---
+    if hbands:
+        for band in hbands:
+            if len(band) == 2:
+                start, end = band
+                color = "C0"
+            elif len(band) == 3:
+                start, end, color = band
+            else:
+                raise ValueError(f"hband tuple must have 2 or 3 elements, got {len(band)}")
+            if start >= end:
+                raise ValueError(f"hband start must be less than end, got start={start}, end={end}")
+            ax.axhspan(start, end, color=color, alpha=0.1)
+
+    # --- Vertical Lines ---
     if vlines is not None:
         # Draw vlines as usual (data x, span full y-range)
         default_vl_kw: dict[str, Any] = {
@@ -420,6 +440,44 @@ def _apply_time_decor(
                     transform=ax.transData,  # <-- data coordinates now
                     clip_on=True,    # keep it inside the axes
                     rotation_mode="anchor",
+                )
+
+    # --- Horizontal Lines ---
+    if hlines is not None:
+        default_hl_kw: dict[str, Any] = {
+            "color": "black",
+            "linestyle": "--",
+            "linewidth": 1.0,
+            "alpha": 0.7,
+        }
+        merged_hl_kw = {**default_hl_kw, **dict(hlines_kwargs)} if hlines_kwargs else default_hl_kw
+
+        xmin, xmax = ax.get_xlim()
+        pad = float(_theme.get("vline_label_pad"))  # Reuse same pad setting
+
+        # If pad < 1.0: interpret as fraction of axis width from right
+        if pad < 1.0:
+            x_text = xmax - pad * (xmax - xmin)
+        else:
+            x_text = xmax - pad
+
+        for item in hlines:
+            if isinstance(item, (tuple, list)) and len(item) == 2:
+                y, label = item
+            else:
+                y = float(item)
+                label = ""
+            ax.axhline(y, **merged_hl_kw)
+            if label:
+                ax.text(
+                    x_text,
+                    y,
+                    label,
+                    rotation=0,
+                    va="center",
+                    ha="right",
+                    transform=ax.transData,
+                    clip_on=True,
                 )
 
 
@@ -641,7 +699,11 @@ class _SeriesPlot:
         vlines: list[float | tuple[float, str]] | None = None,
         vlines_color: str | None = None,
         vlines_kwargs: Mapping[str, Any] | None = None,
-        bands: list[tuple[float, float] | tuple[float, float, str]] | None = None,
+        vbands: list[tuple[float, float] | tuple[float, float, str]] | None = None,
+        hlines: list[float | tuple[float, str]] | None = None,
+        hlines_color: str | None = None,
+        hlines_kwargs: Mapping[str, Any] | None = None,
+        hbands: list[tuple[float, float] | tuple[float, float, str]] | None = None,
         legend: bool = True,
         xlabel_rot: float | None = None,
         ylabel_rot: float | None = None,
@@ -680,7 +742,11 @@ class _SeriesPlot:
             vlines: Vertical lines at specified x values or (x, label) tuples
             vlines_color: Color for vertical lines
             vlines_kwargs: Additional kwargs for vertical lines
-            bands: Shaded regions as (start, end) or (start, end, color) tuples
+            vbands: Vertical shaded regions as (start, end) or (start, end, color) tuples
+            hlines: Horizontal lines at specified y values or (y, label) tuples
+            hlines_color: Color for horizontal lines
+            hlines_kwargs: Additional kwargs for horizontal lines
+            hbands: Horizontal shaded regions as (start, end) or (start, end, color) tuples
             legend: Whether to show legend if label is provided
             xlabel_rot: X-axis label rotation angle
             ylabel_rot: Y-axis label rotation angle
@@ -721,7 +787,23 @@ class _SeriesPlot:
         else:
             merged_vlines_kwargs = vlines_kwargs
 
-        _apply_time_decor(plot_ax, vlines, bands, merged_vlines_kwargs)
+        merged_hlines_kwargs: Mapping[str, Any] | None
+        if hlines_color is not None:
+            base_hl_kw = {} if hlines_kwargs is None else dict(hlines_kwargs)
+            base_hl_kw["color"] = hlines_color
+            merged_hlines_kwargs = base_hl_kw
+        else:
+            merged_hlines_kwargs = hlines_kwargs
+
+        _apply_decor(
+            plot_ax,
+            vlines=vlines,
+            vbands=vbands,
+            vlines_kwargs=merged_vlines_kwargs,
+            hlines=hlines,
+            hbands=hbands,
+            hlines_kwargs=merged_hlines_kwargs,
+        )
         _apply_tick_rotation(plot_ax, xlabel_rot=xlabel_rot, ylabel_rot=ylabel_rot, theme=_theme)
         _apply_tick_fontsizes(plot_ax, xtick_fs=xtick_fs, ytick_fs=ytick_fs)
         return plot_ax
@@ -746,7 +828,11 @@ class _SeriesPlot:
         vlines: list[float | tuple[float, str]] | None = None,
         vlines_color: str | None = None,
         vlines_kwargs: Mapping[str, Any] | None = None,
-        bands: list[tuple[float, float] | tuple[float, float, str]] | None = None,
+        vbands: list[tuple[float, float] | tuple[float, float, str]] | None = None,
+        hlines: list[float | tuple[float, str]] | None = None,
+        hlines_color: str | None = None,
+        hlines_kwargs: Mapping[str, Any] | None = None,
+        hbands: list[tuple[float, float] | tuple[float, float, str]] | None = None,
         legend: bool = True,
         xlabel_rot: float | None = None,
         ylabel_rot: float | None = None,
@@ -783,7 +869,11 @@ class _SeriesPlot:
             vlines: Vertical lines at specified x values or (x, label) tuples
             vlines_color: Color for vertical lines
             vlines_kwargs: Additional kwargs for vertical lines
-            bands: Shaded regions as (start, end) or (start, end, color) tuples
+            vbands: Vertical shaded regions as (start, end) or (start, end, color) tuples
+            hlines: Horizontal lines at specified y values or (y, label) tuples
+            hlines_color: Color for horizontal lines
+            hlines_kwargs: Additional kwargs for horizontal lines
+            hbands: Horizontal shaded regions as (start, end) or (start, end, color) tuples
             legend: Whether to show legend if label is provided
             xlabel_rot: X-axis label rotation angle
             ylabel_rot: Y-axis label rotation angle
@@ -840,7 +930,23 @@ class _SeriesPlot:
         else:
             merged_vlines_kwargs = vlines_kwargs
 
-        _apply_time_decor(plot_ax, vlines, bands, merged_vlines_kwargs)
+        merged_hlines_kwargs: Mapping[str, Any] | None
+        if hlines_color is not None:
+            base_hl_kw = {} if hlines_kwargs is None else dict(hlines_kwargs)
+            base_hl_kw["color"] = hlines_color
+            merged_hlines_kwargs = base_hl_kw
+        else:
+            merged_hlines_kwargs = hlines_kwargs
+
+        _apply_decor(
+            plot_ax,
+            vlines=vlines,
+            vbands=vbands,
+            vlines_kwargs=merged_vlines_kwargs,
+            hlines=hlines,
+            hbands=hbands,
+            hlines_kwargs=merged_hlines_kwargs,
+        )
         _apply_tick_rotation(plot_ax, xlabel_rot=xlabel_rot, ylabel_rot=ylabel_rot, theme=_theme)
         _apply_tick_fontsizes(plot_ax, xtick_fs=xtick_fs, ytick_fs=ytick_fs)
         return plot_ax
@@ -866,7 +972,11 @@ class _SeriesPlot:
         vlines: list[float | tuple[float, str]] | None = None,
         vlines_color: str | None = None,
         vlines_kwargs: Mapping[str, Any] | None = None,
-        bands: list[tuple[float, float] | tuple[float, float, str]] | None = None,
+        vbands: list[tuple[float, float] | tuple[float, float, str]] | None = None,
+        hlines: list[float | tuple[float, str]] | None = None,
+        hlines_color: str | None = None,
+        hlines_kwargs: Mapping[str, Any] | None = None,
+        hbands: list[tuple[float, float] | tuple[float, float, str]] | None = None,
         legend: bool = True,
         xlabel_rot: float | None = None,
         ylabel_rot: float | None = None,
@@ -904,7 +1014,11 @@ class _SeriesPlot:
             vlines: Vertical lines at specified x values or (x, label) tuples
             vlines_color: Color for vertical lines
             vlines_kwargs: Additional kwargs for vertical lines
-            bands: Shaded regions as (start, end) or (start, end, color) tuples
+            vbands: Vertical shaded regions as (start, end) or (start, end, color) tuples
+            hlines: Horizontal lines at specified y values or (y, label) tuples
+            hlines_color: Color for horizontal lines
+            hlines_kwargs: Additional kwargs for horizontal lines
+            hbands: Horizontal shaded regions as (start, end) or (start, end, color) tuples
             legend: Whether to show legend if label is provided
             xlabel_rot: X-axis label rotation angle
             ylabel_rot: Y-axis label rotation angle
@@ -945,7 +1059,23 @@ class _SeriesPlot:
         else:
             merged_vlines_kwargs = vlines_kwargs
 
-        _apply_time_decor(plot_ax, vlines, bands, merged_vlines_kwargs)
+        merged_hlines_kwargs: Mapping[str, Any] | None
+        if hlines_color is not None:
+            base_hl_kw = {} if hlines_kwargs is None else dict(hlines_kwargs)
+            base_hl_kw["color"] = hlines_color
+            merged_hlines_kwargs = base_hl_kw
+        else:
+            merged_hlines_kwargs = hlines_kwargs
+
+        _apply_decor(
+            plot_ax,
+            vlines=vlines,
+            vbands=vbands,
+            vlines_kwargs=merged_vlines_kwargs,
+            hlines=hlines,
+            hbands=hbands,
+            hlines_kwargs=merged_hlines_kwargs,
+        )
         _apply_tick_rotation(plot_ax, xlabel_rot=xlabel_rot, ylabel_rot=ylabel_rot, theme=_theme)
         _apply_tick_fontsizes(plot_ax, xtick_fs=xtick_fs, ytick_fs=ytick_fs)
         return plot_ax
@@ -965,7 +1095,11 @@ class _SeriesPlot:
         vlines: list[float | tuple[float, str]] | None = None,
         vlines_color: str | None = None,
         vlines_kwargs: Mapping[str, Any] | None = None,
-        bands: list[tuple[float, float] | tuple[float, float, str]] | None = None,
+        vbands: list[tuple[float, float] | tuple[float, float, str]] | None = None,
+        hlines: list[float | tuple[float, str]] | None = None,
+        hlines_color: str | None = None,
+        hlines_kwargs: Mapping[str, Any] | None = None,
+        hbands: list[tuple[float, float] | tuple[float, float, str]] | None = None,
         legend: bool = False,
         xlabel_rot: float | None = None,
         ylabel_rot: float | None = None,
@@ -998,7 +1132,11 @@ class _SeriesPlot:
             vlines: Vertical lines at specified x values or (x, label) tuples
             vlines_color: Color for vertical lines
             vlines_kwargs: Additional kwargs for vertical lines
-            bands: Shaded regions as (start, end) or (start, end, color) tuples
+            vbands: Vertical shaded regions as (start, end) or (start, end, color) tuples
+            hlines: Horizontal lines at specified y values or (y, label) tuples
+            hlines_color: Color for horizontal lines
+            hlines_kwargs: Additional kwargs for horizontal lines
+            hbands: Horizontal shaded regions as (start, end) or (start, end, color) tuples
             legend: Whether to show legend
             xlabel_rot: X-axis label rotation angle
             ylabel_rot: Y-axis label rotation angle
@@ -1044,7 +1182,23 @@ class _SeriesPlot:
         else:
             merged_vlines_kwargs = vlines_kwargs
 
-        _apply_time_decor(plot_ax, vlines, bands, merged_vlines_kwargs)
+        merged_hlines_kwargs: Mapping[str, Any] | None
+        if hlines_color is not None:
+            base_hl_kw = {} if hlines_kwargs is None else dict(hlines_kwargs)
+            base_hl_kw["color"] = hlines_color
+            merged_hlines_kwargs = base_hl_kw
+        else:
+            merged_hlines_kwargs = hlines_kwargs
+
+        _apply_decor(
+            plot_ax,
+            vlines=vlines,
+            vbands=vbands,
+            vlines_kwargs=merged_vlines_kwargs,
+            hlines=hlines,
+            hbands=hbands,
+            hlines_kwargs=merged_hlines_kwargs,
+        )
         _apply_tick_rotation(plot_ax, xlabel_rot=xlabel_rot, ylabel_rot=ylabel_rot, theme=_theme)
         _apply_tick_fontsizes(plot_ax, xtick_fs=xtick_fs, ytick_fs=ytick_fs)
         return plot_ax

@@ -1,42 +1,24 @@
 from dynlib import setup
 from dynlib.plot import series, export, theme
 
-
 """
 This example demonstrate lagging mechanism to detect trasition 
 from negative to positive value in one of the state variables 
 of a chaotic system.
 """
 
-lorenz = '''
+detect_mod = '''
 inline:
-[model]
-type="ode"
-name="lorenz"
+[mod]
+name = "detect_transition"
 
-[states]
-x=0.1
-y=0.1
-z=0.1
-
-[params]
-sigma=10.0
-rho=28.0
-beta="8/3"
-
-[equations.rhs]
-x = "sigma * (y - x)"
-y = "x * (rho - z) - y"
-z = "x * y - beta * z"
-
-[events.detect]
+[mod.add.events.detect]
 cond = "cross_up(x, 0)"
 phase = "post"
 log = ["t"]
-
 '''
 
-sim = setup(lorenz, stepper="rk4", jit=False)
+sim = setup("builtin://ode/lorenz", stepper="rk4", jit=False, mods=[detect_mod])
 sim.config(dt=0.01)
 sim.run(T=50.0, transient=10.0)
 

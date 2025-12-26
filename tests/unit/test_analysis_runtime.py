@@ -100,6 +100,23 @@ def _increment_factory(name: str):
     return _factory
 
 
+def _tracking_analysis(call_log: list[float]):
+    """Records every step time into call_log for verification."""
+    def _post(
+        t, dt, step, y_curr, y_prev, params, runtime_ws, analysis_ws, analysis_out, trace_buf, trace_count, trace_cap, trace_stride
+    ):
+        call_log.append(float(t))
+
+    return AnalysisModule(
+        name="tracker",
+        requirements=AnalysisRequirements(fixed_step=True),
+        workspace_size=0,
+        output_size=0,
+        trace=None,
+        hooks=AnalysisHooks(post_step=_post),
+    )
+
+
 def _build_map_model(jit: bool = False) -> FullModel:
     toml_str = """
 [model]
@@ -301,6 +318,18 @@ x = "-a * x"
         assert support.reason is None
     else:
         assert "jit" in (support.reason or "").lower()
+
+
+def test_transient_warmup_skips_analysis_hooks():
+    model = _build_map_model(jit=False)
+    sim = Sim(model)
+    calls: list[float] = []
+    analysis = _tracking_analysis(calls)
+
+    sim.run(N=5, transient=3, analysis=analysis)
+
+    assert len(calls) == 5
+    assert min(calls) >= 3.0
 
 
 def test_lyapunov_matches_wrapper_and_fastpath():

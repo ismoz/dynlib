@@ -233,6 +233,28 @@ class CombinedAnalysis(AnalysisModule):
         if not modules:
             raise ValueError("CombinedAnalysis requires at least one module")
         self.modules: tuple[AnalysisModule, ...] = tuple(modules)
+
+        if any(mod.requirements.mutates_state for mod in self.modules):
+            raise ValueError("CombinedAnalysis does not support analyses that mutate state")
+
+        def _wants_runner_variational(mod: AnalysisModule) -> bool:
+            if getattr(mod.requirements, "variational_in_step", False):
+                return True
+            runner_var = getattr(mod, "runner_variational_step", None)
+            if callable(runner_var):
+                try:
+                    return runner_var(jit=False) is not None
+                except Exception:
+                    return False
+            return False
+
+        variational_children = sum(1 for mod in self.modules if _wants_runner_variational(mod))
+        if variational_children > 1:
+            raise ValueError(
+                "Multiple analyses require runner-level variational stepping (state+tangent integration). "
+                "The runner can accept only one variational integrator per step. Run these analyses separately."
+            )
+
         req = self._merge_requirements(modules)
         trace_spec = self._merge_trace_specs(modules)
         workspace = sum(mod.workspace_size for mod in modules)

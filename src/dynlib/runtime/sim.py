@@ -218,6 +218,7 @@ class _ResultAccumulator:
         analysis_trace: np.ndarray | None = None,
         analysis_trace_filled: int | None = None,
         analysis_trace_stride: int | None = None,
+        analysis_trace_offset: int | None = None,
         analysis_modules: tuple[object, ...] | None = None,
         analysis_meta: Mapping[str, object] | None = None,
     ) -> Results:
@@ -245,6 +246,7 @@ class _ResultAccumulator:
             analysis_trace=analysis_trace,
             analysis_trace_filled=analysis_trace_filled,
             analysis_trace_stride=analysis_trace_stride,
+            analysis_trace_offset=analysis_trace_offset,
             analysis_modules=analysis_modules,
             analysis_meta=analysis_meta,
         )
@@ -654,6 +656,7 @@ class Sim:
                 transient_N = max_steps  # Use max_steps as guard
             
             # For transient, we don't care about recording selection - use empty arrays
+            # Analyses are disabled during warm-up; they should only run during the recorded segment.
             warm_result = self._execute_run(
                 seed=run_seed,
                 t_end=transient_T,
@@ -670,7 +673,7 @@ class Sim:
                 aux_rec_indices=np.array([], dtype=np.int32),
                 state_names=[],
                 aux_names=[],
-                analysis=analysis_mod,
+                analysis=None,
             )
             self._ensure_runner_done(warm_result, phase="transient warm-up")
             self._session_state = self._state_from_results(
@@ -2527,6 +2530,7 @@ class Sim:
             analysis_trace=last_result.analysis_trace,
             analysis_trace_filled=last_result.analysis_trace_filled,
             analysis_trace_stride=last_result.analysis_trace_stride,
+            analysis_trace_offset=getattr(last_result, "analysis_trace_offset", None),
             analysis_modules=last_result.analysis_modules,
             analysis_meta=getattr(last_result, "analysis_meta", None),
         )

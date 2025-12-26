@@ -58,7 +58,7 @@ class AnalysisResult(Mapping[str, object]):
     Provides both Mapping interface (backward compat) and attribute access (ergonomic).
     Automatically exposes output_names and trace_names as attributes/keys.
     
-    Mapping keys: "out", "trace", "stride", "output_names", "trace_names"
+    Mapping keys: "out", "trace", "trace_steps", "trace_time", "record_interval", "stride", "output_names", "trace_names"
     Named access: Any name from output_names or trace_names
     
     Examples:
@@ -83,6 +83,8 @@ class AnalysisResult(Mapping[str, object]):
         out: np.ndarray | None,
         trace: np.ndarray | None,
         stride: int | None,
+        trace_steps: np.ndarray | None,
+        trace_time: np.ndarray | None,
         output_names: Tuple[str, ...] | None,
         trace_names: Tuple[str, ...] | None,
     ):
@@ -90,6 +92,8 @@ class AnalysisResult(Mapping[str, object]):
         self._out = out
         self._trace = trace
         self._stride = stride
+        self._trace_steps = trace_steps
+        self._trace_time = trace_time
         self._output_names = output_names or ()
         self._trace_names = trace_names or ()
         
@@ -101,8 +105,10 @@ class AnalysisResult(Mapping[str, object]):
             name: idx for idx, name in enumerate(self._trace_names)
         }
         
-        # Core mapping keys
-        self._keys = frozenset(["out", "trace", "stride", "output_names", "trace_names"])
+        # Core mapping keys (record_interval is the user-facing alias)
+        self._keys = frozenset(
+            ["out", "trace", "trace_steps", "trace_time", "record_interval", "stride", "output_names", "trace_names"]
+        )
     
     # ---- Mapping interface (backward compat) ----
     
@@ -113,6 +119,12 @@ class AnalysisResult(Mapping[str, object]):
             return self._out
         if key == "trace":
             return self._trace
+        if key == "trace_steps":
+            return self._trace_steps
+        if key == "trace_time":
+            return self._trace_time
+        if key == "record_interval":
+            return self._stride
         if key == "stride":
             return self._stride
         if key == "output_names":
@@ -235,10 +247,25 @@ class AnalysisResult(Mapping[str, object]):
     def trace(self) -> np.ndarray | None:
         """Raw trace array (all columns)."""
         return self._trace
+
+    @property
+    def trace_steps(self) -> np.ndarray | None:
+        """Step indices corresponding to trace rows."""
+        return self._trace_steps
+
+    @property
+    def trace_time(self) -> np.ndarray | None:
+        """Time values corresponding to trace rows (if available)."""
+        return self._trace_time
     
     @property
     def stride(self) -> int | None:
         """Trace recording stride."""
+        return self._stride
+
+    @property
+    def record_interval(self) -> int | None:
+        """Trace recording interval (user-facing alias of stride)."""
         return self._stride
     
     @property
@@ -397,30 +424,53 @@ class ResultsView:
         trace_attr = getattr(self._raw, "analysis_trace_view", None)
         trace = trace_attr() if callable(trace_attr) else trace_attr
         stride = getattr(self._raw, "analysis_trace_stride", None)
+        trace_start_offset = getattr(self._raw, "analysis_trace_offset", None)
         result: Dict[str, AnalysisResult] = {}
         out_offset = 0
-        trace_offset = 0
+        trace_col_offset = 0
         for mod in modules:
             out_slice = None
             if out is not None and mod.output_size > 0:
                 out_slice = out[out_offset : out_offset + mod.output_size]
             trace_slice = None
             if trace is not None and mod.trace is not None and trace.size > 0:
-                trace_slice = trace[:, trace_offset : trace_offset + mod.trace.width]
+                trace_slice = trace[:, trace_col_offset : trace_col_offset + mod.trace.width]
             
+            trace_steps = None
+            trace_time = None
+            if trace_slice is not None and trace_slice.size > 0 and stride is not None:
+                steps = self._raw.STEP_view
+                stride_val = int(stride)
+                if steps.size > 0 and stride_val > 0:
+                    step_start = int(steps[0])
+                    offset_val = int(trace_start_offset or 0)
+                    first_step = step_start + ((stride_val - (step_start % stride_val)) % stride_val)
+                    trace_len = trace_slice.shape[0]
+                    trace_steps = first_step + (offset_val + np.arange(trace_len)) * stride_val
+                    if self._raw.T_view.size > 1:
+                        t_vals = self._raw.T_view
+                        step_vals = steps
+                        step_delta = int(step_vals[1] - step_vals[0])
+                        if step_delta != 0:
+                            dt = (t_vals[1] - t_vals[0]) / float(step_delta)
+                            t0 = t_vals[0] - dt * float(step_vals[0])
+                            trace_time = t0 + dt * trace_steps
+
             # Wrap in AnalysisResult for ergonomic access
             result[mod.name] = AnalysisResult(
                 name=mod.name,
                 out=out_slice,
                 trace=trace_slice,
                 stride=int(stride) if stride is not None and mod.trace is not None else None,
+                trace_steps=trace_steps,
+                trace_time=trace_time,
                 output_names=mod.output_names,
                 trace_names=mod.trace_names,
             )
             
             out_offset += mod.output_size
             if mod.trace is not None:
-                trace_offset += mod.trace.width
+                trace_col_offset += mod.trace.width
         return result
 
     @property

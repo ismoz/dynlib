@@ -2,6 +2,30 @@
 
 ---
 
+## [2.35.3] – 2025-12-27
+### Added
+- Added `builtin://ode/lorenz` model definition.
+- Added support for horizontal lines (`hlines`) and horizontal bands (`hbands`) in plot utilities.
+- Added variational stepping support to `Euler` stepper. Both Euler and RK4 now advertise 
+  `variational_stepping=True` capability.
+- Added `lyapunov_lorenz_demo.py` demonstrating Max Lyapunov and Lyapunov spectrum analyses of the Lorenz system.
+
+### Changed
+- Renamed `bands` argument to `vbands` in plot functions to distinguish from the new `hbands`.
+- Lyapunov analyses (`lyapunov_mle`, `lyapunov_spectrum`) now strictly require the stepper to support variational 
+  stepping. If the stepper does not support it, a `ValueError` is raised (no longer falls back to Euler).
+- `CombinedAnalysis` now enforces stricter rules:
+    - Rejects combination if more than one analysis requires runner-level variational stepping.
+    - Rejects combination if any analysis mutates state.
+- `AnalysisResult` now provides `trace_steps`, `trace_time`, and `record_interval` attributes.
+- Transient warm-up phase now explicitly disables analysis hooks.
+
+### Tests
+- Updated `test_rk4_variational.py` to reflect strict stepper requirements and new `CombinedAnalysis` rules. 
+  Added `test_transient_warmup_skips_analysis_hooks`.
+
+---
+
 ## [2.35.3] – 2025-12-24
 ### Added
 - Variational stepping support (simultaneous numerical integration of both the original dynamical system and 
