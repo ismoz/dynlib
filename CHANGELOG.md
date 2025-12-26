@@ -2,7 +2,7 @@
 
 ---
 
-## [2.35.3] – 2025-12-27
+## [2.35.4] – 2025-12-27
 ### Added
 - Added `builtin://ode/lorenz` model definition.
 - Added support for horizontal lines (`hlines`) and horizontal bands (`hbands`) in plot utilities.
