@@ -51,8 +51,27 @@ class EulerSpec(ConfigMixin):
         dy: np.ndarray
         kv: np.ndarray
 
+    class VariationalWorkspace(NamedTuple):
+        kv: np.ndarray
+
     def workspace_type(self) -> type | None:
         return EulerSpec.Workspace
+
+    def variational_workspace(self, n_state: int, model_spec=None):
+        """
+        Return the size and factory for the variational workspace.
+        
+        Returns:
+            (size, factory_fn)
+            factory_fn(analysis_ws, start, n_state) -> VariationalWorkspace
+        """
+        size = 1 * n_state
+        
+        def factory(analysis_ws, start, n_state):
+            kv = analysis_ws[start : start + n_state]
+            return EulerSpec.VariationalWorkspace(kv)
+            
+        return size, factory
 
     def make_workspace(
         self,

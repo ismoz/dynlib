@@ -1,10 +1,9 @@
 # src/dynlib/runtime/stepper_checks.py
 from __future__ import annotations
 
-import warnings
 import numpy as np
 
-from dynlib.errors import ConfigError, StepperJitCapabilityError
+from dynlib.errors import ConfigError, StepperJitCapabilityError, JITUnavailableError
 from dynlib.runtime.softdeps import SoftDepState
 from dynlib.steppers.base import StepperCaps, StepperSpec
 
@@ -39,11 +38,9 @@ def check_stepper(
     # ------------------------------------------------------------------ #
     if jit:
         if not deps.numba:
-            warnings.warn(
+            raise JITUnavailableError(
                 f"Stepper '{stepper_name}' requested with jit=True, "
-                "but numba is not available. Falling back to pure Python.",
-                RuntimeWarning,
-                stacklevel=3,
+                "but numba is not available. Install numba or pass jit=False."
             )
         elif not caps.jit_capable:
             raise StepperJitCapabilityError(stepper_name=stepper_name)

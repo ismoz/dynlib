@@ -63,8 +63,35 @@ class RK4Spec(ConfigMixin):
         kv3: np.ndarray
         kv4: np.ndarray
 
+    class VariationalWorkspace(NamedTuple):
+        v_stage: np.ndarray
+        kv1: np.ndarray
+        kv2: np.ndarray
+        kv3: np.ndarray
+        kv4: np.ndarray
+
     def workspace_type(self) -> type | None:
         return RK4Spec.Workspace
+
+    def variational_workspace(self, n_state: int, model_spec=None):
+        """
+        Return the size and factory for the variational workspace.
+        
+        Returns:
+            (size, factory_fn)
+            factory_fn(analysis_ws, start, n_state) -> VariationalWorkspace
+        """
+        size = 5 * n_state
+        
+        def factory(analysis_ws, start, n_state):
+            v_stage = analysis_ws[start : start + n_state]
+            kv1 = analysis_ws[start + n_state : start + 2 * n_state]
+            kv2 = analysis_ws[start + 2 * n_state : start + 3 * n_state]
+            kv3 = analysis_ws[start + 3 * n_state : start + 4 * n_state]
+            kv4 = analysis_ws[start + 4 * n_state : start + 5 * n_state]
+            return RK4Spec.VariationalWorkspace(v_stage, kv1, kv2, kv3, kv4)
+            
+        return size, factory
 
     def make_workspace(
         self,

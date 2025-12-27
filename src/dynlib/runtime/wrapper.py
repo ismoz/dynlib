@@ -20,6 +20,10 @@ from dynlib.runtime.workspace import (
 )
 from dynlib.runtime.initial_step import WRMSConfig, choose_initial_dt_wrms
 from dynlib.analysis.runtime import AnalysisModule, analysis_noop_hook, analysis_noop_variational_step
+from dynlib.compiler.codegen.runner_variants import (
+    get_runner_variant,
+    get_runner_variant_discrete,
+)
 
 __all__ = ["run_with_wrapper"]
 
@@ -70,6 +74,9 @@ def run_with_wrapper(
     wrms_cfg: WRMSConfig | None = None,
     analysis: AnalysisModule | None = None,
     adaptive: bool = False,
+    model_hash: str | None = None,
+    stepper_name: str | None = None,
+    use_runner_variants: bool = True,
 ) -> Results:
     """
     Orchestrates runner calls while managing workspaces and growth/re-entry.
@@ -208,6 +215,11 @@ def run_with_wrapper(
                 dt_curr = 1e-6
 
     is_jit_runner = _is_jitted(runner)
+    variant_ready = bool(use_runner_variants and analysis is not None and model_hash and stepper_name)
+    if variant_ready:
+        is_jit_runner = all(
+            _is_jitted(obj) for obj in (stepper, rhs, events_pre, events_post, update_aux)
+        )
 
     # Analysis buffers (persist across re-entry)
     if analysis is not None:
@@ -238,10 +250,15 @@ def run_with_wrapper(
             analysis_trace_cap = np.int64(0)
             analysis_trace_stride = np.int64(0)
         analysis_trace_count = np.zeros((1,), dtype=np.int64)
-        resolved_hooks = analysis.resolve_hooks(jit=is_jit_runner, dtype=dtype)
-        noop_hook = analysis_noop_hook()
-        analysis_dispatch_pre = resolved_hooks.pre_step or noop_hook
-        analysis_dispatch_post = resolved_hooks.post_step or noop_hook
+        if variant_ready:
+            noop_hook = analysis_noop_hook()
+            analysis_dispatch_pre = noop_hook
+            analysis_dispatch_post = noop_hook
+        else:
+            resolved_hooks = analysis.resolve_hooks(jit=is_jit_runner, dtype=dtype)
+            noop_hook = analysis_noop_hook()
+            analysis_dispatch_pre = resolved_hooks.pre_step or noop_hook
+            analysis_dispatch_post = resolved_hooks.post_step or noop_hook
         variational_step_enabled = np.int32(0)
         variational_step_fn = analysis_noop_variational_step()
         runner_var = getattr(analysis, "runner_variational_step", None)
@@ -296,31 +313,71 @@ def run_with_wrapper(
     # Track the committed (t, dt) so re-entries resume from the correct point.
     t_curr = float(t0)
 
+    if variant_ready:
+        if discrete:
+            runner = get_runner_variant_discrete(
+                model_hash=model_hash,
+                stepper_name=stepper_name,
+                analysis=analysis,
+                dtype=dtype,
+                jit=is_jit_runner,
+            )
+        else:
+            runner = get_runner_variant(
+                model_hash=model_hash,
+                stepper_name=stepper_name,
+                analysis=analysis,
+                dtype=dtype,
+                jit=is_jit_runner,
+            )
+
     # Attempt/re-entry loop
     while True:
         horizon_arg = steps_horizon if discrete else float(t_end)
-        status = runner(
-            t_curr, horizon_arg, dt_curr,
-            int(max_steps), int(n_state), int(rec_every),
-            y_curr, y_prev, params,
-            runtime_ws,
-            stepper_ws,
-            stepper_config,
-            y_prop, t_prop, dt_next, err_est,
-            T, Y, AUX, STEP, FLAGS,
-            EVT_CODE, EVT_INDEX, EVT_LOG_DATA,
-            evt_log_scratch,
-            analysis_ws, analysis_out, analysis_trace,
-            analysis_trace_count, int(analysis_trace_cap), int(analysis_trace_stride),
-            int(analysis_kind),
-            analysis_dispatch_pre, analysis_dispatch_post,
-            int(variational_step_enabled), variational_step_fn,
-            i_start, step_start, int(cap_rec), int(cap_evt),
-            user_break_flag, status_out, hint_out,
-            i_out, step_out, t_out,
-            stepper, rhs, events_pre, events_post, update_aux,
-            state_record_indices, aux_record_indices, n_rec_states, n_rec_aux,
-        )
+        if variant_ready:
+            status = runner(
+                t_curr, horizon_arg, dt_curr,
+                int(max_steps), int(n_state), int(rec_every),
+                y_curr, y_prev, params,
+                runtime_ws,
+                stepper_ws,
+                stepper_config,
+                y_prop, t_prop, dt_next, err_est,
+                T, Y, AUX, STEP, FLAGS,
+                EVT_CODE, EVT_INDEX, EVT_LOG_DATA,
+                evt_log_scratch,
+                analysis_ws, analysis_out, analysis_trace,
+                analysis_trace_count, int(analysis_trace_cap), int(analysis_trace_stride),
+                int(variational_step_enabled), variational_step_fn,
+                i_start, step_start, int(cap_rec), int(cap_evt),
+                user_break_flag, status_out, hint_out,
+                i_out, step_out, t_out,
+                stepper, rhs, events_pre, events_post, update_aux,
+                state_record_indices, aux_record_indices, n_rec_states, n_rec_aux,
+            )
+        else:
+            status = runner(
+                t_curr, horizon_arg, dt_curr,
+                int(max_steps), int(n_state), int(rec_every),
+                y_curr, y_prev, params,
+                runtime_ws,
+                stepper_ws,
+                stepper_config,
+                y_prop, t_prop, dt_next, err_est,
+                T, Y, AUX, STEP, FLAGS,
+                EVT_CODE, EVT_INDEX, EVT_LOG_DATA,
+                evt_log_scratch,
+                analysis_ws, analysis_out, analysis_trace,
+                analysis_trace_count, int(analysis_trace_cap), int(analysis_trace_stride),
+                int(analysis_kind),
+                analysis_dispatch_pre, analysis_dispatch_post,
+                int(variational_step_enabled), variational_step_fn,
+                i_start, step_start, int(cap_rec), int(cap_evt),
+                user_break_flag, status_out, hint_out,
+                i_out, step_out, t_out,
+                stepper, rhs, events_pre, events_post, update_aux,
+                state_record_indices, aux_record_indices, n_rec_states, n_rec_aux,
+            )
 
         status_value = int(status)
 

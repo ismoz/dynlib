@@ -3,12 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Callable, Optional, Tuple
-import warnings
 
 from dynlib.runtime.softdeps import softdeps
+from dynlib.errors import JITUnavailableError
 
 # JIT toggle applied *only here*.
-# If numba missing or jit=False, we return original Python callables.
+# If numba is missing and jit=True, we raise to avoid silent fallbacks.
 
 __all__ = ["maybe_jit_triplet", "jit_compile"]
 
@@ -33,7 +33,7 @@ def jit_compile(fn: Callable, *, jit: bool = True, cache: bool = False) -> Jitte
     
     Behavior:
         - If jit=False: returns original Python function
-        - If jit=True and numba not installed: warns and returns original function
+        - If jit=True and numba not installed: raises RuntimeError
         - If jit=True and numba installed but compilation fails: raises RuntimeError with details
     
     Args:
@@ -41,24 +41,20 @@ def jit_compile(fn: Callable, *, jit: bool = True, cache: bool = False) -> Jitte
         jit: Whether to apply JIT compilation (default True)
     
     Returns:
-        JIT-compiled function if successful, or original function with warning
+        JIT-compiled function if successful
     
     Raises:
-        RuntimeError: If numba is installed but compilation fails
+        RuntimeError: If numba is missing or compilation fails
     """
     if not jit:
         return JittedCallable(fn=fn, cache_digest=None, cache_hit=False, component=None)
     
     deps = softdeps()
     if not deps.numba:
-        # Numba not installed: graceful fallback with warning
-        warnings.warn(
-            "Numba not found; falling back to pure Python (slower). "
-            "Install numba for 10-100x speedup: pip install numba",
-            RuntimeWarning,
-            stacklevel=3  # Point to caller's caller
+        raise JITUnavailableError(
+            "jit=True requires numba, but numba is not installed. "
+            "Install numba or pass jit=False."
         )
-        return JittedCallable(fn=fn, cache_digest=None, cache_hit=False, component=None)
 
     if cache:
         artifact = _jit_compile_with_disk_cache(fn)

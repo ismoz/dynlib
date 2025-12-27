@@ -33,7 +33,7 @@ series.plot(x=res.t, y=res["v"],
             ax=ax,
             ylim=(-80, 50),
             title="Membrane Potential (v)",
-            bands=[(0,T0,"b"), (T0,T1,"m"), (T1,T2,"g"), (T2,T3,"r"), (T3,T4,"c")],
+            vbands=[(0,T0,"b"), (T0,T1,"m"), (T1,T2,"g"), (T2,T3,"r"), (T3,T4,"c")],
             vlines=[(0, "I=0"), (T0, "I=5"), (T1, "I=10"), (T2, "I=15"), (T3, "I=10")],
             vlines_color="red")    
 export.show()

@@ -66,18 +66,11 @@ bifurcation_diagram(
     title="Bifurcation Diagram: Logistic Map (Full Range)",
     title_fs=14,
     ylabel_fs=12,
+    vlines=[(1.0, 'r=1\n(transcritical)'), (3.0, 'r=3\n(period-2)'), (3.449, 'r≈3.45\n(period-4)'), (3.57, 'r≈3.57\n(chaos)')],
+    vlines_kwargs={'linestyle': '--', 'alpha': 0.3, 'linewidth': 1, 'label_rotation': 0, 'label_position': 'bottom', 'color': 'blue'},
 )
 
 # Add annotations for key bifurcation points
-ax[0, 0].axvline(x=1.0, color='red', linestyle='--', alpha=0.3, linewidth=1)
-ax[0, 0].axvline(x=3.0, color='orange', linestyle='--', alpha=0.3, linewidth=1)
-ax[0, 0].axvline(x=3.449, color='green', linestyle='--', alpha=0.3, linewidth=1)
-ax[0, 0].axvline(x=3.57, color='blue', linestyle='--', alpha=0.3, linewidth=1)
-
-ax[0, 0].text(1.0, 0.92, 'r=1\n(transcritical)', ha='center', fontsize=8, color='red')
-ax[0, 0].text(3.0, 0.92, 'r=3\n(period-2)', ha='center', fontsize=8, color='orange')
-ax[0, 0].text(3.449, 0.92, 'r≈3.45\n(period-4)', ha='center', fontsize=8, color='green')
-ax[0, 0].text(3.57, 0.92, 'r≈3.57\n(chaos)', ha='center', fontsize=8, color='blue')
 
 # Panel 2: Zoomed into cascade
 bifurcation_diagram(

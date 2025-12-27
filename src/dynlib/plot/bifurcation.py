@@ -7,6 +7,7 @@ from typing import Any
 
 from . import _theme
 from ._primitives import (
+    _apply_decor,
     _apply_labels,
     _apply_limits,
     _apply_tick_fontsizes,
@@ -65,6 +66,9 @@ def bifurcation_diagram(
     title_fs: float | None = None,
     xtick_fs: float | None = None,
     ytick_fs: float | None = None,
+    vlines: list[float | tuple[float, str]] | None = None,
+    vlines_color: str | None = None,
+    vlines_kwargs: dict[str, Any] | None = None,
 ):
     """
     Scatter-style bifurcation diagram plot.
@@ -116,5 +120,18 @@ def bifurcation_diagram(
         )
         _apply_tick_rotation(plot_ax, xlabel_rot=xlabel_rot, ylabel_rot=ylabel_rot, theme=_theme)
         _apply_tick_fontsizes(plot_ax, xtick_fs=xtick_fs, ytick_fs=ytick_fs)
+        
+        # Apply decorations (vlines, etc.)
+        if vlines_color is not None:
+            if vlines_kwargs is None:
+                vlines_kwargs = {}
+            vlines_kwargs = dict(vlines_kwargs)
+            vlines_kwargs["color"] = vlines_color
+        
+        _apply_decor(
+            plot_ax,
+            vlines=vlines,
+            vlines_kwargs=vlines_kwargs,
+        )
     
     return plot_ax

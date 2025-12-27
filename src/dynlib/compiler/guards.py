@@ -16,11 +16,11 @@ from __future__ import annotations
 import math
 from typing import Callable, Optional
 from pathlib import Path
-import warnings
 import textwrap
 import inspect
 
 from dynlib.runtime.softdeps import softdeps
+from dynlib.errors import JITUnavailableError
 
 __all__ = [
     "allfinite1d",
@@ -197,7 +197,7 @@ def get_guards(*, jit: bool = True, disk_cache: bool = True) -> tuple[Callable, 
     
     Behavior:
         - If jit=False: returns pure Python functions
-        - If jit=True and numba not installed: warns and returns pure Python
+        - If jit=True and numba not installed: raises RuntimeError
         - If jit=True and numba installed: returns JIT-compiled inline functions
         - Disk cache follows same pattern as runner/stepper/triplet caching
     
@@ -212,15 +212,10 @@ def get_guards(*, jit: bool = True, disk_cache: bool = True) -> tuple[Callable, 
         return result
     
     if not _NUMBA_AVAILABLE:
-        warnings.warn(
-            "Numba not found; guards running in pure Python mode. "
-            "Install numba for better performance: pip install numba",
-            RuntimeWarning,
-            stacklevel=2,
+        raise JITUnavailableError(
+            "jit=True requires numba, but numba is not installed. "
+            "Install numba or pass jit=False."
         )
-        result = (allfinite1d, allfinite_scalar)
-        _install_guard_consumers(*result)
-        return result
     
     # Check in-process cache first
     cache_key = f"guards:jit={jit}:disk={disk_cache}"

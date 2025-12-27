@@ -413,14 +413,37 @@ def _apply_decor(
 
         # Use current y-limits to place labels INSIDE the axes, in data coords
         ymin, ymax = ax.get_ylim()
-        pad = float(_theme.get("vline_label_pad"))
+        # vertical_pad controls WHERE vertically to place the label (top/bottom positioning)
+        # This is for placement, not offset from the line
+        vertical_pad = merged_vl_kw.get('placement_pad', float(_theme.get("vline_label_placement_pad")))  # Default from theme
+        # horizontal_pad controls the OFFSET from the vertical line (perpendicular distance)
+        # This uses the theme default vline_label_pad
+        horizontal_pad = merged_vl_kw.get('label_pad', float(_theme.get("vline_label_pad")))
+        label_position = merged_vl_kw.get('label_position', 'top')
 
-        # If pad < 1: interpret as fraction of axis height down from the top
-        # If pad >= 1: interpret as data-units down from the top
-        if pad < 1.0:
-            y_text = ymax - pad * (ymax - ymin)
+        # Calculate y_text based on position
+        if label_position == 'top':
+            # If vertical_pad < 1: interpret as fraction of axis height down from the top
+            # If vertical_pad >= 1: interpret as data-units down from the top
+            if vertical_pad < 1.0:
+                y_text = ymax - vertical_pad * (ymax - ymin)
+            else:
+                y_text = ymax - vertical_pad
+            va = "top"
+        elif label_position == 'bottom':
+            # If vertical_pad < 1: interpret as fraction of axis height up from the bottom
+            # If vertical_pad >= 1: interpret as data-units up from the bottom
+            if vertical_pad < 1.0:
+                y_text = ymin + vertical_pad * (ymax - ymin)
+            else:
+                y_text = ymin + vertical_pad
+            va = "bottom"
+        elif label_position == 'center':
+            # Center vertically in the axis
+            y_text = (ymin + ymax) / 2.0
+            va = "center"
         else:
-            y_text = ymax - pad
+            raise ValueError(f"label_position must be 'top', 'bottom', or 'center', got {label_position}")
 
         for item in vlines:
             if isinstance(item, (tuple, list)) and len(item) == 2:
@@ -428,18 +451,34 @@ def _apply_decor(
             else:
                 x = float(item)
                 label = ""
-            ax.axvline(x, **merged_vl_kw)
+            # Remove label-specific and placement kwargs before passing to axvline
+            vline_kw = {k: v for k, v in merged_vl_kw.items() 
+                        if not k.startswith('label_') and k != 'placement_pad'}
+            ax.axvline(x, **vline_kw)
             if label:
+                label_rotation = merged_vl_kw.get('label_rotation', 90)
+                label_color = merged_vl_kw.get('label_color', merged_vl_kw.get('color'))
+                text_kwargs = {}
+                if label_color is not None:
+                    text_kwargs['color'] = label_color
+                # Apply horizontal offset: if < 1, treat as fraction of x-range; else as data units
+                xmin_cur, xmax_cur = ax.get_xlim()
+                if abs(horizontal_pad) < 1.0:
+                    x_offset = horizontal_pad * (xmax_cur - xmin_cur)
+                else:
+                    x_offset = horizontal_pad
+                x_text = x + x_offset
                 ax.text(
-                    x,
+                    x_text,
                     y_text,
                     label,
-                    rotation=90,
-                    va="top",        # anchor top of text at y_text
+                    rotation=label_rotation,
+                    va=va,        # anchor based on position
                     ha="center",
                     transform=ax.transData,  # <-- data coordinates now
                     clip_on=True,    # keep it inside the axes
                     rotation_mode="anchor",
+                    **text_kwargs,
                 )
 
     # --- Horizontal Lines ---
@@ -453,13 +492,38 @@ def _apply_decor(
         merged_hl_kw = {**default_hl_kw, **dict(hlines_kwargs)} if hlines_kwargs else default_hl_kw
 
         xmin, xmax = ax.get_xlim()
-        pad = float(_theme.get("vline_label_pad"))  # Reuse same pad setting
+        ymin, ymax = ax.get_ylim()
+        # horizontal_pad controls WHERE horizontally to place the label (left/right positioning)
+        # This is for placement, not offset from the line
+        horizontal_pad = merged_hl_kw.get('placement_pad', float(_theme.get("hline_label_placement_pad")))  # Default from theme
+        # vertical_pad controls the OFFSET from the horizontal line (perpendicular distance)
+        # This uses the theme default hline_label_pad
+        vertical_pad = merged_hl_kw.get('label_pad', float(_theme.get("hline_label_pad")))
+        label_position = merged_hl_kw.get('label_position', 'right')
 
-        # If pad < 1.0: interpret as fraction of axis width from right
-        if pad < 1.0:
-            x_text = xmax - pad * (xmax - xmin)
+        # Calculate x_text based on position
+        if label_position == 'right':
+            # If horizontal_pad < 1: interpret as fraction of axis width from right
+            # If horizontal_pad >= 1: interpret as data-units from right
+            if horizontal_pad < 1.0:
+                x_text = xmax - horizontal_pad * (xmax - xmin)
+            else:
+                x_text = xmax - horizontal_pad
+            ha = "right"
+        elif label_position == 'left':
+            # If horizontal_pad < 1: interpret as fraction of axis width from left
+            # If horizontal_pad >= 1: interpret as data-units from left
+            if horizontal_pad < 1.0:
+                x_text = xmin + horizontal_pad * (xmax - xmin)
+            else:
+                x_text = xmin + horizontal_pad
+            ha = "left"
+        elif label_position == 'center':
+            # Center horizontally in the axis
+            x_text = (xmin + xmax) / 2.0
+            ha = "center"
         else:
-            x_text = xmax - pad
+            raise ValueError(f"label_position must be 'left', 'right', or 'center', got {label_position}")
 
         for item in hlines:
             if isinstance(item, (tuple, list)) and len(item) == 2:
@@ -467,17 +531,33 @@ def _apply_decor(
             else:
                 y = float(item)
                 label = ""
-            ax.axhline(y, **merged_hl_kw)
+            # Remove label-specific and placement kwargs before passing to axhline
+            hline_kw = {k: v for k, v in merged_hl_kw.items() 
+                        if not k.startswith('label_') and k != 'placement_pad'}
+            ax.axhline(y, **hline_kw)
             if label:
+                label_rotation = merged_hl_kw.get('label_rotation', 0)
+                label_color = merged_hl_kw.get('label_color', merged_hl_kw.get('color'))
+                text_kwargs = {}
+                if label_color is not None:
+                    text_kwargs['color'] = label_color
+                # Apply vertical offset: if < 1, treat as fraction of y-range; else as data units
+                ymin_cur, ymax_cur = ax.get_ylim()
+                if abs(vertical_pad) < 1.0:
+                    y_offset = vertical_pad * (ymax_cur - ymin_cur)
+                else:
+                    y_offset = vertical_pad
+                y_text = y + y_offset
                 ax.text(
                     x_text,
-                    y,
+                    y_text,
                     label,
-                    rotation=0,
-                    va="center",
-                    ha="right",
+                    rotation=label_rotation,
+                    va="center",  # center on the offset position
+                    ha=ha,
                     transform=ax.transData,
                     clip_on=True,
+                    **text_kwargs,
                 )
 
 

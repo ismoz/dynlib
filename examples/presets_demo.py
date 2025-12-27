@@ -141,7 +141,7 @@ def main():
         # Create a new sim and load from file
         print("\n=== Loading presets from file ===")
         sim2 = Sim(model)
-        count = sim2.load_preset("*", preset_file, on_conflict="replace")
+        count = sim2.load_preset("*", preset_file, on_conflict="replace") # warning should be raised
         print(f"Loaded {count} presets")
         print(f"Available: {sim2.list_presets()}")
         

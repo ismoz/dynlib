@@ -2385,6 +2385,8 @@ class Sim:
             wrms_cfg=wrms_cfg,
             analysis=analysis,
             adaptive=adaptive,
+            model_hash=getattr(self.model, "spec_hash", None),
+            stepper_name=getattr(self.model, "stepper_name", None),
         )
 
     def _ensure_runner_done(self, result: Results, *, phase: str) -> None:

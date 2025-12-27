@@ -11,6 +11,7 @@ __all__ = [
     "AmbiguousModelError",
     "StepperKindMismatchError",
     "StepperJitCapabilityError",
+    "JITUnavailableError",
 ]
 
 class DynlibError(Exception):
@@ -89,3 +90,9 @@ class StepperJitCapabilityError(DynlibError):
             "Please choose another stepper or disable jit."
         )
         super().__init__(msg)
+
+
+class JITUnavailableError(DynlibError):
+    """Raised when JIT is requested but required dependencies are unavailable."""
+    def __init__(self, message: str):
+        super().__init__(message)

@@ -32,6 +32,7 @@ from dynlib.runtime.runner_api import (
 
 # Import centralized JIT compilation helper
 from dynlib.compiler.jit.compile import jit_compile
+from dynlib.errors import JITUnavailableError
 from dynlib.compiler.codegen._runner_cache import (
     RunnerCacheRequest,
     RunnerCacheConfig,
@@ -492,10 +493,13 @@ def get_runner_discrete(
     if not jit:
         return runner_discrete
     
-    if not disk_cache:
-        return jit_compile(runner_discrete, jit=True).fn
-
     if not _NUMBA_AVAILABLE:
+        raise JITUnavailableError(
+            "jit=True requires numba, but numba is not installed. "
+            "Install numba or pass jit=False."
+        )
+
+    if not disk_cache:
         return jit_compile(runner_discrete, jit=True).fn
 
     request = _consume_cache_request()

@@ -115,17 +115,9 @@ series.plot(
     title="Lyapunov Exponent Convergence",
     lw=1.5,
     color="C1",
+    hlines=[(theoretical_mle, f'Theoretical: λ = ln(2) ≈ {theoretical_mle:.4f}')],
+    hlines_kwargs={"color": "gray", "linestyle": "--", "linewidth": 2, "label_pad": 0.10},
 )
-
-# Add theoretical value
-fig_obj[1, 0].axhline(
-    y=theoretical_mle,
-    color='red',
-    linestyle='--',
-    linewidth=2,
-    label=f'Theoretical: λ = ln(2) ≈ {theoretical_mle:.4f}'
-)
-fig_obj[1, 0].legend(fontsize=10)
 
 # Annotate final value
 fig_obj[1, 0].text(
@@ -149,17 +141,9 @@ series.plot(
     title="Lyapunov Spectrum Convergence",
     lw=1.5,
     color="C2",
+    hlines=[(theoretical_mle, f'Theoretical: λ = ln(2) ≈ {theoretical_mle:.4f}')],
+    hlines_kwargs={"color": "red", "linestyle": "--", "linewidth": 2},
 )
-
-# Add theoretical value
-fig_obj[2, 0].axhline(
-    y=theoretical_mle,
-    color='red',
-    linestyle='--',
-    linewidth=2,
-    label=f'Theoretical: λ = ln(2) ≈ {theoretical_mle:.4f}'
-)
-fig_obj[2, 0].legend(fontsize=10)
 
 # Annotate final value from spectrum
 spectrum_final = spectrum_trace[n_points-1] if n_points > 0 else 0

@@ -1,5 +1,21 @@
 ## Changelog
 
+## [2.35.5] – 2025-12-27
+### Added
+- Added `JITUnavailableError` for clear failures when `jit=True` but numba is missing.
+- Added variational workspace helpers for Euler and RK4 steppers so Lyapunov analyses can reuse stepper buffers.
+- Added labeled horizontal-line support to plots.
+
+### Changed
+- Lyapunov MLE/spectrum now use stepper-provided variational workspaces and can prefer combined state+tangent steps.
+  Previously state+tangent steps were hardcoded in `lyapunov.py`.
+- JIT-related code paths now raise instead of warning when numba is unavailable (guards, runners, steppers).
+- Plot line label placement is more configurable (position, pad, rotation, color) and theme defaults are updated.
+- Examples are updated to use the new vline/hline/vband helpers.
+
+### Tests
+- Renamed variational stepping tests to `tests/unit/test_variational_stepping.py`.
+
 ---
 
 ## [2.35.4] – 2025-12-27

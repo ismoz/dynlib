@@ -71,7 +71,7 @@ if trace_runs:
 
 # ===== Visualization =====
 theme.use("notebook")
-theme.update(grid=True)
+theme.update(grid=True, vline_label_placement_pad=0.16)
 
 # Create figure with 2 rows: bifurcation diagram (top) and MLE (bottom)
 ax = fig.grid(rows=2, cols=1, size=(12, 10))
@@ -88,13 +88,13 @@ bifurcation_diagram(
     title="Bifurcation Diagram and Maximum Lyapunov Exponent",
     title_fs=14,
     ylabel_fs=12,
+    vlines=[(3.0, 'r=3\n(period-2)'), (3.57, 'r≈3.57\n(chaos)')],
+    vlines_kwargs={'color': 'darkred', 
+                   'linestyle': '--', 
+                   'alpha': 0.3, 
+                   'linewidth': 1,
+                   'label_position': 'bottom',},
 )
-
-# Add annotations for key bifurcation points on bifurcation diagram
-ax[0, 0].axvline(x=3.0, color='orange', linestyle='--', alpha=0.3, linewidth=1)
-ax[0, 0].axvline(x=3.57, color='blue', linestyle='--', alpha=0.3, linewidth=1)
-ax[0, 0].text(3.0, 0.92, 'r=3\n(period-2)', ha='center', fontsize=9, color='orange')
-ax[0, 0].text(3.57, 0.92, 'r≈3.57\n(chaos)', ha='center', fontsize=9, color='blue')
 
 # Bottom panel: MLE vs parameter (sharing same x-axis)
 series.plot(
@@ -108,15 +108,13 @@ series.plot(
     color="darkred",
     xlabel_fs=12,
     ylabel_fs=12,
+    vlines=[3.0, 3.57],
+    vlines_kwargs={'color': 'orange', 'linestyle': '--', 'alpha': 0.3, 'linewidth': 1},
 )
 
 # Add horizontal line at λ=0 (chaos boundary)
 ax[1, 0].axhline(0, color="gray", ls="--", lw=1, alpha=0.7)
 ax[1, 0].text(2.6, 0.05, "λ = 0 (chaos boundary)", fontsize=10, color="gray")
-
-# Add vertical lines matching bifurcation diagram
-ax[1, 0].axvline(x=3.0, color='orange', linestyle='--', alpha=0.3, linewidth=1)
-ax[1, 0].axvline(x=3.57, color='blue', linestyle='--', alpha=0.3, linewidth=1)
 
 # Set x-limits to match
 ax[1, 0].set_xlim(2.5, 4.0)

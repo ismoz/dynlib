@@ -24,11 +24,16 @@ from typing import Callable, Dict, Optional, Tuple, TYPE_CHECKING
 
 import numpy as np
 
+from dynlib.compiler.guards import (
+    allfinite1d as _allfinite1d_py,
+    allfinite_scalar as _allfinite_scalar_py,
+)
 from dynlib.runtime.softdeps import softdeps
 from dynlib.runtime.runner_api import (
     OK, STEPFAIL, NAN_DETECTED,
     DONE, GROW_REC, GROW_EVT, USER_BREAK, TRACE_OVERFLOW
 )
+from dynlib.errors import JITUnavailableError
 
 if TYPE_CHECKING:
     from dynlib.analysis.runtime import AnalysisModule, AnalysisHooks
@@ -1158,24 +1163,6 @@ def runner_discrete_analysis(
 
 
 # -----------------------------------------------------------------------------
-# Guard functions (inlined for JIT)
-# -----------------------------------------------------------------------------
-
-def _allfinite1d_py(arr):
-    """Check all elements of a 1-D array are finite."""
-    for i in range(arr.shape[0]):
-        v = arr[i]
-        if v != v or v == v + 1.0e308:  # NaN or Inf check
-            return False
-    return True
-
-
-def _allfinite_scalar_py(val):
-    """Check a scalar is finite."""
-    return val == val and val != val + 1.0e308
-
-
-# -----------------------------------------------------------------------------
 # Runner compilation
 # -----------------------------------------------------------------------------
 
@@ -1225,6 +1212,11 @@ def _compile_runner(
     Callable
         The compiled runner function
     """
+    if jit and not _NUMBA_AVAILABLE:
+        raise JITUnavailableError(
+            "jit=True requires numba, but numba is not installed. "
+            "Install numba or pass jit=False."
+        )
     namespace = _build_base_namespace()
     
     # Inject hooks as globals if provided
