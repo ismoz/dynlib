@@ -18,6 +18,7 @@ _SWEEP_EXPORTS = {
     "scalar",
     "traj",
     "lyapunov_mle",
+    "lyapunov_spectrum",
 }
 
 _POST_EXPORTS = {

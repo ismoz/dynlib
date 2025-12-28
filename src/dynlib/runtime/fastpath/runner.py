@@ -438,15 +438,19 @@ def run_single_fastpath(
     )
     stepper_ws = model.make_stepper_workspace() if model.make_stepper_workspace else None
 
+    base_t0 = float(t0)
+    time_shift = 0.0
+    run_t_end = t_end
+
     # Optional transient warm-up (no recording)
     if transient > 0.0:
         if is_discrete:
             trans_steps = int(transient)
-            warm_t_end = float(t0 + trans_steps * dt)
+            warm_t_end = float(t0 + float(trans_steps) * float(dt))
             warm_target_steps = trans_steps
         else:
             trans_steps = None
-            warm_t_end = float(t0 + transient) if t_end is not None else float(t0 + transient)
+            warm_t_end = float(t0 + float(transient))
             warm_target_steps = None
         warm_ctx = _RunContext(
             t0=float(t0),
@@ -479,17 +483,20 @@ def run_single_fastpath(
         ic = warm_result.final_state
         params = warm_result.final_params
         dt = float(warm_result.final_dt) if warm_result.final_dt != 0.0 else dt
+        time_shift = float(warm_result.t_final) - base_t0
+        if not is_discrete and run_t_end is not None:
+            run_t_end = float(run_t_end + time_shift)
 
     run_ctx = _RunContext(
         t0=float(t0),
-        t_end=float(t_end if t_end is not None else t0),
+        t_end=float(run_t_end if run_t_end is not None else t0),
         target_steps=target_steps,
         dt=float(dt),
         max_steps=max_steps,
         transient=0.0,
         record_interval=plan.record_interval(),
     )
-    return _call_runner(
+    result = _call_runner(
         model=model,
         ctx=run_ctx,
         state_rec_indices=state_rec_indices,
@@ -504,6 +511,10 @@ def run_single_fastpath(
         stepper_ws=stepper_ws,
         analysis=analysis,
     )
+    if time_shift != 0.0 and result.n > 0:
+        # Match Sim.run transient semantics: recorded time starts at original t0.
+        result.T[: result.n] = result.T[: result.n] - time_shift
+    return result
 
 
 def run_batch_fastpath(

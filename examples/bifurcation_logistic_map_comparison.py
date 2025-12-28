@@ -4,7 +4,7 @@ Bifurcation diagram comparison for the logistic map showing different modes.
 This example demonstrates the three different bifurcation analysis modes:
 1. "final": Shows only the final state (good for fixed points)
 2. "tail": Shows multiple samples from the attractor (reveals periodic orbits)
-3. "peaks": Shows local maxima (emphasizes periodic structure)
+3. "extrema": Shows local extrema (emphasizes periodic structure)
 """
 
 from __future__ import annotations
@@ -39,8 +39,8 @@ result_final = extractor.final()
 # Mode 2: "tail" - multiple samples from attractor
 result_tail = extractor.tail(50)
 
-# Mode 3: "peaks" - local maxima only
-result_peaks = extractor.peaks(tail=100, max_peaks=30, min_peak_distance=2)
+# Mode 3: "extrema" - local extrema (maxima + minima)
+result_extrema = extractor.extrema(tail=100, max_points=30, min_peak_distance=1)
 
 print("Done! Creating comparison plot...")
 
@@ -83,9 +83,9 @@ bifurcation_diagram(
     title_fs=12,
 )
 
-# Panel 3: Peaks mode
+# Panel 3: Extrema mode
 bifurcation_diagram(
-    result_peaks,
+    result_extrema,
     marker=".",
     ms=0.5,
     alpha=0.6,
@@ -95,7 +95,7 @@ bifurcation_diagram(
     ylim=(0, 1),
     xlabel="r",
     ylabel="x*",
-    title='Mode: "peaks" (local maxima)',
+    title='Mode: "extrema" (local maxima and minima)',
     title_fs=12,
 )
 

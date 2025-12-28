@@ -67,8 +67,8 @@ def test_run_fastpath_transient(simple_sim):
 
     assert res is not None
     assert res.ok
-    # Warm-up should advance start time to roughly the transient boundary
-    assert float(res.t[0]) == pytest.approx(0.1, rel=0, abs=1e-9)
+    # Warm-up should not change start time t0
+    assert float(res.t[0]) == pytest.approx(0.0, rel=0, abs=1e-9)
     assert float(res.t[-1]) == pytest.approx(0.3, rel=0, abs=1e-9)
 
 

@@ -960,3 +960,199 @@ def lyapunov_mle(
         traces=traces,
         meta=meta,
     )
+
+
+def lyapunov_spectrum(
+    sim: Sim,
+    *,
+    param: str,
+    values,
+    k: int = 2,
+    t0: float | None = None,
+    T: float | None = None,
+    N: int | None = None,
+    dt: float | None = None,
+    transient: float | None = None,
+    record_interval: int | None = None,
+    max_steps: int | None = None,
+    parallel_mode: Literal["auto", "threads", "none"] = "auto",
+    max_workers: int | None = None,
+    analysis_kind: int = 1,
+    init_basis: np.ndarray | None = None,
+) -> SweepResult:
+    """Sweep a parameter and compute the Lyapunov spectrum for each value.
+    
+    Combines parameter sweep with Lyapunov spectrum analysis to capture how
+    multiple exponents evolve across a parameter range. Returns final spectrum
+    values and optional convergence traces.
+    
+    Args:
+        sim: Simulation instance (must be JIT-compiled with fixed-step stepper)
+        param: Name of parameter to sweep
+        values: Array-like of parameter values to test
+        k: Number of Lyapunov exponents to compute
+        t0: Initial time (default from sim config)
+        T: Absolute end time for continuous systems
+        N: Number of iterations (discrete maps)
+        dt: Time step (required for spectrum analysis - must be fixed)
+        transient: Time/iterations to discard before recording
+        record_interval: Record trace every Nth step (1 = every step)
+        max_steps: Safety limit on total steps
+        parallel_mode: Parallel execution ("auto", "threads", "none")
+        max_workers: Maximum worker threads (None = default)
+        analysis_kind: Lyapunov algorithm variant (default 1)
+        init_basis: Optional initial tangent basis (shape: n_state x k)
+    
+    Returns:
+        SweepResult(kind="spectrum") with:
+            - values: parameter values (M,)
+            - outputs: spectrum (M, k), lyap0..lyap{k-1} (M,), log_r (M, k), steps (M,)
+            - traces: empty (sweep does not retain per-parameter traces)
+
+    Example:
+        >>> r_vals = np.linspace(3.0, 4.0, 50)
+        >>> res = sweep.lyapunov_spectrum(sim, param="r", values=r_vals,
+        ...                               k=2, N=5000, transient=1000,
+        ...                               record_interval=10)
+        >>> exponents = res.spectrum  # shape (M, k)
+        >>> lam1 = res.lyap0  # final values for first exponent (M,)
+    """
+    from dynlib.analysis.runtime import lyapunov_spectrum as lyapunov_spectrum_module
+
+    vals = np.asarray(values, dtype=float)
+    M = vals.size
+    k_use = int(k)
+    if k_use <= 0:
+        raise ValueError("k must be >= 1")
+
+    p_idx = _param_index(sim, param)
+    base_states = sim.state_vector(source="session", copy=True)
+    base_params = sim.param_vector(source="session", copy=True)
+
+    # Build analysis module for Lyapunov spectrum
+    analysis = lyapunov_spectrum_module(
+        model=sim.model,
+        k=k_use,
+        init_basis=init_basis,
+        record_interval=record_interval,
+        analysis_kind=analysis_kind,
+    )
+
+    spectrum_values = np.zeros((M, k_use), dtype=float)
+    log_r_values = np.zeros((M, k_use), dtype=float)
+    steps_values = np.zeros(M, dtype=float)
+    # Try batch fast-path execution
+    ic_stack = np.repeat(base_states[np.newaxis, :], values.size, axis=0)
+    params_stack = np.repeat(base_params[np.newaxis, :], values.size, axis=0)
+    params_stack[:, p_idx] = vals
+
+    stride = int(record_interval) if record_interval is not None else 1
+    plan = FixedStridePlan(stride=stride)
+    support = _assess_fastpath_support(
+        sim,
+        plan=plan,
+        record_vars=None,
+        dt=dt,
+        transient=transient,
+    )
+
+    batch_views = fastpath_batch_for_sim(
+        sim,
+        plan=plan,
+        t0=t0,
+        T=T,
+        N=int(N) if N is not None else None,
+        dt=dt,
+        record_vars=None,
+        transient=transient,
+        record_interval=record_interval,
+        max_steps=max_steps,
+        ic=ic_stack,
+        params=params_stack,
+        parallel_mode=parallel_mode,  # type: ignore[arg-type]
+        max_workers=max_workers,
+        analysis=analysis,
+    )
+
+    run_iter: Iterable[ResultsView]
+    if batch_views is not None:
+        run_iter = batch_views
+    else:
+        _warn_fastpath_fallback(support, stacklevel=2)
+        # Fallback to sequential execution
+        def _sequential_runs():
+            for v in vals:
+                ic = base_states.copy()
+                params = base_params.copy()
+                params[p_idx] = v
+
+                kwargs: dict[str, object] = dict(
+                    record=False,
+                    transient=transient,
+                    resume=False,
+                    analysis=analysis,
+                )
+                if t0 is not None:
+                    kwargs["t0"] = float(t0)
+                if T is not None:
+                    kwargs["T"] = float(T)
+                if N is not None:
+                    kwargs["N"] = int(N)
+                if dt is not None:
+                    kwargs["dt"] = float(dt)
+                if record_interval is not None:
+                    kwargs["record_interval"] = int(record_interval)
+                if max_steps is not None:
+                    kwargs["max_steps"] = int(max_steps)
+
+                sim.run(ic=ic, params=params, **kwargs)
+                yield sim.results()
+        
+        run_iter = _sequential_runs()
+
+    # Extract analysis results from each run
+    for i, res in enumerate(run_iter):
+        lyap_result = res.analysis["lyapunov_spectrum"]
+        out = lyap_result["out"]
+        if out is None or out.size < k_use + 2:
+            raise RuntimeError("Lyapunov spectrum analysis output missing or incomplete.")
+        log_r = np.asarray(out[:k_use], dtype=float)
+        denom = float(out[k_use])
+        if denom <= 0.0:
+            denom = 1.0
+
+        spectrum_values[i] = log_r / denom
+        log_r_values[i] = log_r
+        steps_values[i] = float(out[k_use + 1]) if out.size > k_use + 1 else 0.0
+
+    meta = dict(
+        stepper=sim.model.stepper_name,
+        kind=sim.model.spec.kind,
+        t0=t0,
+        T=T,
+        N=N,
+        dt=dt,
+        transient=transient,
+        record_interval=record_interval,
+        parallel_mode=parallel_mode,
+        max_workers=max_workers,
+        analysis_kind=analysis_kind,
+        k=k_use,
+    )
+    outputs = dict(
+        spectrum=spectrum_values,
+        log_r=log_r_values,
+        steps=steps_values,
+    )
+    for j in range(k_use):
+        outputs[f"lyap{j}"] = spectrum_values[:, j]
+    traces: dict[str, object] = {}
+
+    return SweepResult(
+        param_name=param,
+        values=vals,
+        kind="spectrum",
+        outputs=outputs,
+        traces=traces,
+        meta=meta,
+    )

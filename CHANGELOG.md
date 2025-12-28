@@ -1,5 +1,28 @@
 ## Changelog
 
+---
+
+## [2.35.6] – 2025-12-28
+### Added
+- `sweep.lyapunov_spectrum()` utility for plotting Lyapunov spectrum change of a system for a range of parameters.
+  Just like `sweep.lyapunov_mle()` it supports fast-path runner and parallelization.
+- Added `sweep.lyapunov_spectrum()` example `lyapunov_sweep_spectrum_demo.py`.
+
+### Changed
+- Removed `SweepAnalysis.peaks()` method and introduced `SweepAnalysis.extrema()`. `peaks()` was only finding 
+  maxima. New extrema() method can find maxima, minima and both (default) via its `kind` argument.
+- Renamed `lyapunov_sweep_demo.py` -> `lyapunov_sweep_mle_demo.py`.
+
+### Fixed
+- Fast-path runner was treating transient duration as part of the `T` value. This issue was fixed for `N` before 
+  but forgotten for `T` values. Now `T` values also ignore transient duration and recording starts at `t0` after 
+  the `transient`.
+
+### Tests
+- Fixed `test_fastpath_runner.py`. It was assuming wrong fast-path transient behavior.
+
+---
+
 ## [2.35.5] – 2025-12-27
 ### Added
 - Added `JITUnavailableError` for clear failures when `jit=True` but numba is missing.

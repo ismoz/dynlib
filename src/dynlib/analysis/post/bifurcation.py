@@ -9,6 +9,7 @@ This module intentionally separates:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from dynlib.analysis.sweep import TrajectoryPayload, SweepResult
 
@@ -33,14 +34,35 @@ def _extract_tail(series: np.ndarray, tail: int) -> np.ndarray:
     return series[-min(tail, series.size) :]
 
 
-def _peaks_from_tail(series: np.ndarray, *, max_peaks: int, min_peak_distance: int) -> np.ndarray:
+def _extrema_from_tail(
+    series: np.ndarray,
+    *,
+    kind: Literal["max", "min", "both"],
+    max_points: int,
+    min_peak_distance: int,
+) -> np.ndarray:
     if series.size < 3:
         return np.array([], dtype=float)
     mid = series[1:-1]
-    rising = series[:-2] < mid
-    falling = mid >= series[2:]
-    peak_mask = rising & falling
-    idx = np.nonzero(peak_mask)[0] + 1  # offset because mid skips the first element
+
+    idx_parts: list[np.ndarray] = []
+    if kind in ("max", "both"):
+        rising = series[:-2] < mid
+        falling = mid >= series[2:]
+        peak_mask = rising & falling
+        idx_parts.append(np.nonzero(peak_mask)[0] + 1)  # offset because mid skips the first element
+    if kind in ("min", "both"):
+        falling = series[:-2] > mid
+        rising = mid <= series[2:]
+        trough_mask = falling & rising
+        idx_parts.append(np.nonzero(trough_mask)[0] + 1)
+
+    if not idx_parts:
+        raise ValueError("kind must be 'max', 'min', or 'both'")
+    if len(idx_parts) == 1:
+        idx = idx_parts[0]
+    else:
+        idx = np.sort(np.concatenate(idx_parts))
     if idx.size == 0:
         return np.array([], dtype=float)
 
@@ -52,15 +74,69 @@ def _peaks_from_tail(series: np.ndarray, *, max_peaks: int, min_peak_distance: i
             last_kept = i
     if not kept:
         return np.array([], dtype=float)
-    trimmed = kept[-max_peaks:] if max_peaks > 0 else kept
+    trimmed = kept[-max_points:] if max_points > 0 else kept
     return series[np.array(trimmed, dtype=int)]
+
+
+def _poincare_from_series(
+    section: np.ndarray,
+    target: np.ndarray,
+    *,
+    level: float,
+    direction: str,
+    max_points: int,
+    min_section_distance: int,
+) -> np.ndarray:
+    if section.size < 2:
+        return np.array([], dtype=float)
+    if section.shape != target.shape:
+        raise ValueError("section and target series must have the same shape")
+
+    delta0 = section[:-1] - level
+    delta1 = section[1:] - level
+    if direction == "positive":
+        crossing = (delta0 < 0) & (delta1 >= 0)
+    elif direction == "negative":
+        crossing = (delta0 > 0) & (delta1 <= 0)
+    elif direction == "both":
+        crossing = ((delta0 < 0) & (delta1 >= 0)) | ((delta0 > 0) & (delta1 <= 0))
+    else:
+        raise ValueError("direction must be 'positive', 'negative', or 'both'")
+
+    idx = np.nonzero(crossing)[0]
+    if idx.size == 0:
+        return np.array([], dtype=float)
+
+    kept: list[int] = []
+    last_kept = -min_section_distance - 1
+    for i in idx:
+        if i - last_kept >= min_section_distance:
+            kept.append(int(i))
+            last_kept = i
+    if not kept:
+        return np.array([], dtype=float)
+
+    trimmed = kept[-max_points:] if max_points > 0 else kept
+    arr = np.array(trimmed, dtype=int)
+
+    denom = section[arr + 1] - section[arr]
+    valid = denom != 0
+    if not np.any(valid):
+        return np.array([], dtype=float)
+    arr = arr[valid]
+    denom = denom[valid]
+
+    frac = (level - section[arr]) / denom
+    y0 = target[arr]
+    y1 = target[arr + 1]
+    return y0 + frac * (y1 - y0)
 
 
 class BifurcationExtractor:
     """Post-process a trajectory sweep into bifurcation scatter points.
     
     Can be used directly (defaults to .all() mode) or call explicit methods
-    like .tail(), .final(), or .peaks() for different extraction strategies.
+    like .tail(), .final(), .extrema(), or .poincare() for different extraction strategies.
     
     Examples:
         >>> from dynlib.plot import bifurcation_diagram
@@ -136,6 +212,10 @@ class BifurcationExtractor:
     def _series_iter(self):
         for p_val, arr in zip(self._sweep.values, self._sweep.data):
             yield float(p_val), np.asarray(arr[:, self._var_idx], dtype=float)
+
+    def _array_iter(self):
+        for p_val, arr in zip(self._sweep.values, self._sweep.data):
+            yield float(p_val), np.asarray(arr, dtype=float)
 
     def all(self) -> BifurcationResult:
         """Extract all recorded points (no filtering).
@@ -220,33 +300,41 @@ class BifurcationExtractor:
             meta=meta,
         )
 
-    def peaks(
+    def extrema(
         self,
         *,
-        tail: int = 200,
-        max_peaks: int = 50,
+        tail: int | None = None,
+        kind: Literal["max", "min", "both"] = "both",
+        max_points: int = 50,
         min_peak_distance: int = 1,
     ) -> BifurcationResult:
-        if tail <= 0:
+        """Extract local extrema (maxima, minima, or both)."""
+        if tail is not None and tail <= 0:
             raise ValueError("tail must be positive")
-        if max_peaks <= 0:
-            raise ValueError("max_peaks must be positive")
+        if max_points <= 0:
+            raise ValueError("max_points must be positive")
         if min_peak_distance <= 0:
             raise ValueError("min_peak_distance must be positive")
+        if kind not in ("max", "min", "both"):
+            raise ValueError("kind must be 'max', 'min', or 'both'")
 
         p_parts: list[np.ndarray] = []
         y_parts: list[np.ndarray] = []
         for p_val, series in self._series_iter():
-            tail_series = _extract_tail(series, tail)
-            peaks = _peaks_from_tail(
+            if tail is None:
+                tail_series = series
+            else:
+                tail_series = _extract_tail(series, int(tail))
+            points = _extrema_from_tail(
                 tail_series,
-                max_peaks=int(max_peaks),
+                kind=kind,
+                max_points=int(max_points),
                 min_peak_distance=int(min_peak_distance),
             )
-            if peaks.size == 0:
+            if points.size == 0:
                 continue
-            p_parts.append(np.full(peaks.shape, p_val, dtype=float))
-            y_parts.append(peaks)
+            p_parts.append(np.full(points.shape, p_val, dtype=float))
+            y_parts.append(points)
 
         p_out = np.concatenate(p_parts) if p_parts else np.empty((0,), dtype=float)
         y_out = np.concatenate(y_parts) if y_parts else np.empty((0,), dtype=float)
@@ -254,15 +342,85 @@ class BifurcationExtractor:
         meta = dict(self._sweep.meta)
         meta.update(
             var=self._var,
-            mode="peaks",
-            tail=int(tail),
-            max_peaks=int(max_peaks),
+            mode="extrema",
+            kind=kind,
+            max_points=int(max_points),
             min_peak_distance=int(min_peak_distance),
         )
+        if tail is not None:
+            meta["tail"] = int(tail)
         return BifurcationResult(
             param_name=self._sweep.param_name,
             values=self._sweep.values,
-            mode="peaks",
+            mode="extrema",
+            p=p_out,
+            y=y_out,
+            meta=meta,
+        )
+
+    def poincare(
+        self,
+        *,
+        section_var: str,
+        level: float = 0.0,
+        direction: str = "positive",
+        tail: int | None = None,
+        max_points: int = 50,
+        min_section_distance: int = 1,
+    ) -> BifurcationResult:
+        """Extract a Poincare section for the chosen variable."""
+        if section_var not in self._sweep.record_vars:
+            raise KeyError(
+                f"Unknown section_var {section_var!r}; available: {self._sweep.record_vars}"
+            )
+        if tail is not None and tail <= 0:
+            raise ValueError("tail must be positive")
+        if max_points <= 0:
+            raise ValueError("max_points must be positive")
+        if min_section_distance <= 0:
+            raise ValueError("min_section_distance must be positive")
+
+        section_idx = self._sweep.record_vars.index(section_var)
+        p_parts: list[np.ndarray] = []
+        y_parts: list[np.ndarray] = []
+        for p_val, arr in self._array_iter():
+            series = arr[:, self._var_idx]
+            section = arr[:, section_idx]
+            if tail is not None:
+                series = _extract_tail(series, int(tail))
+                section = _extract_tail(section, int(tail))
+            points = _poincare_from_series(
+                section,
+                series,
+                level=float(level),
+                direction=direction,
+                max_points=int(max_points),
+                min_section_distance=int(min_section_distance),
+            )
+            if points.size == 0:
+                continue
+            p_parts.append(np.full(points.shape, p_val, dtype=float))
+            y_parts.append(points)
+
+        p_out = np.concatenate(p_parts) if p_parts else np.empty((0,), dtype=float)
+        y_out = np.concatenate(y_parts) if y_parts else np.empty((0,), dtype=float)
+
+        meta = dict(self._sweep.meta)
+        meta.update(
+            var=self._var,
+            mode="poincare",
+            section_var=section_var,
+            level=float(level),
+            direction=direction,
+            max_points=int(max_points),
+            min_section_distance=int(min_section_distance),
+        )
+        if tail is not None:
+            meta["tail"] = int(tail)
+        return BifurcationResult(
+            param_name=self._sweep.param_name,
+            values=self._sweep.values,
+            mode="poincare",
             p=p_out,
             y=y_out,
             meta=meta,
