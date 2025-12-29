@@ -66,11 +66,11 @@ class EulerSpec(ConfigMixin):
             factory_fn(analysis_ws, start, n_state) -> VariationalWorkspace
         """
         size = 1 * n_state
-        
+
         def factory(analysis_ws, start, n_state):
             kv = analysis_ws[start : start + n_state]
             return EulerSpec.VariationalWorkspace(kv)
-            
+
         return size, factory
 
     def make_workspace(
@@ -151,7 +151,7 @@ class EulerSpec(ConfigMixin):
             runtime_ws,
             ws,
         ):
-            kv = ws.kv
+            kv = ws.kv if hasattr(ws, "kv") else ws[0]
             jvp_fn(t, y_curr, params, v_curr, kv, runtime_ws)
             n = v_curr.size
             for i in range(n):

@@ -82,7 +82,7 @@ class RK4Spec(ConfigMixin):
             factory_fn(analysis_ws, start, n_state) -> VariationalWorkspace
         """
         size = 5 * n_state
-        
+
         def factory(analysis_ws, start, n_state):
             v_stage = analysis_ws[start : start + n_state]
             kv1 = analysis_ws[start + n_state : start + 2 * n_state]
@@ -90,7 +90,7 @@ class RK4Spec(ConfigMixin):
             kv3 = analysis_ws[start + 3 * n_state : start + 4 * n_state]
             kv4 = analysis_ws[start + 4 * n_state : start + 5 * n_state]
             return RK4Spec.VariationalWorkspace(v_stage, kv1, kv2, kv3, kv4)
-            
+
         return size, factory
 
     def make_workspace(
@@ -212,11 +212,18 @@ class RK4Spec(ConfigMixin):
             n = y_curr.size
             
             # Get tangent buffers
-            kv1 = ws.kv1
-            kv2 = ws.kv2
-            kv3 = ws.kv3
-            kv4 = ws.kv4
-            v_stage = ws.v_stage
+            if hasattr(ws, "v_stage"):
+                v_stage = ws.v_stage
+                kv1 = ws.kv1
+                kv2 = ws.kv2
+                kv3 = ws.kv3
+                kv4 = ws.kv4
+            else:
+                v_stage = ws[0]
+                kv1 = ws[1]
+                kv2 = ws[2]
+                kv3 = ws[3]
+                kv4 = ws[4]
             
             # Approximate RK4 on variational equation
             # NOTE: This is not fully consistent - we evaluate J at y_curr for all stages

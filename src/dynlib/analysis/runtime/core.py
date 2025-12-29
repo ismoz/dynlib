@@ -177,6 +177,10 @@ class AnalysisModule:
         if self.requirements.mutates_state:
             return False, "analysis mutates state"
         return True, None
+    
+    def validate_stepper(self, stepper_spec) -> None:
+        """Optional stepper capability guard (override in subclasses)."""
+        return None
 
     def _jit_key(self, dtype: np.dtype) -> tuple[int, str, int, int]:
         trace_width = self.trace.width if self.trace else 0
@@ -285,6 +289,10 @@ class CombinedAnalysis(AnalysisModule):
         """
         child_sigs = tuple(mod.signature(dtype) for mod in self.modules)
         return ("combined", child_sigs, str(np.dtype(dtype)))
+    
+    def validate_stepper(self, stepper_spec) -> None:
+        for mod in self.modules:
+            mod.validate_stepper(stepper_spec)
 
     @staticmethod
     def _merge_requirements(modules: Sequence[AnalysisModule]) -> AnalysisRequirements:

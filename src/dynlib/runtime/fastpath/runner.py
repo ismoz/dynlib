@@ -642,6 +642,9 @@ def fastpath_for_sim(
     stepper_spec = sim._stepper_spec
     adaptive = getattr(stepper_spec.meta, "time_control", "fixed") == "adaptive"
 
+    if analysis is not None:
+        analysis.validate_stepper(stepper_spec)
+
     support = support or assess_capability(
         sim,
         plan=plan,
@@ -748,6 +751,9 @@ def fastpath_batch_for_sim(
 
     stepper_spec = sim._stepper_spec
     adaptive = getattr(stepper_spec.meta, "time_control", "fixed") == "adaptive"
+
+    if analysis is not None:
+        analysis.validate_stepper(stepper_spec)
 
     support = support or assess_capability(
         sim,

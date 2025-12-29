@@ -2,6 +2,18 @@
 
 ---
 
+## [2.35.7] – 2025-12-29
+### Added
+- Variational stepping support to the steppers: `rk2`, `ab2`, and `ab3`.
+
+### Changed
+- Multi-step variational stepping is now supported for Lyapunov analyses. However, combined calculations (advance 
+  the state and the tangents together in a single stepper call) is not possible for them. All calculations are
+  tangent-only (advance only the tangents using a variational step routine while the state is advanced by the 
+  normal runner path). Also Lyapunov Spectrum calculations always prefer tangent-only calculations.
+
+---
+
 ## [2.35.6] – 2025-12-28
 ### Added
 - `sweep.lyapunov_spectrum()` utility for plotting Lyapunov spectrum change of a system for a range of parameters.

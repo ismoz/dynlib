@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, NamedTuple
 import math
 import numpy as np
 
-from ..base import StepperMeta
+from ..base import StepperMeta, StepperCaps
 from dynlib.runtime.runner_api import OK
 from ..config_base import ConfigMixin
 
@@ -61,6 +61,7 @@ class AB3Spec(ConfigMixin):
                 embedded_order=None,
                 stiff=False,
                 aliases=("adams_bashforth_3",),
+                caps=StepperCaps(variational_stepping=True),
             )
         self.meta = meta
 
@@ -72,8 +73,35 @@ class AB3Spec(ConfigMixin):
         y_stage: np.ndarray
         step_index: np.ndarray
 
+    class VariationalWorkspace(NamedTuple):
+        v_stage: np.ndarray
+        g_nm2: np.ndarray
+        g_nm1: np.ndarray
+        g_curr: np.ndarray
+        step_index: np.ndarray
+
     def workspace_type(self) -> type | None:
         return AB3Spec.Workspace
+
+    def variational_workspace(self, n_state: int, model_spec=None):
+        """
+        Return the size and factory for the variational workspace.
+
+        Returns:
+            (size, factory_fn)
+            factory_fn(analysis_ws, start, n_state) -> VariationalWorkspace
+        """
+        size = 4 * n_state + 1
+
+        def factory(analysis_ws, start, n_state):
+            v_stage = analysis_ws[start : start + n_state]
+            g_nm2 = analysis_ws[start + n_state : start + 2 * n_state]
+            g_nm1 = analysis_ws[start + 2 * n_state : start + 3 * n_state]
+            g_curr = analysis_ws[start + 3 * n_state : start + 4 * n_state]
+            step_index = analysis_ws[start + 4 * n_state : start + 4 * n_state + 1]
+            return AB3Spec.VariationalWorkspace(v_stage, g_nm2, g_nm1, g_curr, step_index)
+
+        return size, factory
 
     def make_workspace(self, n_state: int, dtype: np.dtype, model_spec=None) -> Workspace:
         zeros = lambda: np.zeros((n_state,), dtype=dtype)
@@ -209,6 +237,78 @@ class AB3Spec(ConfigMixin):
             return OK
 
         return ab3_stepper
+
+    def emit_tangent_step(
+        self,
+        jvp_fn: Callable,
+        model_spec=None
+    ) -> Callable:
+        """
+        Generate a tangent-only AB3 stepping function.
+
+        NOTE: This uses true AB3 history on J*v (g-history). Jacobian is
+        evaluated at y_curr for the startup RK2 midpoint step.
+        """
+        def ab3_tangent_step(
+            t, dt,
+            y_curr,
+            v_curr,
+            v_prop,
+            params,
+            runtime_ws,
+            ws,
+        ):
+            n = v_curr.size
+            if hasattr(ws, "v_stage"):
+                v_stage = ws.v_stage
+                g_nm2 = ws.g_nm2
+                g_nm1 = ws.g_nm1
+                g_curr = ws.g_curr
+                step_idx_arr = ws.step_index
+            else:
+                v_stage = ws[0]
+                g_nm2 = ws[1]
+                g_nm1 = ws[2]
+                g_curr = ws[3]
+                step_idx_arr = ws[4]
+            step_idx = int(step_idx_arr[0])
+
+            jvp_fn(t, y_curr, params, v_curr, g_curr, runtime_ws)
+
+            if step_idx == 0:
+                half_dt = 0.5 * dt
+                for i in range(n):
+                    v_stage[i] = v_curr[i] + half_dt * g_curr[i]
+                    g_nm1[i] = g_curr[i]
+                jvp_fn(t, y_curr, params, v_stage, g_curr, runtime_ws)
+                for i in range(n):
+                    v_prop[i] = v_curr[i] + dt * g_curr[i]
+                step_idx_arr[0] = step_idx + 1
+                return
+
+            if step_idx == 1:
+                for i in range(n):
+                    v_prop[i] = v_curr[i] + dt * (1.5 * g_curr[i] - 0.5 * g_nm1[i])
+                    g_nm2[i] = g_nm1[i]
+                    g_nm1[i] = g_curr[i]
+                step_idx_arr[0] = step_idx + 1
+                return
+
+            for i in range(n):
+                v_prop[i] = (
+                    v_curr[i]
+                    + dt * (
+                        (23.0 / 12.0) * g_curr[i]
+                        - (16.0 / 12.0) * g_nm1[i]
+                        + (5.0 / 12.0) * g_nm2[i]
+                    )
+                )
+                g_nm2[i] = g_nm1[i]
+                g_nm1[i] = g_curr[i]
+
+            step_idx_arr[0] = step_idx + 1
+
+        return ab3_tangent_step
 
 
 # Auto-register on module import

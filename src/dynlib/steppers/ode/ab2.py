@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, NamedTuple
 import math
 import numpy as np
 
-from ..base import StepperMeta
+from ..base import StepperMeta, StepperCaps
 from dynlib.runtime.runner_api import OK
 from ..config_base import ConfigMixin
 
@@ -50,6 +50,7 @@ class AB2Spec(ConfigMixin):
                 embedded_order=None,
                 stiff=False,
                 aliases=("adams_bashforth_2",),
+                caps=StepperCaps(variational_stepping=True),
             )
         self.meta = meta
 
@@ -60,8 +61,33 @@ class AB2Spec(ConfigMixin):
         y_stage: np.ndarray
         step_index: np.ndarray  # shape (1,), int64
 
+    class VariationalWorkspace(NamedTuple):
+        v_stage: np.ndarray
+        g_prev: np.ndarray
+        g_curr: np.ndarray
+        step_index: np.ndarray
+
     def workspace_type(self) -> type | None:
         return AB2Spec.Workspace
+
+    def variational_workspace(self, n_state: int, model_spec=None):
+        """
+        Return the size and factory for the variational workspace.
+
+        Returns:
+            (size, factory_fn)
+            factory_fn(analysis_ws, start, n_state) -> VariationalWorkspace
+        """
+        size = 3 * n_state + 1
+
+        def factory(analysis_ws, start, n_state):
+            v_stage = analysis_ws[start : start + n_state]
+            g_prev = analysis_ws[start + n_state : start + 2 * n_state]
+            g_curr = analysis_ws[start + 2 * n_state : start + 3 * n_state]
+            step_index = analysis_ws[start + 3 * n_state : start + 3 * n_state + 1]
+            return AB2Spec.VariationalWorkspace(v_stage, g_prev, g_curr, step_index)
+
+        return size, factory
 
     def make_workspace(self, n_state: int, dtype: np.dtype, model_spec=None) -> Workspace:
         zeros = lambda: np.zeros((n_state,), dtype=dtype)
@@ -149,6 +175,60 @@ class AB2Spec(ConfigMixin):
             return OK
 
         return ab2_stepper
+
+    def emit_tangent_step(
+        self,
+        jvp_fn: Callable,
+        model_spec=None
+    ) -> Callable:
+        """
+        Generate a tangent-only AB2 stepping function.
+
+        NOTE: This uses true AB2 history on J*v (g-history). Jacobian is
+        evaluated at y_curr for the startup RK2 midpoint step.
+        """
+        def ab2_tangent_step(
+            t, dt,
+            y_curr,
+            v_curr,
+            v_prop,
+            params,
+            runtime_ws,
+            ws,
+        ):
+            n = v_curr.size
+            if hasattr(ws, "v_stage"):
+                v_stage = ws.v_stage
+                g_prev = ws.g_prev
+                g_curr = ws.g_curr
+                step_idx_arr = ws.step_index
+            else:
+                v_stage = ws[0]
+                g_prev = ws[1]
+                g_curr = ws[2]
+                step_idx_arr = ws[3]
+            step_idx = int(step_idx_arr[0])
+
+            jvp_fn(t, y_curr, params, v_curr, g_curr, runtime_ws)
+
+            if step_idx == 0:
+                half_dt = 0.5 * dt
+                for i in range(n):
+                    v_stage[i] = v_curr[i] + half_dt * g_curr[i]
+                    g_prev[i] = g_curr[i]
+                jvp_fn(t, y_curr, params, v_stage, g_curr, runtime_ws)
+                for i in range(n):
+                    v_prop[i] = v_curr[i] + dt * g_curr[i]
+                step_idx_arr[0] = step_idx + 1
+                return
+
+            for i in range(n):
+                v_prop[i] = v_curr[i] + dt * (1.5 * g_curr[i] - 0.5 * g_prev[i])
+                g_prev[i] = g_curr[i]
+
+            step_idx_arr[0] = step_idx + 1
+
+        return ab2_tangent_step
 
 
 # Auto-register on module import

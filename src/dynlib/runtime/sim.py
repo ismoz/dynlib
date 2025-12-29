@@ -1986,10 +1986,16 @@ class Sim:
             if any(mod is None for mod in modules):
                 raise ValueError("analysis sequence produced None entries")
             if len(modules) == 1:
+                modules[0].validate_stepper(self._stepper_spec)
                 return modules[0]
-            return CombinedAnalysis(modules)
+            combined = CombinedAnalysis(modules)
+            combined.validate_stepper(self._stepper_spec)
+            return combined
 
-        return _materialize(analysis)
+        module = _materialize(analysis)
+        if module is not None:
+            module.validate_stepper(self._stepper_spec)
+        return module
 
     def _load_inline_presets(self) -> None:
         """Auto-populate presets bank from model.spec.presets."""
