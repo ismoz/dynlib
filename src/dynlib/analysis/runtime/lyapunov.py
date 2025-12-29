@@ -121,20 +121,58 @@ def _make_hooks(
         trace_cap: int,
         trace_stride: int,
     ) -> None:
-        if analysis_ws.shape[0] >= 2 * n_state and step == 0 and analysis_out.shape[0] > 3:
+        if runner_handles_variational:
+            min_ws_size = 2 * n_state
+        elif variational_step_fn is not None:
+            min_ws_size = 2 * n_state + variational_ws_size
+        else:
+            min_ws_size = 2 * n_state
+        if analysis_ws.shape[0] < min_ws_size or analysis_out.shape[0] < 2:
+            return
+
+        vec = analysis_ws[:n_state]
+        out_vec = analysis_ws[n_state : 2 * n_state]
+
+        if step == 0 and analysis_out.shape[0] > 3:
             any_nonzero = False
             for i in range(n_state):
-                if analysis_ws[i] != 0.0:
+                if vec[i] != 0.0:
                     any_nonzero = True
                     break
             if not any_nonzero:
                 for i in range(n_state):
-                    analysis_ws[i] = init_vec[i]
-            analysis_ws[n_state : 2 * n_state] = 0.0
+                    vec[i] = init_vec[i]
+            for i in range(n_state):
+                out_vec[i] = 0.0
             analysis_out[0] = 0.0
             analysis_out[1] = 0.0
             analysis_out[2] = 0.0
             analysis_out[3] = float(variational_mode)  # Store mode metadata
+
+        if mode == 0 and (not runner_handles_variational) and variational_step_fn is not None:
+            start = 2 * n_state
+            if variational_ws_slices is None:
+                if variational_ws_factory is None:
+                    raise RuntimeError("Variational workspace factory is missing")
+                var_ws = variational_ws_factory(analysis_ws, start, n_state)
+            else:
+                s0, s1, s2, s3, s4 = variational_ws_slices
+                o1 = start + s0
+                o2 = o1 + s1
+                o3 = o2 + s2
+                o4 = o3 + s3
+                o5 = o4 + s4
+                var_ws = (
+                    analysis_ws[start:o1],
+                    analysis_ws[o1:o2],
+                    analysis_ws[o2:o3],
+                    analysis_ws[o3:o4],
+                    analysis_ws[o4:o5],
+                )
+
+            # Call tangent step: integrates vec → out_vec
+            # Signature: (t, dt, y_curr, v_curr, v_prop, params, runtime_ws, ws)
+            variational_step_fn(t, dt, y_curr, vec, out_vec, params, runtime_ws, var_ws)
 
     def _post_step(
         t: float,
@@ -167,32 +205,7 @@ def _make_hooks(
             if runner_handles_variational:
                 # Runner already propagated out_vec in-step.
                 pass
-            elif variational_step_fn is not None:
-                # Use stepper-provided tangent integration (RK4-style, etc.)
-                start = 2 * n_state
-                if variational_ws_slices is None:
-                    if variational_ws_factory is None:
-                        raise RuntimeError("Variational workspace factory is missing")
-                    var_ws = variational_ws_factory(analysis_ws, start, n_state)
-                else:
-                    s0, s1, s2, s3, s4 = variational_ws_slices
-                    o1 = start + s0
-                    o2 = o1 + s1
-                    o3 = o2 + s2
-                    o4 = o3 + s3
-                    o5 = o4 + s4
-                    var_ws = (
-                        analysis_ws[start:o1],
-                        analysis_ws[o1:o2],
-                        analysis_ws[o2:o3],
-                        analysis_ws[o3:o4],
-                        analysis_ws[o4:o5],
-                    )
-
-                # Call tangent step: integrates vec → out_vec
-                # Signature: (t, dt, y_curr, v_curr, v_prop, params, runtime_ws, ws)
-                variational_step_fn(t, dt, y_curr, vec, out_vec, params, runtime_ws, var_ws)
-            else:
+            elif variational_step_fn is None:
                 raise RuntimeError("Variational stepping requested without stepper support")
 
         else:
@@ -803,8 +816,6 @@ def _make_hooks_spectrum(
         trace_cap: int,
         trace_stride: int,
     ) -> None:
-        if step != 0:
-            return
         need_ws = 2 * n_state * k + (
             variational_ws_size_per_vec * k if variational_step_fn is not None else 0
         )
@@ -814,32 +825,58 @@ def _make_hooks_spectrum(
 
         V = analysis_ws[: n_state * k].reshape((n_state, k))
         W = analysis_ws[n_state * k : 2 * n_state * k].reshape((n_state, k))
-        # var_ws is constructed in post_step where it's needed.
+        # var_ws is constructed per-column when needed.
 
-        # Initialize only if V is all zeros (allows user to pre-seed).
-        any_nonzero = False
-        for i in range(n_state):
-            for j in range(k):
-                if V[i, j] != 0.0:
-                    any_nonzero = True
-                    break
-            if any_nonzero:
-                break
-        if not any_nonzero:
+        if step == 0:
+            # Initialize only if V is all zeros (allows user to pre-seed).
+            any_nonzero = False
             for i in range(n_state):
                 for j in range(k):
-                    V[i, j] = init_basis[i, j]
+                    if V[i, j] != 0.0:
+                        any_nonzero = True
+                        break
+                if any_nonzero:
+                    break
+            if not any_nonzero:
+                for i in range(n_state):
+                    for j in range(k):
+                        V[i, j] = init_basis[i, j]
 
-        # Clear work + outputs
-        for i in range(n_state):
+            # Clear work + outputs
+            for i in range(n_state):
+                for j in range(k):
+                    W[i, j] = 0.0
+
             for j in range(k):
-                W[i, j] = 0.0
+                analysis_out[j] = 0.0
+            analysis_out[k] = 0.0
+            analysis_out[k + 1] = 0.0
+            analysis_out[k + 2] = float(variational_mode)  # Store mode metadata
 
-        for j in range(k):
-            analysis_out[j] = 0.0
-        analysis_out[k] = 0.0
-        analysis_out[k + 1] = 0.0
-        analysis_out[k + 2] = float(variational_mode)  # Store mode metadata
+        if mode == 0 and (not runner_handles_variational) and variational_step_fn is not None:
+            for j in range(k):
+                v_col = V[:, j]
+                w_col = W[:, j]
+                start = 2 * n_state * k + j * variational_ws_size_per_vec
+                if variational_ws_slices is None:
+                    if variational_ws_factory is None:
+                        raise RuntimeError("Variational workspace factory is missing")
+                    var_ws = variational_ws_factory(analysis_ws, start, n_state)
+                else:
+                    s0, s1, s2, s3, s4 = variational_ws_slices
+                    o1 = start + s0
+                    o2 = o1 + s1
+                    o3 = o2 + s2
+                    o4 = o3 + s3
+                    o5 = o4 + s4
+                    var_ws = (
+                        analysis_ws[start:o1],
+                        analysis_ws[o1:o2],
+                        analysis_ws[o2:o3],
+                        analysis_ws[o3:o4],
+                        analysis_ws[o4:o5],
+                    )
+                variational_step_fn(t, dt, y_curr, v_col, w_col, params, runtime_ws, var_ws)
 
     def _post_step(
         t: float,
@@ -869,34 +906,14 @@ def _make_hooks_spectrum(
         # -------- propagate tangent basis columns into W --------
         # tmp_out is W[:, j], reused per column.
         if not runner_handles_variational:
-            for j in range(k):
-                # Compute J*v into W[:, j]
-                v_col = V[:, j]
-                w_col = W[:, j]
-                if mode == 0:
-                    if variational_step_fn is None:
-                        raise RuntimeError("Variational stepping requested without stepper support")
-                    start = 2 * n_state * k + j * variational_ws_size_per_vec
-                    if variational_ws_slices is None:
-                        if variational_ws_factory is None:
-                            raise RuntimeError("Variational workspace factory is missing")
-                        var_ws = variational_ws_factory(analysis_ws, start, n_state)
-                    else:
-                        s0, s1, s2, s3, s4 = variational_ws_slices
-                        o1 = start + s0
-                        o2 = o1 + s1
-                        o3 = o2 + s2
-                        o4 = o3 + s3
-                        o5 = o4 + s4
-                        var_ws = (
-                            analysis_ws[start:o1],
-                            analysis_ws[o1:o2],
-                            analysis_ws[o2:o3],
-                            analysis_ws[o3:o4],
-                            analysis_ws[o4:o5],
-                        )
-                    variational_step_fn(t, dt, y_curr, v_col, w_col, params, runtime_ws, var_ws)
-                else:
+            if mode == 0:
+                if variational_step_fn is None:
+                    raise RuntimeError("Variational stepping requested without stepper support")
+            else:
+                for j in range(k):
+                    # Compute J*v into W[:, j]
+                    v_col = V[:, j]
+                    w_col = W[:, j]
                     jvp_fn(t, y_curr, params, v_col, w_col, runtime_ws)
 
         # -------- Modified Gram–Schmidt (QR) on W (in place) --------

@@ -2,6 +2,14 @@
 
 ---
 
+## [0.35.9] – 2025-12-29
+### Fixed
+- The `ab2` and `ab3` state history usage was wrong. Shifted tangent‑only Lyapunov propagation into `pre_step` 
+  so `ab2`/`ab3` see (y_n, v_n) when forming g_n = J(y_n)v_n. `post_step` now only normalizes/accumulates (flow) 
+  or computes Jv for map mode.
+
+---
+
 ## [0.35.8] – 2025-12-29
 ### Changed
 - Changed version numbers to v0 and updated all git tags accordingly. This will be an indicator that the package
