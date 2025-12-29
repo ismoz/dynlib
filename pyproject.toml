@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dynlib"
-version = "2.29.0"
+version = "0.35.8"
 description = "A dynamical systems simulation library."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -12,8 +12,7 @@ authors = [{ name = "İsmail Öztürk", email = "ismail.ozturk@amasya.edu.tr" }]
 license = { file = "LICENSE" }
 keywords = ["ODE", "dynamical-systems", "simulation"]
 dependencies = [
-  "numpy>=1.23",
-  "scipy>=1.9",
+  "numpy>=1.24",
 ]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -24,7 +23,9 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "numpy>=1.23", "scipy>=1.9"]
+jit  = ["numba>=0.57.1"]
+plot = ["matplotlib>=3.7"]
+dev = ["pytest>=7", "scipy>=1.9", "matplotlib>=3.7", "numba>=0.57.1"]
 
 [project.scripts]
 dynlib = "dynlib.cli:main"

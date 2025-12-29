@@ -2,7 +2,14 @@
 
 ---
 
-## [2.35.7] – 2025-12-29
+## [0.35.8] – 2025-12-29
+### Changed
+- Changed version numbers to v0 and updated all git tags accordingly. This will be an indicator that the package
+  is still alpha not a stable release.
+
+---
+
+## [0.35.7] – 2025-12-29
 ### Added
 - Variational stepping support to the steppers: `rk2`, `ab2`, and `ab3`.
 
@@ -14,7 +21,7 @@
 
 ---
 
-## [2.35.6] – 2025-12-28
+## [0.35.6] – 2025-12-28
 ### Added
 - `sweep.lyapunov_spectrum()` utility for plotting Lyapunov spectrum change of a system for a range of parameters.
   Just like `sweep.lyapunov_mle()` it supports fast-path runner and parallelization.
@@ -35,7 +42,7 @@
 
 ---
 
-## [2.35.5] – 2025-12-27
+## [0.35.5] – 2025-12-27
 ### Added
 - Added `JITUnavailableError` for clear failures when `jit=True` but numba is missing.
 - Added variational workspace helpers for Euler and RK4 steppers so Lyapunov analyses can reuse stepper buffers.
@@ -53,7 +60,7 @@
 
 ---
 
-## [2.35.4] – 2025-12-27
+## [0.35.4] – 2025-12-27
 ### Added
 - Added `builtin://ode/lorenz` model definition.
 - Added support for horizontal lines (`hlines`) and horizontal bands (`hbands`) in plot utilities.
@@ -77,7 +84,7 @@
 
 ---
 
-## [2.35.3] – 2025-12-24
+## [0.35.3] – 2025-12-24
 ### Added
 - Variational stepping support (simultaneous numerical integration of both the original dynamical system and 
   its variational / tangent equations using the same numerical method) for RK4 stepper via 
@@ -106,7 +113,7 @@
 
 ---
 
-## [2.35.2] – 2025-12-24
+## [0.35.2] – 2025-12-24
 ### Fixed
 - Combined runtime analyses now share trace capacity correctly. Each module writes into its own slice with a
   shared step-level cursor, preventing double-increment of `trace_count` and eliminating spurious
@@ -115,7 +122,7 @@
 
 ---
 
-## [2.35.1] – 2025-12-24
+## [0.35.1] – 2025-12-24
 ### Changed
 - Refactored analysis hook dispatch to eliminate `NumbaExperimentalFeatureWarning`. Analysis hooks (`pre_step`,
   `post_step`) are now injected as global symbols (`ANALYSIS_PRE`, `ANALYSIS_POST`) into generated runner source
@@ -138,7 +145,7 @@
 
 ---
 
-## [2.35.0] – 2025-12-24
+## [0.35.0] – 2025-12-24
 ### Added
 - `lyapunov_spectrum()` analysis utility for performing Benettin QR / Shimada–Nagashima (reorthonormalization) 
   style Lyapunov spectrum analysis.
@@ -153,7 +160,7 @@
 
 ---
 
-## [2.34.10] – 2025-12-24
+## [0.34.10] – 2025-12-24
 ### Changed
 - Removed the legacy `dynlib.runtime.model.Model` dataclass. `Sim` now expects the `FullModel` returned by `build()`, 
   eliminating the duplicate runtime model type. Maintaining both `Model` and `FullModel` class was hard. For example 
@@ -165,7 +172,7 @@
 
 ---
 
-## [2.34.9] – 2025-12-24
+## [0.34.9] – 2025-12-24
 ### Tests
 - Added comprehensive test coverage for external Jacobian mode in implicit steppers (`bdf2`, `bdf2a`, `tr-bdf2a`, 
   `sdirk2`) via new test file `test_jacobian_external_mode.py`. Tests verify accuracy against analytic solutions,
@@ -174,7 +181,7 @@
 
 ---
 
-## [2.34.8] – 2025-12-23
+## [0.34.8] – 2025-12-23
 ### Changed
 - Modified steppers relying on Jacobian matrices (`bdf2`, `bdf2a`, `tr-bdf2a`, `sdirk`) so that they can utilize
   DSL-generated Jacobian functions in their calculations alongside their previous finite difference numerical
@@ -203,7 +210,7 @@
 
 ---
 
-## [2.34.7] – 2025-12-23
+## [0.34.7] – 2025-12-23
 ### Changed
 - Each parameter result had its own result data class. Unified sweep results with a single template: `SweepResult` 
   + `TrajectoryPayload`. Removed individual data classes like `ParamSweepTrajResult` and the `ParamSweepMLEResult`
@@ -211,7 +218,7 @@
 
 ---
 
-## [2.34.6] – 2025-12-22
+## [0.34.6] – 2025-12-22
 ### Added
 - Lyapunov MLE parameter sweep functionality via `sweep.lyapunov_mle()` for computing maximum Lyapunov exponents 
   across parameter ranges.
@@ -229,7 +236,7 @@
 
 ---
 
-## [2.34.5] – 2025-12-22
+## [0.34.5] – 2025-12-22
 ### Added
 - `ResultsView.analysis` now returns `AnalysisResult` wrappers that dynamically expose analysis-specific outputs 
   and traces via named access.
@@ -253,7 +260,7 @@
 
 ---
 
-## [2.34.4] – 2025-12-22
+## [0.34.4] – 2025-12-22
 ### Changed
 - Moved `src/dynlib/analysis/post/sweep.py` -> `src/dynlib/analysis/post/sweep.py` to gather all sweeps into one 
   place. Changed sweep imports accordingly.
@@ -265,7 +272,7 @@
 
 ---
 
-## [2.34.3] – 2025-12-22
+## [0.34.3] – 2025-12-22
 ### Changed
 - Simplified runtime analysis API with consistent factory pattern:
   - `lyapunov_mle()` now uses simple conditional logic: if `model` parameter is provided, returns `AnalysisModule` 
@@ -281,7 +288,7 @@
 
 ---
 
-## [2.34.2] – 2025-12-22
+## [0.34.2] – 2025-12-22
 ### Fixed
 - Runtime `CombinedAnalysis` now composes child hooks with precomputed offsets and numba-friendly closures, 
   making combined analyses eligible for fast-path/JIT execution while preserving the Python path when `jit=False`.
@@ -292,7 +299,7 @@
 
 ---
 
-## [2.34.1] – 2025-12-21
+## [0.34.1] – 2025-12-21
 ### Added
 - DSL models can now declare Jacobians directly in TOML via `[equations.jacobian].exprs` with deterministic 
   state order semantics (state decleration order is used for determining the order of the matrix).
@@ -315,7 +322,7 @@
 
 ---
 
-## [2.34.0] – 2025-12-21
+## [0.34.0] – 2025-12-21
 ### Added
 - Runtime analysis system for computing diagnostics during simulation execution:
   - New `dynlib.analysis.runtime` module with `AnalysisModule`, `AnalysisHooks`, and `TraceSpec` for building 
@@ -351,7 +358,7 @@
 
 ---
 
-## [2.33.1] – 2025-12-18
+## [0.33.1] – 2025-12-18
 ### Changed
 - Fixed some minor plot related bugs. 
 - `export.savefig()` now can infer save format from the file extension of path. Otherwise `fmts` arg should 
@@ -362,7 +369,7 @@
 
 ---
 
-## [2.33.0] – 2025-12-18
+## [0.33.0] – 2025-12-18
 ### Added
 - Introduced comprehensive bifurcation analysis tools for exploring parameter-dependent dynamics:
   - `BifurcationExtractor` class provides post-processing of trajectory sweeps into bifurcation scatter data
@@ -401,7 +408,7 @@
 
 ---
 
-## [2.32.1] – 2025-12-16
+## [0.32.1] – 2025-12-16
 ### Changed
 - Applied minor bug fixes to the new fast-path runner feature.
 - Centralized fast-path capability gating in `src/dynlib/analysis/sweep.py` by adding `_assess_fastpath_support`, 
@@ -414,7 +421,7 @@
 
 ---
 
-## [2.32.0] – 2025-12-16
+## [0.32.0] – 2025-12-16
 ### Added
 - Introduced a fast-path analysis runner (`dynlib.runtime.fastpath`) optimized for parameter sweeps and 
   batch simulations:
@@ -453,7 +460,7 @@
 
 ---
 
-## [2.31.5] – 2025-12-15
+## [0.31.5] – 2025-12-15
 ### Added
 - Vector field plots can now create animations across parameter sweeps via `vectorfield_animate()` with 
   configurable frame rates, repeat settings, and custom update functions for parameters and fixed states.
@@ -474,21 +481,21 @@
 
 ---
 
-## [2.31.4] – 2025-12-15
+## [0.31.4] – 2025-12-15
 ### Added
 - Vector field plots can color arrows and streamlines by speed magnitude via `speed_color=True`, with optional
   `speed_cmap`/`speed_norm` forwarded to Matplotlib.
 
 ---
 
-## [2.31.3] – 2025-12-15
+## [0.31.3] – 2025-12-15
 ### Added
 - Vector field plotting now supports a streamlines mode via `mode="stream"` with kwargs forwarded to 
   `matplotlib.streamplot()`.
 
 ---
 
-## [2.31.2] – 2025-12-15
+## [0.31.2] – 2025-12-15
 ### Added
 - Vectorfield plot demo `vectorfield_highdim_demo.py` for demonstrating vector fields of 2D slices of higher
   dimensional systems.
@@ -498,7 +505,7 @@
 
 ---
 
-## [2.31.1] – 2025-12-15
+## [0.31.1] – 2025-12-15
 ### Added
 - Interactive vector field plots respond to clicks by simulating trajectories from that point using the compiled 
   model’s stepper, while nullclines can be toggled without recomputation (key `N`) and trajectories can be cleared 
@@ -511,7 +518,7 @@
 
 ---
 
-## [2.31.0] – 2025-12-15
+## [0.31.0] – 2025-12-15
 ### Added
 - Added vector field plotting functions for ODE models into `plot/vectorfield.py`. It creates quiver plots and 
   can calculate nullclines numerically. 
@@ -522,7 +529,7 @@
 
 ---
 
-## [2.30.11] – 2025-12-10
+## [0.30.11] – 2025-12-10
 ### Added
 - Added `TrajectoryAnalyzer`/`MultiVarAnalyzer` utilities under `dynlib.analysis` and exported them for easy 
   imports.
@@ -537,7 +544,7 @@
 
 ---
 
-## [2.30.10] – 2025-12-03
+## [0.30.10] – 2025-12-03
 ### Added
 - Added iterable `.runs` property to `ParamSweepTrajResult` for intuitive access to individual sweep runs:
   - `SweepRun` dataclass provides `.param_value`, `.t`, and `["var"]` access for each run
@@ -551,7 +558,7 @@
 
 ---
 
-## [2.30.9] – 2025-12-02
+## [0.30.9] – 2025-12-02
 ### Added
 - Added `dt_max` parameter to adaptive ODE steppers (RK45, BDF2, BDF2A_scipy, TR-BDF2A) to limit maximum step size 
   during step size calculation.
@@ -563,7 +570,7 @@
 
 ---
 
-## [2.30.8] – 2025-12-02
+## [0.30.8] – 2025-12-02
 ### Added
 - Added `phase.multi()` function to plot multiple 2D phase trajectories on the same axes, useful for showing how 
   trajectories change with different parameters in phase space.
@@ -575,7 +582,7 @@
 
 ---
 
-## [2.30.7] – 2025-11-25
+## [0.30.7] – 2025-11-25
 ### Added
 - Enhanced the `analysis.sweep()` utility with data stacking for consistent run lengths, named access to 
   variables, and time axis convenience properties:
@@ -587,14 +594,14 @@
 
 ---
 
-## [2.30.6] – 2025-11-25
+## [0.30.6] – 2025-11-25
 ### Added
 - Added a new `analysis` module with parameter sweep tools for running simulations with different parameter 
   values and collecting results. It is an early sketch.
 
 ---
 
-## [2.30.5] – 2025-11-24
+## [0.30.5] – 2025-11-24
 ### Added
 - Added support for `range()` function in DSL expressions. Arguments are automatically cast to integers for 
   proper Numba compatibility.
@@ -608,14 +615,14 @@
 
 ---
 
-## [2.30.4] – 2025-11-24
+## [0.30.4] – 2025-11-24
 ### Added
 - Added user-defined `[constants]` table support to inline model-specific numeric literals across DSL
   expressions, with collision guards against states/params/aux and reserved identifiers.
 
 ---
 
-## [2.30.3] – 2025-11-24
+## [0.30.3] – 2025-11-24
 ### Added
 - DSL builtin constants `pi` and `e` are now inlined as numeric literals across equations, aux/functions,
   events, and initial value expressions. These identifiers are reserved and cast to the model dtype at
@@ -629,7 +636,7 @@
 
 ---
 
-## [2.30.2] – 2025-11-23
+## [0.30.2] – 2025-11-23
 ### Changed
 - Runners now refresh auxiliary variable values before recording initial conditions to ensure aux data is 
   available at the start for recording.
@@ -637,7 +644,7 @@
 
 ---
 
-## [2.30.1] – 2025-11-23
+## [0.30.1] – 2025-11-23
 ### Changed
 - Warm-up now matches the new runner ABI and quadruplet callables so JIT compilation is triggered during 
   build again.
@@ -647,7 +654,7 @@
 
 ---
 
-## [2.30.0] – 2025-11-23
+## [0.30.0] – 2025-11-23
 ### Added
 - Added `update_aux` callable to compute auxiliary variables from current state values. This function is 
   called after each committed step to ensure aux variables are available for recording and event conditions. 
@@ -690,7 +697,7 @@
 
 ---
 
-## [2.29.6] – 2025-11-23
+## [0.29.6] – 2025-11-23
 ### Added
 - Added support for adding and removing parameters via mods. Now `add.params` can be used to add new 
   parameters and `remove.params` to remove existing ones.
@@ -705,7 +712,7 @@
 
 ---
 
-## [2.29.5] – 2025-11-23
+## [0.29.5] – 2025-11-23
 ### Added
 - Added support for `sum()` and `prod()` generator comprehensions in DSL expressions. These allow summing or 
   multiplying over ranges with optional conditions, like `sum(i*i for i in range(10))` or 
@@ -720,7 +727,7 @@
 
 ---
 
-## [2.29.4] – 2025-11-21
+## [0.29.4] – 2025-11-21
 ### Added
 - Added validation to prevent auxiliary variables from using reserved names like `t` to avoid conflicts 
   with runtime symbols. `_AUX_RESERVED_NAMES` list can be expanded to restrict aux names in the future.
@@ -734,7 +741,7 @@
 
 ---
 
-## [2.29.3] – 2025-11-20
+## [0.29.3] – 2025-11-20
 ### Added
 - Added documentation for DSL model file template in `docs/dsl_model_template.md`.
 - Added several builtin models for ODE and MAP types:
@@ -744,7 +751,7 @@
 
 ---
 
-## [2.29.2] – 2025-11-20
+## [0.29.2] – 2025-11-20
 ### Added
 - Added `choose_default_stepper()` function to automatically select appropriate steppers based on model type
   if DSL model spec and user does not provide one. The hard-coded defaults are `map` -> `map` and `ode` -> `rk4`.
@@ -757,7 +764,7 @@
 
 ---
 
-## [2.29.1] – 2025-11-20
+## [0.29.1] – 2025-11-20
 ### Added
 - Added plotting theme system using `ThemeSpec` dataclass with inheritance support for better theme management 
   and customization.
@@ -769,7 +776,7 @@
 
 ---
 
-## [2.29.0] – 2025-11-20
+## [0.29.0] – 2025-11-20
 ### Added
 - Added `dynlib` CLI entry point with `model validate`, `steppers list`, and `cache` management 
   subcommands for model validation, registry inspection, and JIT cache cleanup. The CLI entry point is
@@ -781,7 +788,7 @@
 
 ---
 
-## [2.28.9] – 2025-11-20
+## [0.28.9] – 2025-11-20
 ### Added
 - Added validation script for adaptive ODE steppers tolerance sweep.
 - Added RK2 (explicit midpoint) stepper for fixed-step ODE simulations.
@@ -792,7 +799,7 @@
 
 ---
 
-## [2.28.8] – 2025-11-20
+## [0.28.8] – 2025-11-20
 ### Added
 - Added automatic initial step size selection for adaptive ODE steppers using Hairer/Shampine-style WRMS 
   norm heuristics. Now dt arg for adaptive ode steppers is just a suggestion and max step bound. Stepper 
@@ -808,7 +815,7 @@
 
 ---
 
-## [2.28.7] – 2025-11-20
+## [0.28.7] – 2025-11-20
 ### Changed
 - Improved `bdf2a` stepper startup by using Richardson extrapolation for better accuracy on the first step. 
 - Optimized `tr-bdf2a` stepper by switching to modified Newton method with frozen Jacobian for faster 
@@ -824,7 +831,7 @@
 
 ---
 
-## [2.28.6] – 2025-11-19
+## [0.28.6] – 2025-11-19
 ### Added
 - Added `bdf2a` stepper, an adaptive BDF2 method with variable step size for stiff ODEs.
 - Added `tr-bdf2a` stepper, an adaptive TR-BDF2 method combining trapezoidal rule and BDF2 for better 
@@ -836,7 +843,7 @@
 
 ---
 
-## [2.28.5] – 2025-11-19
+## [0.28.5] – 2025-11-19
 ### Added
 - Added `select_steppers()` function to filter steppers by metadata fields like kind, scheme, jit_capable, 
   etc.
@@ -849,7 +856,7 @@
 
 ---
 
-## [2.28.4] – 2025-11-19
+## [0.28.4] – 2025-11-19
 ### Added
 - Added `state()` and `param()` methods to `Sim` class for accessing individual state and parameter 
   values by name.
@@ -873,7 +880,7 @@
 
 ---
 
-## [2.28.3] – 2025-11-19
+## [0.28.3] – 2025-11-19
 ### Added
 - Added `bdf2a_scipy` stepper which is adaptive BDF2 solver based on scipy root solvers.
 
@@ -889,7 +896,7 @@
 
 ---
 
-## [2.28.2] – 2025-11-18
+## [0.28.2] – 2025-11-18
 ### Added
 - Added Van der Pol oscillator model and its example with jit-enabled `bdf2` stepper.
 - Added a warning when `max_steps` is hit by the runners.
@@ -905,7 +912,7 @@
 
 ---
 
-## [2.28.1] – 2025-11-18
+## [0.28.1] – 2025-11-18
 ### Added
 - Added support for extra stepper configuration defaults in the [sim] section of model files. Previously 
   only hardcoded rtol/atol values were handled as [sim] stepper config values. Now unknown keys in [sim] 
@@ -921,7 +928,7 @@
 
 ---
 
-## [2.28.0] – 2025-11-18
+## [0.28.0] – 2025-11-18
 ### Added
 - Introduced `ConfigMixin` base class in `config_base.py` for automatic stepper configuration handling. 
   It makes stepper declarations more concise.
@@ -940,7 +947,7 @@
 
 ---
 
-## [2.27.2] – 2025-11-18
+## [0.27.2] – 2025-11-18
 ### Added
 - Added `jit_capable` flag to `StepperCaps` to specify if a stepper supports JIT compilation.
 - Introduced `softdeps.py` module for centralized detection of optional dependencies like numba and 
@@ -960,7 +967,7 @@
 
 ---
 
-## [2.27.1] – 2025-11-17
+## [0.27.1] – 2025-11-17
 ### Changed
 - Improved BDF2_JIT stepper by adding checks for NaN/Inf values during calculations to exit early in 
   case of invalid data. Also improved Jacobian calculations.
@@ -970,7 +977,7 @@
 
 ---
 
-## [2.27.0] – 2025-11-17
+## [0.27.0] – 2025-11-17
 ### Added
 - Jit compatible BDF2 (Backward Differentiation Formula 2nd Order) stepper `bdf2_jit` is added. It 
   utilizes a simple Newton method plus custom numeric Jacobian. Therefore, it is not as reliable as 
@@ -1004,7 +1011,7 @@
 
 ---
 
-## [2.26.5] – 2025-11-16
+## [0.26.5] – 2025-11-16
 ### Added
 - Added new `StepperCaps` dataclass to hold stepper-specific features that can be added or removed 
   without changing the rest of the stepper `StepperMeta` declarations.
@@ -1015,7 +1022,7 @@
 
 ---
 
-## [2.26.4]
+## [0.26.4]
 ### Tests
 - Updated all tests according to the new workspaces design.
 - All tests pass and examples work at this point.
@@ -1031,14 +1038,14 @@
 
 ---
 
-## [2.26.3] – 2025-11-16
+## [0.26.3] – 2025-11-16
 ### Changed
 - Removed NaN/Inf checks from `AB2` and `AB3` steppers, since they are fixed-step solvers.
 - Removed workbanks related docstrings from steppers.
 
 ---
 
-## [2.26.2] – 2025-11-16
+## [0.26.2] – 2025-11-16
 ### Changed
 - Updated `snapshot_demo.py` and `uri_demo.py` examples. All examples work at this point.
 
@@ -1047,7 +1054,7 @@
 
 ---
 
-## [2.26.1] – 2025-11-16
+## [0.26.1] – 2025-11-16
 ### Changed
 - Updated the docs throughout the package. Removed remnants of the old workbanks docs.
 - Removed stepper_banks.md file and introduced stepper_workspace.md file.
@@ -1058,7 +1065,7 @@
 
 ---
 
-## [2.26.0] – 2025-11-15
+## [0.26.0] – 2025-11-15
 ### Added
 - Introduced separate stepper and runtime workspaces to cleanly separate responsibilities:
   - **Stepper workspace**: Private to each stepper, implemented as a NamedTuple-of-NumPy-views 
@@ -1109,14 +1116,14 @@
 
 ---
 
-## [2.25.1] – 2025-11-15
+## [0.25.1] – 2025-11-15
 ### Added
 - Added AB3 (Adams-Bashforth 3rd order) stepper for ODE simulations.
 - Added basic and contract tests for AB3.
 
 ---
 
-## [2.25.0] – 2025-11-15
+## [0.25.0] – 2025-11-15
 ### Added
 - Added AB2 (Adams-Bashforth 2nd order) stepper for ODE simulations.
 - Added basic tests for AB2 stepper accuracy.
@@ -1143,7 +1150,7 @@
 
 ---
 
-## [2.24.1] – 2025-11-14
+## [0.24.1] – 2025-11-14
 ### Added
 - Added scalar DSL macros usable in aux, equations, and event actions: `sign(x)`, `heaviside(x)`, 
   `step(x)`, `relu(x)`, `clip(x, a, b)`, and `approx(x, y, tol)`. They lower to comparisons and 
@@ -1154,7 +1161,7 @@
 
 ---
 
-## [2.24.0] – 2025-11-14
+## [0.24.0] – 2025-11-14
 ### Added
 - Added DSL event macros for common transition detection: 
     - `cross_up(state, threshold)`, 
@@ -1176,7 +1183,7 @@
 
 ---
 
-## [2.23.6] – 2025-11-14
+## [0.23.6] – 2025-11-14
 ### Fixed
 - Event log buffer reallocation was causing data loss for post events. Reordered event handling in 
   runners (both `runner.py` and `runner_discrete.py`) to check post-events on proposed state before 
@@ -1192,7 +1199,7 @@
 
 ---
 
-## [2.23.5] – 2025-11-14
+## [0.23.5] – 2025-11-14
 ### Added
 - Added support for numeric expressions in states and parameters. You can now use strings like 
   "8/3" or "1/2" that get evaluated to numbers.
@@ -1213,7 +1220,7 @@
 
 ---
 
-## [2.23.4] – 2025-11-14
+## [0.23.4] – 2025-11-14
 ### Added
 - Added `uses_lag` and `equations_use_lag` flags to model classes to track lag feature usage.
 - Added `detect_equation_lag_usage` function to check if model equations depend on lag functions. 
@@ -1227,7 +1234,7 @@
 
 ---
 
-## [2.23.3] – 2025-11-14
+## [0.23.3] – 2025-11-14
 ### Fixed
 - `_LAG_STATE_INFO` value was shared globally between different python (non-jitted) runners. This 
   was causing corrupted lag info between different runners. Fixed lag state info to be per-runner 
@@ -1238,14 +1245,14 @@
 
 ---
 
-## [2.23.2] – 2025-11-14
+## [0.23.2] – 2025-11-14
 ### Changed
 - Removed support for the `prev_<name>` DSL shorthand. Now `lag_<name>()` is used as a shorthand for 
   one-step lag. `lag_<name>(k)` usage stays the same.
 
 ---
 
-## [2.23.1] – 2025-11-14
+## [0.23.1] – 2025-11-14
 ### Added
 - Added `ss_lag_reserved` field to `StructSpec` for lag buffer allocation in stepper state. If
   a stepper needs to use the ss bank, it should use starting from this index. iw0 bank already
@@ -1257,7 +1264,7 @@
 
 ---
 
-## [2.23.0] – 2025-11-14
+## [0.23.0] – 2025-11-14
 ### Added
 - Added lag system to access historical state values in models using `lag_<name>(k)` for k steps
   back or `prev_<name>` for one step back. This enables delay differential equations and lagged 
@@ -1297,7 +1304,7 @@
 
 ---
 
-## [2.22.0] – 2025-11-13
+## [0.22.0] – 2025-11-13
 ### Added
 - Added support for builtin models using the "builtin://" URI scheme. This lets users access bundled 
   models without setting up paths manually.
@@ -1314,7 +1321,7 @@
 
 ---
 
-## [2.21.6] – 2025-11-13
+## [0.21.6] – 2025-11-13
 ### Added
 - Added `add_preset()` method to `Sim` class. It lets you create new presets from the current 
   session state or by providing specific values for states and parameters.
@@ -1335,14 +1342,14 @@
 
 ---
 
-## [2.21.5] – 2025-11-13
+## [0.21.5] – 2025-11-13
 ### Changed
 - Updated cobweb plotting function so that it works with new v2 sim or model objects.
 - Updated logistic_map.py example to use themes, grid layouts, and cobweb plots.
 
 ---
 
-## [2.21.4] – 2025-11-13
+## [0.21.4] – 2025-11-13
 ### Added
 - Added `state_vector()`, `param_vector()`, `state_dict()`, and `param_dict()` methods to `Sim` 
   class. They let getting state and parameter values as arrays or dictionaries from the current 
@@ -1353,7 +1360,7 @@
 
 ---
 
-## [2.21.3] – 2025-11-13
+## [0.21.3] – 2025-11-13
 ### Added
 - Added `Sim.config()` method to set default simulation settings like dt, max_steps, record options,
   and capacities. Stepper specific parameters can also be set with this method. They are forwarded
@@ -1369,7 +1376,7 @@
 
 ---
 
-## [2.21.2] – 2025-11-13
+## [0.21.2] – 2025-11-13
 ### Added
 - Introduced `Sim.assign()` method in `src/dynlib/runtime/sim.py` for assigning state and parameter
   values dynamically during a simulation session.
@@ -1384,13 +1391,13 @@
 
 ---
 
-## [2.21.1] – 2025-11-13
+## [0.21.1] – 2025-11-13
 ### Changed
 - Removed `tomli` package fallbacks and updated Python requirement as >= 3.11 instead of 3.10.
 
 ---
 
-## [2.21.0] – 2025-11-12
+## [0.21.0] – 2025-11-12
 ### Added
 - Reintroduced `guards.py` in `src/dynlib/compiler/` to provide universal finiteness checks for 
   steppers. This guard is applied universally to all steppers inside the runners and adaptive 
@@ -1406,7 +1413,7 @@
 
 ---
 
-## [2.20.2] – 2025-11-12
+## [0.20.2] – 2025-11-12
 ### Changed
 - Removed `guards.py` because it was poorly designed and implemented; was causing a lot of numba
   compatibility and caching issues.
@@ -1416,7 +1423,7 @@
 
 ---
 
-## [2.20.1] – 2025-11-12
+## [0.20.1] – 2025-11-12
 ### Fixed
 - `build()` warm-up function `_warmup_jit_runner` was generating the wrong runner when dtype is not 
   float64. Updated `_warmup_jit_runner` in `src/dynlib/compiler/build.py` to ensure stepper control 
@@ -1432,7 +1439,7 @@
 
 ---
 
-## [2.20.0] – 2025-11-12
+## [0.20.0] – 2025-11-12
 ### Added
 - Introduced `Segment` dataclass in `src/dynlib/runtime/sim.py` to represent simulation segments.
 - Added `SegmentsView` and `SegmentView` classes in `src/dynlib/runtime/results_api.py` for 
@@ -1450,7 +1457,7 @@
 
 ---
 
-## [2.19.4] – 2025-11-12
+## [0.19.4] – 2025-11-12
 ### Added
 - Added `examples/collatz.py` to demonstrate map simulation with integer dtype and ternary if 
   usage.
@@ -1471,7 +1478,7 @@
 
 ---
 
-## [2.19.3] – 2025-11-11
+## [0.19.3] – 2025-11-11
 ### Added
 - Introduced `guards.py` in `src/dynlib/runtime/` to provide universal finiteness checks for 
   steppers. This guard is applied universally to all steppers inside the runners and adaptive
@@ -1489,13 +1496,13 @@
 
 ---
 
-## [2.19.2] – 2025-11-11
+## [0.19.2] – 2025-11-11
 ### Changed
 - Gathered all ode-solver steppers under `src/dynlib/steppers/ode` folder.
 
 ---
 
-## [2.19.1] – 2025-11-11
+## [0.19.1] – 2025-11-11
 ### Added
 - Added `examples/logistic_map.py` to demonstrate the logistic map simulation using the new 
   discrete runner.
@@ -1514,7 +1521,7 @@
 
 ---
 
-## [2.19.0] – 2025-11-11
+## [0.19.0] – 2025-11-11
 ### Changed
 - Split runners into two: `runner_discrete` for discrete-time models; `runner` (old `runner` 
   untouched) for continuous-time models.
@@ -1536,7 +1543,7 @@
 
 ---
 
-## [2.18.0] – 2025-11-11
+## [0.18.0] – 2025-11-11
 ### Added
 - Added source code export functionality for compiled models. All compiled models now store the 
   generated Python source code for RHS, events, and stepper functions.
@@ -1558,14 +1565,14 @@
 
 ---
 
-## [2.17.1] – 2025-11-11
+## [0.17.1] – 2025-11-11
 ### Added
 - Added `setup()` helper to `src/dynlib/__init__.py`. It combines `build()` + `Sim()` calls. It is 
   more convenient for end users.
 
 ---
 
-## [2.17.0] – 2025-11-11
+## [0.17.0] – 2025-11-11
 ### Added
 - Added presets feature for quick storage of state/param values. Presets can be defined inside model
   file or in external toml files.
@@ -1593,7 +1600,7 @@
 
 ---
 
-## [2.16.2] – 2025-11-10
+## [0.16.2] – 2025-11-10
 ### Added
 - Persisted runtime `stepper_config` data in `SessionState`, snapshots, and snapshot metadata so
   resumes continue with the exact tolerances last used (plus field-name lists for inspection).
@@ -1602,7 +1609,7 @@
 
 ---
 
-## [2.16.1] – 2025-11-10
+## [0.16.1] – 2025-11-10
 ### Added
 - Introduced snapshot export/import functionality in `Sim`:
   - `export_snapshot()`: Exports session state to disk as a strict snapshot file.
@@ -1623,7 +1630,7 @@
 
 ---
 
-## [2.16.0] – 2025-11-10
+## [0.16.0] – 2025-11-10
 ### Added
 - `Sim` now tracks an internal `SessionState` so `run(resume=True)` continues from the exact last
   integrator conditions (time, state, params, dt, workspace).
@@ -1647,7 +1654,7 @@
 
 ---
 
-## [2.15.3] – 2025-11-09
+## [0.15.3] – 2025-11-09
 ### Added
 - `Sim.run()` accepts a `transient` warm-up duration that advances the model before recording while
   keeping events functional and resetting the public time axis to `t0`.
@@ -1658,7 +1665,7 @@
 
 ---
 
-## [2.15.2] – 2025-11-09
+## [0.15.2] – 2025-11-09
 ### Changed
 - Renamed `run()` args: 
   - `y0` -> `ic` 
@@ -1669,7 +1676,7 @@
 
 ---
 
-## [2.15.1] – 2025-11-09
+## [0.15.1] – 2025-11-09
 ### Changed
 - Forgot to add `**stepper_kwargs` in the previous version. Refactored `Sim.run()` in `sim.py` to 
   accept `**stepper_kwargs` for runtime overrides instead of explicit stepper parameters.
@@ -1678,7 +1685,7 @@
 
 ---
 
-## [2.15.0] – 2025-11-09
+## [0.15.0] – 2025-11-09
 ### Added
 - Introduced runtime stepper configuration system. Now steppers can declare their internal config 
   values. During build process a read-only struct buffer is filled to pass these values into the 
@@ -1714,7 +1721,7 @@
 
 ---
 
-## [2.14.2] – 2025-11-08
+## [0.14.2] – 2025-11-08
 ### Added
 - Previously only runners were cached. Added disk caching support for stepper and triplet functions
   in `runner.py`. This way all jittable parts are cached. This improved build times but compilation 
@@ -1730,7 +1737,7 @@
 
 ---
 
-## [2.14.1] – 2025-11-08
+## [0.14.1] – 2025-11-08
 ### Added
 - Introduced `Timer` utility in `src/dynlib/utils/timer.py` for measuring execution time.
 - Added `izhikevich_benchmark.py` to observe build and run times with and without JIT and disk
@@ -1750,7 +1757,7 @@
 
 ---
 
-## [2.14.0] – 2025-11-07
+## [0.14.0] – 2025-11-07
 ### Added
 - Introduced opt-in disk-backed runner caching via `build(..., disk_cache=...)`, including
   configurable cache roots, deterministic digesting, and automatic regeneration on corruption.
@@ -1767,7 +1774,7 @@
 
 ---
 
-## [2.13.2] – 2025-11-07
+## [0.13.2] – 2025-11-07
 ### Fixed
 - The runner was dropping records when buffer growth was triggered. Enhanced `runner` function
   in `src/dynlib/compiler/codegen/runner.py`:
@@ -1776,7 +1783,7 @@
 
 ---
 
-## [2.13.1] – 2025-11-07
+## [0.13.1] – 2025-11-07
 ### Fixed
 - Buffer reallocation was resetting the wrapper time value. Refactored `run_with_wrapper` in 
   `src/dynlib/runtime/wrapper.py` to track committed time and step size for re-entries, 
@@ -1792,7 +1799,7 @@
 
 ---
 
-## [2.13.0] – 2025-11-07
+## [0.13.0] – 2025-11-07
 ### Added
 - Introduced `Sim.results` and `Sim.raw_results` methods for accessing simulation results. The 
   first one returns new `ResultsView` object while the latter returns old low-level `Results` object. 
@@ -1808,14 +1815,14 @@
 
 ---
 
-## [2.12.5] – 2025-11-07
+## [0.12.5] – 2025-11-07
 ### Changed
 - Removed unused `src/dynlib/utils/arrays.py` and `utils` folder because user inputs are always
   copied with `np.array()` and this file is not useful right now.
 
 ---
 
-## [2.12.4] – 2025-11-07
+## [0.12.4] – 2025-11-07
 ### Changed
 - Updated `validate_stepper_function` in `src/dynlib/compiler/codegen/validate.py` to include
  `StructSpec` validation.
@@ -1831,7 +1838,7 @@
 
 ---
 
-## [2.12.3] – 2025-11-07
+## [0.12.3] – 2025-11-07
 ### Added
 - Introduced `StepperKindMismatchError` to handle mismatched stepper and model kinds.
 
@@ -1841,7 +1848,7 @@
 
 ---
 
-## [2.12.2] – 2025-11-07
+## [0.12.2] – 2025-11-07
 ### Changed
 - Removed `priority` field from `ModSpec` in `src/dynlib/compiler/mods.py`.
 - Updated exclusivity handling in `apply_mods_v2` to enforce stricter group rules.
@@ -1853,7 +1860,7 @@
 
 ---
 
-## [2.12.1] – 2025-11-07
+## [0.12.1] – 2025-11-07
 ### Added
 - TODO.md, ISSUES.md files.
 
@@ -1862,7 +1869,7 @@
 
 ---
 
-## [2.12.0] – 2025-11-06
+## [0.12.0] – 2025-11-06
 ### Added
 - Event tagging feature for compile-time metadata and filtering:
   - Added `tags: Tuple[str, ...]` field to `EventSpec` dataclass in `src/dynlib/dsl/spec.py`
@@ -1897,7 +1904,7 @@
 
 ---
 
-## [2.11.3] – 2025-11-06
+## [0.11.3] – 2025-11-06
 ### Changed
 - Exclusive groups now raise a ModelLoadError when more than one exclusive mod is supplied,
   so conflicts no longer slip through unnoticed.
@@ -1910,7 +1917,7 @@
 
 ---
 
-## [2.11.2] – 2025-11-06
+## [0.11.2] – 2025-11-06
 ### Changed
 - Updated `_apply_remove` in `src/dynlib/compiler/mods.py`:
   - Added validation to raise errors for non-existent `events`, `aux`, and `functions` during 
@@ -1933,7 +1940,7 @@
 
 ---
 
-## [2.11.1] – 2025-11-06
+## [0.11.1] – 2025-11-06
 ### Changed
 - Updated `Results` class in `src/dynlib/runtime/results.py`:
   - Added `status` field to store runner exit status.
@@ -1949,7 +1956,7 @@
 
 ---
 
-## [2.11.0] – 2025-11-06
+## [0.11.0] – 2025-11-06
 ### Changed
 - Removed `REJECT` status code from the stepper/runner contract:
   - Clarified architectural contracts: fixed-step steppers do single attempts; adaptive steppers 
@@ -1972,13 +1979,13 @@
 
 ---
 
-## [2.10.2] – 2025-11-06
+## [0.10.2] – 2025-11-06
 ### Changed
 - Dropped the legacy `EVT_TIME` buffer entirely; logged times live in `EVT_LOG_DATA`.
 
 ---
 
-## [2.10.1] – 2025-11-06
+## [0.10.1] – 2025-11-06
 ### Changed
 - Removed `record` key from events in favor of unified `log` mechanism:
   - Events no longer support `record=True/False`
@@ -2014,7 +2021,7 @@
 
 ---
 
-## [2.10.0] – 2025-11-06
+## [0.10.0] – 2025-11-06
 ### Fixed
 - Event logging now properly separates `record` and `log` functionality:
   - Previously, events only logged if BOTH `record=True` AND `log` was non-empty, silently 
@@ -2066,7 +2073,7 @@
 
 ---
 
-## [2.9.0] – 2025-11-06
+## [0.9.0] – 2025-11-06
 ### Added
 - Implemented complete mod support for DSL aux and functions:
   - Added `add.aux` and `add.functions` verbs in `src/dynlib/compiler/mods.py`
@@ -2108,7 +2115,7 @@
 
 ---
 
-## [2.8.0] – 2025-11-06
+## [0.8.0] – 2025-11-06
 ### Added
 - DSL block equations are now parsed (previously they were omitted).
 - Introduced `StructSpec` validation in `src/dynlib/steppers/base.py`:
@@ -2133,7 +2140,7 @@
 
 ---
 
-## [2.7.1] – 2025-11-06
+## [0.7.1] – 2025-11-06
 ### Changed
 - Updated `_edges_for_aux_and_functions` in `src/dynlib/dsl/astcheck.py`:
   - Function dependencies now include references to auxiliary variables.
@@ -2147,7 +2154,7 @@
 
 ---
 
-## [2.7.0] – 2025-11-05
+## [0.7.0] – 2025-11-05
 ### Changed
 - Centralized JIT compilation logic in `src/dynlib/compiler/jit/compile.py`:
   - Introduced `jit_compile` function for consistent error handling.
@@ -2170,7 +2177,7 @@
 
 ---
 
-## [2.6.1] – 2025-11-05
+## [0.6.1] – 2025-11-05
 ### Changed
 - Preceding newlines are removed from the inline model declarations. This way `inline:`
   statement can be placed above `[model]` statements.
@@ -2181,7 +2188,7 @@
 
 ---
 
-## [2.6.0] – 2025-11-05
+## [0.6.0] – 2025-11-05
 ### Added
 - Implemented comprehensive path resolution system in `src/dynlib/compiler/paths.py`:
   - Platform-specific config file locations (Linux/XDG, macOS, Windows)
@@ -2250,7 +2257,7 @@
 
 ---
 
-## [2.5.0] – 2025-11-05
+## [0.5.0] – 2025-11-05
 ### Added
 - Implemented `RK45Spec` in `src/dynlib/steppers/rk45.py` for Dormand-Prince adaptive stepper 
   with embedded 4th/5th order error estimation.
@@ -2275,7 +2282,7 @@
 
 ---
 
-## [2.4.1] – 2025-11-05
+## [0.4.1] – 2025-11-05
 ### Added
 - Added `get_runner` in `src/dynlib/compiler/codegen/runner.py` for obtaining a generic runner
   function.
@@ -2294,7 +2301,7 @@
 
 ---
 
-## [2.4.0] – 2025-11-04
+## [0.4.0] – 2025-11-04
 ### Added
 - Introduced `Sim.run` method in `src/dynlib/runtime/sim.py` for executing simulations with 
   compiled models.
@@ -2315,7 +2322,7 @@
 
 ---
 
-## [2.3.1] – 2025-11-04
+## [0.3.1] – 2025-11-04
 ### Fixed
 - Removed redundant validation functions `validate_dtype_rules` and `validate_equation_targets` 
   from `src/dynlib/dsl/astcheck.py`.
@@ -2326,7 +2333,7 @@
 
 ---
 
-## [2.3.0] – 2025-11-04
+## [0.3.0] – 2025-11-04
 ### Added
 - Introduced `build_callables` in `src/dynlib/compiler/build.py` for generating RHS and event 
   callables.
@@ -2348,7 +2355,7 @@
 
 ---
 
-## [2.2.0] – 2025-11-04
+## [0.2.0] – 2025-11-04
 ### Added
 - Implemented `parse_model_v2` in `src/dynlib/dsl/parser.py` for parsing DSL TOML into normalized 
   models.
@@ -2374,7 +2381,7 @@
 
 ---
 
-## [2.1.0] – 2025-11-04
+## [0.1.0] – 2025-11-04
 ### Added
 - Introduced `src/dynlib/__init__.py` to re-export constants, types, steppers, and utilities 
   for stable imports.
@@ -2391,7 +2398,6 @@
 
 ---
 
-## [2.0.0] – 2025-11-03
+## [0.0.0] – 2025-11-03
 ### Changed
-- v1 hit a dead end and v0 was a failure. Starting a new design from scratch. Only plot 
-  tools are preserved. They should be modified in the future for the new model format.
+- Initial commit.
