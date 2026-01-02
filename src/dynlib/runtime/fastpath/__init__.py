@@ -2,7 +2,7 @@
 """
 Lightweight execution backends for observer/diagnostic workloads.
 
-The fastpath runner bypasses the full Sim wrapper when the requested run fits
+The fastpath executor bypasses the full Sim wrapper when the requested run fits
 strict constraints (fixed recording plan, apply-only events, no dynamic logs).
 """
 from importlib import import_module
@@ -41,7 +41,7 @@ def __getattr__(name):
         "fastpath_for_sim",
         "fastpath_batch_for_sim",
     }:
-        module = import_module("dynlib.runtime.fastpath.runner")
+        module = import_module("dynlib.runtime.fastpath.executor")
         return getattr(module, name)
     if name in {"FastpathSupport", "assess_capability"}:
         module = import_module("dynlib.runtime.fastpath.capability")

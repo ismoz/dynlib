@@ -2,6 +2,43 @@
 
 ---
 
+## [0.36.0] – 2026-01-02
+### Added
+- Added `RunnerVariant` enum to consolidate runner architecture: `BASE`, `ANALYSIS`, `FASTPATH`, and 
+  `FASTPATH_ANALYSIS`.
+- Added FASTPATH runner templates for both continuous (ODE) and discrete (map) systems. Fastpath runners skip
+  event processing and buffer growth checks for fixed-step execution.
+- Added `get_runner()` unified API in `runner_variants.py` to replace separate `get_runner_variant()` and 
+  `get_runner_variant_discrete()` paths. Now supports explicit variant selection with hooks baked in as globals.
+- Added `EARLY_EXIT` status code (7) in `runner_api.py` for future use with basin of attraction analysis.
+- Renamed `runtime/fastpath/runner.py` to `runtime/fastpath/executor.py` for clarity.
+- Added `runner_cache.py` disk cache helper module for runner variants with variant-aware and template-version 
+  aware cache keys.
+
+### Changed
+- Consolidated runner templates into single source of truth in `runner_variants.py`, reducing code duplication.
+- Analysis hooks are now always injected as global symbols (`ANALYSIS_PRE`, `ANALYSIS_POST`) rather than function 
+  arguments. This enables simpler, more JIT-friendly code generation.
+- Unified wrapper and fastpath execution to use `get_runner()` with explicit `RunnerVariant` selection based on 
+  analysis presence and execution mode (continuous vs discrete).
+- Updated `run_with_wrapper()` to always require `model_hash` and `stepper_name` for runner selection.
+- Removed legacy dual-ABI runner path (analysis_kind + dispatch arguments). All variants now use hook globals.
+- Disk cache keys now include variant type and template version for invalidation support.
+- Fastpath now uses `RunnerVariant.FASTPATH_ANALYSIS` instead of legacy `ANALYSIS` path, enabling 
+  future capability specialization.
+
+### Removed
+- Removed legacy `compiler/codegen/runner.py` (ODE runner template).
+- Removed legacy `compiler/codegen/runner_discrete.py` (discrete runner template).
+- Removed `analysis_dispatch_pre` and `analysis_dispatch_post` from runner ABI. Hooks are now baked in.
+
+### Tests
+- Updated `test_analysis_runtime.py` to use new unified runner API and explicit `model_hash`/`stepper_name`.
+- Updated `test_fastpath_runner.py` to import from `executor` module.
+- Updated `test_wrapper_reentry.py` to provide required `model_hash` and `stepper_name` arguments.
+
+---
+
 ## [0.35.9] – 2025-12-29
 ### Fixed
 - The `ab2` and `ab3` state history usage was wrong. Shifted tangent‑only Lyapunov propagation into `pre_step` 

@@ -103,7 +103,7 @@ def maybe_jit_triplet(
 
 
 def _jit_compile_with_disk_cache(fn: Callable) -> Optional[JittedCallable]:
-    from dynlib.compiler.codegen import runner as runner_codegen
+    from dynlib.compiler.codegen import runner_cache as runner_codegen
 
     request = runner_codegen.consume_callable_disk_cache_request()
     if request is None:

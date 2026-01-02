@@ -6,7 +6,7 @@ from enum import IntEnum
 __all__ = [
     "Status",
     # int constants (jit-friendly)
-    "OK", "STEPFAIL", "NAN_DETECTED", "DONE",
+    "OK", "STEPFAIL", "NAN_DETECTED", "EARLY_EXIT", "DONE",
     "GROW_REC", "GROW_EVT", "USER_BREAK", "TRACE_OVERFLOW",
     "RunnerABI",
 ]
@@ -16,6 +16,7 @@ class Status(IntEnum):
     OK = 0              # internal (no exit): step accepted, proceed
     STEPFAIL = 2        # exit (recoverable by wrapper or fail)
     NAN_DETECTED = 3    # exit
+    EARLY_EXIT = 7      # exit (reserved for future basin analysis)
     DONE = 9            # exit
     GROW_REC = 10       # exit: request record buffer growth
     GROW_EVT = 11       # exit: request event buffer growth
@@ -26,6 +27,7 @@ class Status(IntEnum):
 OK: int = int(Status.OK)
 STEPFAIL: int = int(Status.STEPFAIL)
 NAN_DETECTED: int = int(Status.NAN_DETECTED)
+EARLY_EXIT: int = int(Status.EARLY_EXIT)
 DONE: int = int(Status.DONE)
 GROW_REC: int = int(Status.GROW_REC)
 GROW_EVT: int = int(Status.GROW_EVT)
@@ -77,16 +79,15 @@ class RunnerABI:
     EVT_LOG_DATA: str = "dtype[:, :]"  # shape (cap_evt, max_log_width)
     evt_log_scratch: str = "dtype[:]"   # scratch buffer for log values
 
-    # Analysis buffers/dispatch
+    # Analysis buffers
     analysis_ws: str = "dtype[:]"
     analysis_out: str = "dtype[:]"
     analysis_trace: str = "dtype[:, :]"
     analysis_trace_count: str = "int64[1]"
     analysis_trace_cap: str = "int64"
     analysis_trace_stride: str = "int64"
-    analysis_kind: str = "int32"
-    analysis_dispatch_pre: str = "callable"
-    analysis_dispatch_post: str = "callable"
+    variational_step_enabled: str = "int32"
+    variational_step_fn: str = "callable"
 
     # Cursors & caps
     i_start: str = "int64"
@@ -132,10 +133,9 @@ runner(
   # event log
   EVT_CODE: int32[:], EVT_INDEX: int32[:], EVT_LOG_DATA: dtype[:, :],
   evt_log_scratch: dtype[:],
-  # analysis buffers/dispatch
+  # analysis buffers
   analysis_ws: dtype[:], analysis_out: dtype[:], analysis_trace: dtype[:, :],
   analysis_trace_count: int64[1], analysis_trace_cap: int64, analysis_trace_stride: int64,
-  analysis_kind: int32, analysis_dispatch_pre, analysis_dispatch_post,
   variational_step_enabled: int32, variational_step_fn,
   # cursors & caps
   i_start: int64, step_start: int64, cap_rec: int64, cap_evt: int64,
@@ -146,7 +146,7 @@ runner(
   stepper, rhs, events_pre, events_post
 ) -> int32
 
-Exit statuses (int32): DONE=9, GROW_REC=10, GROW_EVT=11, USER_BREAK=12, STEPFAIL=2, NAN_DETECTED=3.
+Exit statuses (int32): DONE=9, GROW_REC=10, GROW_EVT=11, USER_BREAK=12, STEPFAIL=2, NAN_DETECTED=3, EARLY_EXIT=7.
 Internal (no exit): OK=0 (step accepted, runner continues).
 
 Rules:
@@ -172,9 +172,9 @@ Rules:
   It must write y_prop/t_prop/dt_next/err_est and propagate tangent data in
   analysis_ws. Returning None is treated as OK.
 - t_prop is model dtype; committed t written to T as float64.
-- Analysis: analysis_kind==0 disables hooks. Dispatch runs pre_step after pre-events
-  (y_prev/y_curr ready) and post_step after commit + aux update. analysis_trace_count
-  tracks filled trace rows; hooks may set user_break_flag to stop the run.
+- Analysis: hooks are baked into runner variants via global symbols. Pre-step runs
+  after pre-events (y_prev/y_curr ready) and post-step runs after commit + aux update.
+  analysis_trace_count tracks filled trace rows; hooks may set user_break_flag to stop the run.
 - Growth/resume: on GROW_REC/GROW_EVT wrapper reallocates & re-enters; runner resumes seamlessly.
 
 """

@@ -783,7 +783,7 @@ class Sim:
         clear error when the capability gate rejects the request.
         """
         from dynlib.runtime.fastpath import FixedStridePlan
-        from dynlib.runtime.fastpath.runner import fastpath_for_sim
+        from dynlib.runtime.fastpath.executor import fastpath_for_sim
         from dynlib.runtime.fastpath.capability import assess_capability
 
         sim_defaults = self.model.spec.sim

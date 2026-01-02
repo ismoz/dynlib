@@ -15,8 +15,8 @@ from dynlib.compiler.codegen.emitter import (
     emit_jacobian,
     CompiledCallables,
 )
-from dynlib.compiler.codegen import runner as runner_codegen
-from dynlib.compiler.codegen import runner_discrete as runner_discrete_codegen
+from dynlib.compiler.codegen import runner_cache as runner_cache_codegen
+from dynlib.compiler.codegen.runner_variants import RunnerVariant, get_runner
 from dynlib.compiler.codegen.cache_importer import register_cache_root
 from dynlib.compiler.codegen.validate import validate_stepper_function, report_validation_issues
 from dynlib.compiler.jit.compile import maybe_jit_triplet, jit_compile
@@ -247,7 +247,7 @@ class _TripletCacheContext:
         source = self.sources.get(component)
         if source is None:
             raise RuntimeError(f"No source available for component '{component}'")
-        runner_codegen.configure_triplet_disk_cache(
+        runner_cache_codegen.configure_triplet_disk_cache(
             component=component,
             spec_hash=self.spec_hash,
             stepper_name=self.stepper_name,
@@ -423,7 +423,7 @@ def _warmup_jit_runner(
     are called by the runner, ensuring everything is warmed up.
     """
     from dynlib.runtime.buffers import allocate_pools
-    from dynlib.analysis.runtime import analysis_noop_hook, analysis_noop_variational_step
+    from dynlib.analysis.runtime import analysis_noop_variational_step
     
     dtype_np = np.dtype(dtype)
     n_state = len(spec.states)
@@ -475,9 +475,6 @@ def _warmup_jit_runner(
     analysis_trace_count = np.zeros((1,), dtype=np.int64)
     analysis_trace_cap = np.int64(0)
     analysis_trace_stride = np.int64(0)
-    analysis_kind = np.int32(0)
-    analysis_dispatch_pre = analysis_noop_hook()
-    analysis_dispatch_post = analysis_noop_hook()
     variational_step_enabled = np.int32(0)
     variational_step_fn = analysis_noop_variational_step()
     
@@ -511,8 +508,6 @@ def _warmup_jit_runner(
             evt_log_scratch,
             analysis_ws, analysis_out, analysis_trace,
             analysis_trace_count, int(analysis_trace_cap), int(analysis_trace_stride),
-            int(analysis_kind),
-            analysis_dispatch_pre, analysis_dispatch_post,
             int(variational_step_enabled), variational_step_fn,
             np.int64(0), np.int64(0), int(rec.cap_rec), int(ev.cap_evt),
             user_break_flag, status_out, hint_out,
@@ -846,7 +841,7 @@ def build(
                 cache_from_disk = True if use_disk_cache else False
 
                 if use_disk_cache:
-                    runner_codegen.configure_triplet_disk_cache(
+                    runner_cache_codegen.configure_triplet_disk_cache(
                         component="jvp",
                         spec_hash=pieces.spec_hash,
                         stepper_name="jacobian",
@@ -864,7 +859,7 @@ def build(
 
                 if compiled_jac.jacobian is not None and compiled_jac.jacobian_source is not None:
                     if use_disk_cache:
-                        runner_codegen.configure_triplet_disk_cache(
+                        runner_cache_codegen.configure_triplet_disk_cache(
                             component="jacobian",
                             spec_hash=pieces.spec_hash,
                             stepper_name="jacobian",
@@ -921,7 +916,7 @@ def build(
         stepper_disk_cache = bool(jit and disk_cache and cache_root_path is not None and not has_closure)
         if stepper_disk_cache:
             stepper_source = _render_stepper_source(stepper_py)
-            runner_codegen.configure_stepper_disk_cache(
+            runner_cache_codegen.configure_stepper_disk_cache(
                 spec_hash=pieces.spec_hash,
                 stepper_name=stepper_name,
                 structsig=stepper_sig,
@@ -945,37 +940,30 @@ def build(
     stepper_fn = stepper_entry.fn
     stepper_from_disk = stepper_entry.from_disk
     
-    # Select runner based on stepper kind (discrete vs continuous)
-    # Discrete systems (maps, difference equations): use runner_discrete with N-based termination
-    # Continuous systems (ODEs, SDEs, DAEs): use runner with T-based termination
-    if stepper_spec.meta.kind == "map":
-        # Use discrete runner
-        if jit and disk_cache and cache_root_path is not None:
-            runner_discrete_codegen.configure_runner_disk_cache_discrete(
-                spec_hash=pieces.spec_hash,
-                stepper_name=stepper_name,
-                structsig=workspace_sig,
-                dtype=dtype_str,
-                cache_root=cache_root_path,
-            )
-        runner_fn = runner_discrete_codegen.get_runner_discrete(
-            jit=jit,
-            disk_cache=disk_cache,
+    is_discrete = stepper_spec.meta.kind == "map"
+    if jit and disk_cache and cache_root_path is not None:
+        runner_cache_codegen.configure_runner_disk_cache(
+            model_hash=pieces.spec_hash,
+            stepper_name=stepper_name,
+            structsig=workspace_sig,
+            dtype=dtype_str,
+            cache_root=cache_root_path,
         )
     else:
-        # Use continuous runner (default)
-        if jit and disk_cache and cache_root_path is not None:
-            runner_codegen.configure_runner_disk_cache(
-                spec_hash=pieces.spec_hash,
-                stepper_name=stepper_name,
-                structsig=workspace_sig,
-                dtype=dtype_str,
-                cache_root=cache_root_path,
-            )
-        runner_fn = runner_codegen.get_runner(
-            jit=jit,
-            disk_cache=disk_cache,
+        runner_cache_codegen.disable_runner_disk_cache(
+            model_hash=pieces.spec_hash,
+            stepper_name=stepper_name,
         )
+
+    runner_fn = get_runner(
+        RunnerVariant.BASE,
+        model_hash=pieces.spec_hash,
+        stepper_name=stepper_name,
+        analysis=None,
+        dtype=np.dtype(dtype_str),
+        jit=jit,
+        discrete=is_discrete,
+    )
 
     def _all_compiled() -> bool:
         return all(

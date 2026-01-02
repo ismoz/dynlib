@@ -14,10 +14,9 @@ from dynlib.analysis.runtime import (
 )
 from dynlib.runtime.fastpath import FixedStridePlan, FixedTracePlan
 from dynlib.runtime.fastpath.capability import assess_capability
-from dynlib.runtime.fastpath.runner import fastpath_for_sim
+from dynlib.runtime.fastpath.executor import fastpath_for_sim
 from dynlib.runtime.wrapper import run_with_wrapper
 from dynlib.runtime.sim import Sim
-from dynlib.compiler.codegen import runner as runner_codegen
 
 
 def _dummy_rhs(t, y_vec, dy_out, params, runtime_ws):
@@ -40,6 +39,10 @@ def _euler_stepper(t, dt, y_curr, rhs, params, runtime_ws, ws, cfg, y_prop, t_pr
     t_prop[0] = t + dt
     dt_next[0] = dt
     err_est[0] = 0.0
+    return 0
+
+
+def _noop_runner(*_args, **_kwargs):  # pragma: no cover
     return 0
 
 
@@ -152,7 +155,7 @@ def test_wrapper_analysis_survives_reentry():
     analysis = _counter_analysis()
 
     res = run_with_wrapper(
-        runner=runner_codegen.runner,
+        runner=_noop_runner,
         stepper=_euler_stepper,
         rhs=_dummy_rhs,
         events_pre=_dummy_events,
@@ -176,6 +179,8 @@ def test_wrapper_analysis_survives_reentry():
         cap_rec=1,  # force GROW_REC re-entry
         cap_evt=1,
         analysis=analysis,
+        model_hash="test-model",
+        stepper_name="euler",
     )
 
     assert res.ok
@@ -372,6 +377,8 @@ def test_lyapunov_matches_wrapper_and_fastpath():
         target_steps=5,
         make_stepper_workspace=model.make_stepper_workspace,
         analysis=analysis_mod,
+        model_hash=model.spec_hash,
+        stepper_name=model.stepper_name,
     )
 
     fast_res_view = fastpath_for_sim(

@@ -3,7 +3,7 @@ import pytest
 import tomllib
 
 from dynlib.runtime.fastpath import FixedStridePlan
-from dynlib.runtime.fastpath.runner import (
+from dynlib.runtime.fastpath.executor import (
     fastpath_for_sim,
     fastpath_batch_for_sim,
 )

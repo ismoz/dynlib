@@ -42,6 +42,9 @@ class RunnerCacheRequest:
     structsig: Tuple[int, ...]
     dtype: str
     cache_root: Path
+    variant: Optional[str] = None
+    template_version: Optional[str] = None
+    runner_kind: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -232,7 +235,7 @@ class RunnerDiskCache:
         shutil.rmtree(tombstone, ignore_errors=True)
 
     def _build_digest_payload(self) -> Dict[str, object]:
-        return {
+        payload: Dict[str, object] = {
             "spec_hash": self.request.spec_hash,
             "stepper": self.request.stepper_name,
             "structsig": [int(x) for x in self.request.structsig],
@@ -240,6 +243,13 @@ class RunnerDiskCache:
             "abi": _RUNNER_ABI_VERSION,
             "env": self.env_pins,
         }
+        if self.request.variant is not None:
+            payload["variant"] = self.request.variant
+        if self.request.template_version is not None:
+            payload["template_version"] = self.request.template_version
+        if self.request.runner_kind is not None:
+            payload["runner_kind"] = self.request.runner_kind
+        return payload
 
 
 class CacheLock:

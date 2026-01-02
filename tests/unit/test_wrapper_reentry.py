@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 
 from dynlib.runtime.runner_api import DONE, GROW_EVT, GROW_REC, STEPFAIL
+from dynlib.runtime import wrapper as wrapper_mod
 from dynlib.runtime.wrapper import run_with_wrapper
 from dynlib.runtime.initial_step import WRMSConfig
 
@@ -68,10 +69,11 @@ class _RunnerScript:
             status_out[0] = DONE
             return DONE
 
-def test_wrapper_reentry_calls_and_cursors():
+def test_wrapper_reentry_calls_and_cursors(monkeypatch):
     ic = np.array([1.0], dtype=np.float64)
     params = np.array([2.0], dtype=np.float64)
     fake_runner = _RunnerScript()
+    monkeypatch.setattr(wrapper_mod, "get_runner", lambda *args, **kwargs: fake_runner)
 
     res = run_with_wrapper(
         runner=fake_runner,
@@ -86,6 +88,8 @@ def test_wrapper_reentry_calls_and_cursors():
         aux_names=[],
         ic=ic, params=params,
         cap_rec=1, cap_evt=1,
+        model_hash="test-model",
+        stepper_name="fake-stepper",
     )
 
     # 3 calls: initial + 2 re-entries
@@ -114,13 +118,15 @@ class _FailingRunner:
         return STEPFAIL
 
 
-def test_wrapper_warns_and_sets_status_on_failure():
+def test_wrapper_warns_and_sets_status_on_failure(monkeypatch):
     ic = np.array([1.0], dtype=np.float64)
     params = np.array([2.0], dtype=np.float64)
+    failing = _FailingRunner()
+    monkeypatch.setattr(wrapper_mod, "get_runner", lambda *args, **kwargs: failing)
 
     with pytest.warns(RuntimeWarning, match="STEPFAIL"):
         res = run_with_wrapper(
-            runner=_FailingRunner(),
+            runner=failing,
             stepper=_stepper, rhs=_rhs, events_pre=_events_pre, events_post=_events_post,
             update_aux=_update_aux,
             dtype=np.float64, n_state=1, n_aux=0,
@@ -132,6 +138,8 @@ def test_wrapper_warns_and_sets_status_on_failure():
             aux_names=[],
             ic=ic, params=params,
             cap_rec=1, cap_evt=1,
+            model_hash="test-model",
+            stepper_name="fake-stepper",
         )
 
     assert res.status == STEPFAIL
@@ -167,10 +175,11 @@ def _rhs_wrms(t, y_vec, dy_out, params, runtime_ws):  # pragma: no cover - simpl
     dy_out[:] = 1.0
 
 
-def test_wrapper_uses_wrms_dt_when_available():
+def test_wrapper_uses_wrms_dt_when_available(monkeypatch):
     ic = np.array([0.0, 0.0], dtype=np.float64)
     params = np.array([0.0], dtype=np.float64)
     runner = _RecordingRunner()
+    monkeypatch.setattr(wrapper_mod, "get_runner", lambda *args, **kwargs: runner)
     cfg = WRMSConfig(atol=1e-6, rtol=1e-3, order=1, safety=1.0, min_dt=0.05, max_dt=0.05)
 
     res = run_with_wrapper(
@@ -199,6 +208,8 @@ def test_wrapper_uses_wrms_dt_when_available():
         cap_evt=1,
         wrms_cfg=cfg,
         adaptive=True,
+        model_hash="test-model",
+        stepper_name="fake-stepper",
     )
 
     assert res.status == DONE

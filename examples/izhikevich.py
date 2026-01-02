@@ -4,7 +4,7 @@ from dynlib.plot import series, export, fig
 
 sim = setup("builtin://ode/izhikevich", 
             stepper="rk4", 
-            jit=False, 
+            jit=True, 
             dtype="float32")
 
 I0, T0 = 0.0, 300.0
