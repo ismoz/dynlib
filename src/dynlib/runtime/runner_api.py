@@ -6,7 +6,7 @@ from enum import IntEnum
 __all__ = [
     "Status",
     # int constants (jit-friendly)
-    "OK", "STEPFAIL", "NAN_DETECTED", "EARLY_EXIT", "DONE",
+  "OK", "STEPFAIL", "NAN_DETECTED", "EARLY_EXIT", "DONE",
     "GROW_REC", "GROW_EVT", "USER_BREAK", "TRACE_OVERFLOW",
     "RunnerABI",
 ]

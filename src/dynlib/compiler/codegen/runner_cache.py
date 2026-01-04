@@ -194,7 +194,7 @@ def _render_runner_module_source(
             "from numba import njit",
             "from dynlib.runtime.runner_api import (",
             "    OK, STEPFAIL, NAN_DETECTED,",
-            "    DONE, GROW_REC, GROW_EVT, USER_BREAK, TRACE_OVERFLOW",
+            "    EARLY_EXIT, DONE, GROW_REC, GROW_EVT, USER_BREAK, TRACE_OVERFLOW",
             ")",
         ]
     )

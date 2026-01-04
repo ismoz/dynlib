@@ -228,7 +228,7 @@ def _apply_add(normal: Dict[str, Any], payload: Dict[str, Any]) -> None:
 def _apply_set(normal: Dict[str, Any], payload: Dict[str, Any]) -> None:
     if not payload:
         return
-    allowed_targets = {"states", "params", "aux", "functions"}
+    allowed_targets = {"states", "params", "aux", "functions", "sim"}
     for target in payload.keys():
         if target not in allowed_targets:
             raise ModelLoadError(
@@ -261,6 +261,11 @@ def _apply_set(normal: Dict[str, Any], payload: Dict[str, Any]) -> None:
     if isinstance(f, dict):
         for fname, fbody in f.items():
             normal.setdefault("functions", {})[fname] = _normalize_function(fname, fbody)
+
+    # set.sim (upsert semantics - can create or update)
+    sim = payload.get("sim")
+    if isinstance(sim, dict):
+        normal.setdefault("sim", {}).update(sim)
 
 
 # ---- main -------------------------------------------------------------------

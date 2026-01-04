@@ -5,7 +5,7 @@ import math
 import numpy as np
 
 from dynlib.runtime.runner_api import (
-    OK, STEPFAIL, NAN_DETECTED, DONE, GROW_REC, GROW_EVT, USER_BREAK, TRACE_OVERFLOW, Status,
+    OK, STEPFAIL, NAN_DETECTED, EARLY_EXIT, DONE, GROW_REC, GROW_EVT, USER_BREAK, TRACE_OVERFLOW, Status,
 )
 from dynlib.runtime.buffers import (
     allocate_pools, grow_rec_arrays, grow_evt_arrays,
@@ -42,6 +42,7 @@ def run_with_wrapper(
     dtype: np.dtype,
     n_state: int,
     n_aux: int,
+    stop_phase_mask: int = 0,
     # sim config
     t0: float,
     t_end: float,
@@ -133,6 +134,8 @@ def run_with_wrapper(
         lag_state_info=lag_state_info,
         dtype=dtype,
         n_aux=n_aux,
+        stop_enabled=int(stop_phase_mask) != 0,
+        stop_phase_mask=int(stop_phase_mask),
     )
     stepper_ws = make_stepper_workspace() if make_stepper_workspace else None
 
@@ -339,7 +342,7 @@ def run_with_wrapper(
         m_filled = max(0, int(hint_out[0])) # events (by convention)
         step_curr = int(step_out[0])
 
-        if status_value == DONE:
+        if status_value in (DONE, EARLY_EXIT):
             final_state = np.array(y_curr, copy=True)
             final_params = np.array(params, copy=True)
             final_ws = {

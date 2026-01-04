@@ -231,6 +231,16 @@ def collect_lag_requests(normal: Dict[str, Any]) -> Dict[str, int]:
         
         if ev.get("action_block"):
             merge_requests(ev["action_block"], f"[events.{ev_name}].action (block)")
+
+    # Scan sim.stop
+    sim = normal.get("sim") or {}
+    stop = sim.get("stop")
+    if isinstance(stop, dict):
+        cond = stop.get("cond")
+        if isinstance(cond, str):
+            merge_requests(cond, "[sim.stop].cond")
+    elif isinstance(stop, str):
+        merge_requests(stop, "[sim].stop")
     
     return lag_requests
 
@@ -677,6 +687,14 @@ def validate_identifiers_resolved(normal: Dict[str, Any]) -> None:
                     continue
                 _, rhs = [p.strip() for p in line.split("=", 1)]
                 _check_expr(rhs, f"[events.{ev_name}].action")
+
+    # sim.stop
+    sim = normal.get("sim") or {}
+    stop = sim.get("stop")
+    if isinstance(stop, dict):
+        _check_expr(str(stop.get("cond") or ""), "[sim.stop].cond")
+    elif isinstance(stop, str):
+        _check_expr(stop, "[sim].stop")
 
     # equations.jacobian entries
     jac_tbl = (normal.get("equations") or {}).get("jacobian") or {}

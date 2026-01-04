@@ -15,7 +15,7 @@ from dynlib.runtime.analysis_meta import build_analysis_metadata
 from dynlib.runtime.workspace import make_runtime_workspace, snapshot_workspace
 from dynlib.runtime.sim import Segment, Sim
 from dynlib.runtime.results_api import ResultsView
-from dynlib.runtime.runner_api import DONE, TRACE_OVERFLOW
+from dynlib.runtime.runner_api import DONE, EARLY_EXIT, TRACE_OVERFLOW
 from dynlib.compiler.codegen.runner_variants import RunnerVariant, get_runner
 
 __all__ = [
@@ -276,7 +276,7 @@ def _call_runner(
     filled = int(i_out[0])
     evt_filled = max(0, int(hint_out[0]))
     overflowed = status_value == TRACE_OVERFLOW
-    if status_value not in (DONE, TRACE_OVERFLOW):
+    if status_value not in (DONE, EARLY_EXIT, TRACE_OVERFLOW):
         raise RuntimeError(f"Fastpath runner exited with status {status_value}")
 
     analysis_trace_view = None
@@ -416,10 +416,21 @@ def run_single_fastpath(
     dtype = model.dtype
     n_aux = len(model.spec.aux)
     is_discrete = model.spec.kind == "map"
+
+    stop_phase_mask = 0
+    stop_spec = getattr(model.spec.sim, "stop", None)
+    if stop_spec is not None:
+        phase = stop_spec.phase
+        if phase in ("pre", "both"):
+            stop_phase_mask |= 1
+        if phase in ("post", "both"):
+            stop_phase_mask |= 2
     runtime_ws = make_runtime_workspace(
         lag_state_info=model.lag_state_info,
         dtype=dtype,
         n_aux=n_aux,
+        stop_enabled=stop_phase_mask != 0,
+        stop_phase_mask=stop_phase_mask,
     )
     stepper_ws = model.make_stepper_workspace() if model.make_stepper_workspace else None
 

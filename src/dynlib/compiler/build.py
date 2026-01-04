@@ -294,8 +294,22 @@ def build_callables(
     s_hash = compute_spec_hash(spec)
     lag_state_info = _compute_lag_state_info(spec)
     n_aux = len(spec.aux or {})
+
+    stop_phase_mask = 0
+    if spec.sim.stop is not None:
+        phase = spec.sim.stop.phase
+        if phase in ("pre", "both"):
+            stop_phase_mask |= 1
+        if phase in ("post", "both"):
+            stop_phase_mask |= 2
     runtime_sig = workspace_structsig(
-        make_runtime_workspace(lag_state_info=lag_state_info, dtype=np.dtype(dtype), n_aux=n_aux)
+        make_runtime_workspace(
+            lag_state_info=lag_state_info,
+            dtype=np.dtype(dtype),
+            n_aux=n_aux,
+            stop_enabled=stop_phase_mask != 0,
+            stop_phase_mask=stop_phase_mask,
+        )
     )
     structsig = tuple(runtime_sig)
     key = CacheKey(
@@ -428,6 +442,14 @@ def _warmup_jit_runner(
     dtype_np = np.dtype(dtype)
     n_state = len(spec.states)
     n_aux = len(spec.aux or {})
+
+    stop_phase_mask = 0
+    if spec.sim.stop is not None:
+        phase = spec.sim.stop.phase
+        if phase in ("pre", "both"):
+            stop_phase_mask |= 1
+        if phase in ("post", "both"):
+            stop_phase_mask |= 2
     max_log_width = 0
     for evt in spec.events:
         max_log_width = max(max_log_width, len(getattr(evt, "log", ()) or ()))
@@ -437,6 +459,8 @@ def _warmup_jit_runner(
         lag_state_info=_compute_lag_state_info(spec),
         dtype=dtype_np,
         n_aux=n_aux,
+        stop_enabled=stop_phase_mask != 0,
+        stop_phase_mask=stop_phase_mask,
     )
     stepper_ws = (
         stepper_spec.make_workspace(n_state, dtype_np, model_spec=spec)
@@ -780,10 +804,20 @@ def build(
     
     lag_state_info_list = _compute_lag_state_info(spec)
     n_aux = len(spec.aux or {})
+
+    stop_phase_mask = 0
+    if spec.sim.stop is not None:
+        phase = spec.sim.stop.phase
+        if phase in ("pre", "both"):
+            stop_phase_mask |= 1
+        if phase in ("post", "both"):
+            stop_phase_mask |= 2
     runtime_ws_template = make_runtime_workspace(
         lag_state_info=lag_state_info_list,
         dtype=dtype_np,
         n_aux=n_aux,
+        stop_enabled=stop_phase_mask != 0,
+        stop_phase_mask=stop_phase_mask,
     )
 
     def _make_stepper_workspace() -> object | None:

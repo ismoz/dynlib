@@ -2357,6 +2357,14 @@ class Sim:
         aux_names: list[str],
         analysis=None,
     ) -> Results:
+        stop_phase_mask = 0
+        stop_spec = getattr(self.model.spec.sim, "stop", None)
+        if stop_spec is not None:
+            phase = stop_spec.phase
+            if phase in ("pre", "both"):
+                stop_phase_mask |= 1
+            if phase in ("post", "both"):
+                stop_phase_mask |= 2
         return run_with_wrapper(
             runner=self.model.runner,
             stepper=self.model.stepper,
@@ -2367,6 +2375,7 @@ class Sim:
             dtype=self.model.dtype,
             n_state=self._n_state,
             n_aux=len(self.model.spec.aux or {}),
+            stop_phase_mask=stop_phase_mask,
             t0=float(seed.t),
             t_end=float(t_end),
             dt_init=float(seed.dt),
@@ -2398,7 +2407,7 @@ class Sim:
     def _ensure_runner_done(self, result: Results, *, phase: str) -> None:
         """Raise when the wrapped runner did not complete successfully."""
         status_value = int(result.status)
-        if status_value in (int(Status.DONE), int(Status.TRACE_OVERFLOW)):
+        if status_value in (int(Status.DONE), int(Status.EARLY_EXIT), int(Status.TRACE_OVERFLOW)):
             return
         try:
             status_name = Status(status_value).name

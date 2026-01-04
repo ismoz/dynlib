@@ -9,6 +9,7 @@ from dynlib.errors import ModelLoadError
 
 __all__ = [
     "SimDefaults",
+    "StopSpec",
     "EventSpec",
     "PresetSpec",
     "ModelSpec",
@@ -37,6 +38,7 @@ class SimDefaults:
     atol: float = 1e-8
     rtol: float = 1e-5
     max_steps: int = 1_000_000
+    stop: "StopSpec | None" = None
     _stepper_defaults: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
     def __post_init__(self):
@@ -55,6 +57,18 @@ class SimDefaults:
     def stepper_defaults(self) -> Mapping[str, Any]:
         """Return a read-only view of extra stepper configuration defaults."""
         return object.__getattribute__(self, "_stepper_defaults")
+
+
+@dataclass(frozen=True)
+class StopSpec:
+    """Early-exit stop condition.
+
+    The stop condition is evaluated inside the runner loop on the committed
+    state/time (phase semantics controlled by runner placement).
+    """
+
+    cond: str
+    phase: str = "post"  # only "post" is supported; pre/both reserved for future use
 
 
 @dataclass(frozen=True)
@@ -131,7 +145,7 @@ def _build_tag_index(events: Tuple[EventSpec, ...]) -> Dict[str, Tuple[str, ...]
 
 
 _SIM_KNOWN_KEYS = frozenset(
-    {"t0", "t_end", "dt", "stepper", "record", "atol", "rtol", "max_steps"}
+    {"t0", "t_end", "dt", "stepper", "record", "atol", "rtol", "max_steps", "stop"}
 )
 
 
@@ -209,6 +223,22 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
     )
 
     sim_in = normal.get("sim", {})
+    stop_in = sim_in.get("stop")
+    stop_spec: StopSpec | None = None
+    if stop_in is not None:
+        if isinstance(stop_in, str):
+            stop_spec = StopSpec(cond=str(stop_in), phase="post")
+        elif isinstance(stop_in, dict):
+            cond = stop_in.get("cond")
+            if not isinstance(cond, str) or not cond.strip():
+                raise ModelLoadError("[sim.stop].cond must be a non-empty string")
+            phase = stop_in.get("phase", "post")
+            if phase != "post":
+                raise ModelLoadError("[sim.stop].phase must be 'post'")
+            stop_spec = StopSpec(cond=str(cond), phase=str(phase))
+        else:
+            raise ModelLoadError("[sim].stop must be a table ([sim.stop]) or a string expression")
+
     sim_extras = {
         key: value for key, value in sim_in.items() if key not in _SIM_KNOWN_KEYS
     }
@@ -224,6 +254,7 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
         atol=float(sim_in.get("atol", SimDefaults.atol)),
         rtol=float(sim_in.get("rtol", SimDefaults.rtol)),
         max_steps=int(sim_in.get("max_steps", SimDefaults.max_steps)),
+        stop=stop_spec,
         _stepper_defaults=sim_extras,
     )
 
@@ -337,6 +368,8 @@ def _json_canon(obj: Any) -> str:
                 "rtol": o.rtol,
                 "max_steps": o.max_steps,
             }
+            if o.stop is not None:
+                base["stop"] = {"cond": o.stop.cond, "phase": o.stop.phase}
             stepper_defaults = dict(o.stepper_defaults())
             if stepper_defaults:
                 base["stepper_defaults"] = stepper_defaults

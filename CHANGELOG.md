@@ -2,6 +2,34 @@
 
 ---
 
+## [0.36.1] – 2026-01-04
+### Added
+- Added early exit feature: simulations can now stop early when a specified condition is met using the `stop` 
+  field in the [sim] section.
+- Added support for stop conditions with built-in DSL macros like `cross_up()`, `in_interval()`, `increasing()`,
+  `decreasing()`, and others.
+- Added `exited_early` property to results to check if simulation stopped due to a stop condition.
+- Added example `early_exit_demo.py`.
+- Extended runtime workspace with `stop_flag` and `stop_phase_mask` arrays for stop condition evaluation. Since 
+  only phase=`post` is supported `stop_phase_mask` is not necessary but it is there for future phase=`pre` and 
+  phase=`post` extension.
+
+### Changed
+- Updated all runners (base, analysis, fastpath variants for both continuous and discrete systems) to evaluate 
+  stop conditions after each step.
+- Modified `update_aux()` function to also handle stop flag updates when stop conditions are enabled.
+- Updated results API to consider `EARLY_EXIT` as a successful completion status alongside `DONE`.
+- Enhanced model specification to include `StopSpec` for parsing and validating stop conditions.
+- Updated AST checker to validate stop condition expressions and collect lag requests for stop conditions.
+- Modified mods system to support setting `sim.stop` via TOML modifications.
+- Updated emitter to compile stop condition expressions into the `update_aux` function.
+- Attached exiting `EARLY_EXIT` status code (7) to the new early termination mechanism.
+
+### Tests
+- Added test file `test_stop_early_exit.py`.
+
+---
+
 ## [0.36.0] – 2026-01-02
 ### Added
 - Added `RunnerVariant` enum to consolidate runner architecture: `BASE`, `ANALYSIS`, `FASTPATH`, and 

@@ -30,7 +30,7 @@ from dynlib.compiler.guards import (
 from dynlib.runtime.softdeps import softdeps
 from dynlib.runtime.runner_api import (
     OK, STEPFAIL, NAN_DETECTED,
-    DONE, GROW_REC, GROW_EVT, USER_BREAK, TRACE_OVERFLOW
+    EARLY_EXIT, DONE, GROW_REC, GROW_EVT, USER_BREAK, TRACE_OVERFLOW
 )
 from dynlib.errors import JITUnavailableError
 from dynlib.compiler.codegen import runner_cache
@@ -196,8 +196,10 @@ def runner_base(
     step = int(step_start)
     m = int(hint_out[0])
     
-    # Refresh aux values before any potential recording at t0
-    if runtime_ws.aux_values.shape[0] > 0:
+    # Refresh aux values / stop flag before any potential recording at t0
+    if runtime_ws.aux_values.shape[0] > 0 or (
+        runtime_ws.stop_phase_mask.shape[0] > 0 and (runtime_ws.stop_phase_mask[0] & 1) != 0
+    ):
         update_aux(t, y_curr, params, runtime_ws.aux_values, runtime_ws)
 
     # Recording at t0
@@ -218,6 +220,20 @@ def runner_base(
         STEP[i] = step
         FLAGS[i] = OK
         i += 1
+
+    # Early-exit (success) at t0 (pre-phase)
+    if (
+        runtime_ws.stop_phase_mask.shape[0] > 0
+        and (runtime_ws.stop_phase_mask[0] & 1) != 0
+        and runtime_ws.stop_flag.shape[0] > 0
+        and runtime_ws.stop_flag[0] != 0
+    ):
+        i_out[0] = i
+        step_out[0] = step
+        t_out[0] = t
+        status_out[0] = EARLY_EXIT
+        hint_out[0] = m
+        return EARLY_EXIT
     
     # Main integration loop
     while step < max_steps and t < t_end:
@@ -333,7 +349,9 @@ def runner_base(
             y_curr[k] = y_prop[k]
         step += 1
 
-        if runtime_ws.aux_values.shape[0] > 0:
+        if runtime_ws.aux_values.shape[0] > 0 or (
+            runtime_ws.stop_phase_mask.shape[0] > 0 and (runtime_ws.stop_phase_mask[0] & 2) != 0
+        ):
             update_aux(t_prop[0], y_curr, params, runtime_ws.aux_values, runtime_ws)
 
         lag_info = runtime_ws.lag_info
@@ -371,6 +389,19 @@ def runner_base(
             STEP[i] = step
             FLAGS[i] = OK
             i += 1
+
+        if (
+            runtime_ws.stop_phase_mask.shape[0] > 0
+            and (runtime_ws.stop_phase_mask[0] & 2) != 0
+            and runtime_ws.stop_flag.shape[0] > 0
+            and runtime_ws.stop_flag[0] != 0
+        ):
+            i_out[0] = i
+            step_out[0] = step
+            t_out[0] = t
+            status_out[0] = EARLY_EXIT
+            hint_out[0] = m
+            return EARLY_EXIT
         
         if user_break_flag[0] != 0:
             i_out[0] = i
@@ -439,8 +470,10 @@ def runner_analysis(
     step = int(step_start)
     m = int(hint_out[0])
     
-    # Refresh aux values before any potential recording at t0
-    if runtime_ws.aux_values.shape[0] > 0:
+    # Refresh aux values / stop flag before any potential recording at t0
+    if runtime_ws.aux_values.shape[0] > 0 or (
+        runtime_ws.stop_phase_mask.shape[0] > 0 and (runtime_ws.stop_phase_mask[0] & 1) != 0
+    ):
         update_aux(t, y_curr, params, runtime_ws.aux_values, runtime_ws)
 
     # Recording at t0
@@ -461,6 +494,20 @@ def runner_analysis(
         STEP[i] = step
         FLAGS[i] = OK
         i += 1
+
+    # Early-exit (success) at t0 (pre-phase)
+    if (
+        runtime_ws.stop_phase_mask.shape[0] > 0
+        and (runtime_ws.stop_phase_mask[0] & 1) != 0
+        and runtime_ws.stop_flag.shape[0] > 0
+        and runtime_ws.stop_flag[0] != 0
+    ):
+        i_out[0] = i
+        step_out[0] = step
+        t_out[0] = t
+        status_out[0] = EARLY_EXIT
+        hint_out[0] = m
+        return EARLY_EXIT
     
     # Main integration loop
     while step < max_steps and t < t_end:
@@ -592,7 +639,9 @@ def runner_analysis(
             y_curr[k] = y_prop[k]
         step += 1
 
-        if runtime_ws.aux_values.shape[0] > 0:
+        if runtime_ws.aux_values.shape[0] > 0 or (
+            runtime_ws.stop_phase_mask.shape[0] > 0 and (runtime_ws.stop_phase_mask[0] & 2) != 0
+        ):
             update_aux(t_prop[0], y_curr, params, runtime_ws.aux_values, runtime_ws)
 
         lag_info = runtime_ws.lag_info
@@ -646,6 +695,19 @@ def runner_analysis(
             STEP[i] = step
             FLAGS[i] = OK
             i += 1
+
+        if (
+            runtime_ws.stop_phase_mask.shape[0] > 0
+            and (runtime_ws.stop_phase_mask[0] & 2) != 0
+            and runtime_ws.stop_flag.shape[0] > 0
+            and runtime_ws.stop_flag[0] != 0
+        ):
+            i_out[0] = i
+            step_out[0] = step
+            t_out[0] = t
+            status_out[0] = EARLY_EXIT
+            hint_out[0] = m
+            return EARLY_EXIT
         
         if user_break_flag[0] != 0:
             i_out[0] = i
@@ -711,8 +773,10 @@ def runner_fastpath(
     step = int(step_start)
     m = int(hint_out[0])
     
-    # Refresh aux values before any potential recording at t0
-    if runtime_ws.aux_values.shape[0] > 0:
+    # Refresh aux values / stop flag before any potential recording at t0
+    if runtime_ws.aux_values.shape[0] > 0 or (
+        runtime_ws.stop_phase_mask.shape[0] > 0 and (runtime_ws.stop_phase_mask[0] & 1) != 0
+    ):
         update_aux(t, y_curr, params, runtime_ws.aux_values, runtime_ws)
 
     # Recording at t0
@@ -725,6 +789,20 @@ def runner_fastpath(
         STEP[i] = step
         FLAGS[i] = OK
         i += 1
+
+    # Early-exit (success) at t0 (pre-phase)
+    if (
+        runtime_ws.stop_phase_mask.shape[0] > 0
+        and (runtime_ws.stop_phase_mask[0] & 1) != 0
+        and runtime_ws.stop_flag.shape[0] > 0
+        and runtime_ws.stop_flag[0] != 0
+    ):
+        i_out[0] = i
+        step_out[0] = step
+        t_out[0] = t
+        status_out[0] = EARLY_EXIT
+        hint_out[0] = m
+        return EARLY_EXIT
     
     # Main integration loop
     while step < max_steps and t < t_end:
@@ -794,7 +872,9 @@ def runner_fastpath(
             y_curr[k] = y_prop[k]
         step += 1
 
-        if runtime_ws.aux_values.shape[0] > 0:
+        if runtime_ws.aux_values.shape[0] > 0 or (
+            runtime_ws.stop_phase_mask.shape[0] > 0 and (runtime_ws.stop_phase_mask[0] & 2) != 0
+        ):
             update_aux(t_prop[0], y_curr, params, runtime_ws.aux_values, runtime_ws)
 
         lag_info = runtime_ws.lag_info
@@ -824,6 +904,19 @@ def runner_fastpath(
             STEP[i] = step
             FLAGS[i] = OK
             i += 1
+
+        if (
+            runtime_ws.stop_phase_mask.shape[0] > 0
+            and (runtime_ws.stop_phase_mask[0] & 2) != 0
+            and runtime_ws.stop_flag.shape[0] > 0
+            and runtime_ws.stop_flag[0] != 0
+        ):
+            i_out[0] = i
+            step_out[0] = step
+            t_out[0] = t
+            status_out[0] = EARLY_EXIT
+            hint_out[0] = m
+            return EARLY_EXIT
         
         if user_break_flag[0] != 0:
             i_out[0] = i
@@ -893,8 +986,23 @@ def runner_fastpath_analysis(
     m = int(hint_out[0])
     
     # Refresh aux values before any potential recording at t0
-    if runtime_ws.aux_values.shape[0] > 0:
+    if runtime_ws.aux_values.shape[0] > 0 or (
+        runtime_ws.stop_phase_mask.shape[0] > 0 and (runtime_ws.stop_phase_mask[0] & 1) != 0
+    ):
         update_aux(t, y_curr, params, runtime_ws.aux_values, runtime_ws)
+
+    if (
+        runtime_ws.stop_phase_mask.shape[0] > 0
+        and (runtime_ws.stop_phase_mask[0] & 1) != 0
+        and runtime_ws.stop_flag.shape[0] > 0
+        and runtime_ws.stop_flag[0] != 0
+    ):
+        i_out[0] = i
+        step_out[0] = step
+        t_out[0] = t
+        status_out[0] = EARLY_EXIT
+        hint_out[0] = m
+        return EARLY_EXIT
 
     # Recording at t0
     if record_interval > 0 and step == 0:
@@ -991,8 +1099,23 @@ def runner_fastpath_analysis(
             y_curr[k] = y_prop[k]
         step += 1
 
-        if runtime_ws.aux_values.shape[0] > 0:
+        if runtime_ws.aux_values.shape[0] > 0 or (
+            runtime_ws.stop_phase_mask.shape[0] > 0 and (runtime_ws.stop_phase_mask[0] & 2) != 0
+        ):
             update_aux(t_prop[0], y_curr, params, runtime_ws.aux_values, runtime_ws)
+
+        if (
+            runtime_ws.stop_phase_mask.shape[0] > 0
+            and (runtime_ws.stop_phase_mask[0] & 2) != 0
+            and runtime_ws.stop_flag.shape[0] > 0
+            and runtime_ws.stop_flag[0] != 0
+        ):
+            i_out[0] = i
+            step_out[0] = step
+            t_out[0] = t_prop[0]
+            status_out[0] = EARLY_EXIT
+            hint_out[0] = m
+            return EARLY_EXIT
 
         lag_info = runtime_ws.lag_info
         if lag_info.shape[0] > 0:
@@ -1101,8 +1224,10 @@ def runner_discrete_base(
     step = int(step_start)
     m = int(hint_out[0])
     
-    # Refresh aux values before any potential recording at t0
-    if runtime_ws.aux_values.shape[0] > 0:
+    # Refresh aux values / stop flag before any potential recording at t0
+    if runtime_ws.aux_values.shape[0] > 0 or (
+        runtime_ws.stop_phase_mask.shape[0] > 0 and (runtime_ws.stop_phase_mask[0] & 1) != 0
+    ):
         update_aux(t, y_curr, params, runtime_ws.aux_values, runtime_ws)
 
     # Recording at t0
@@ -1123,6 +1248,20 @@ def runner_discrete_base(
         STEP[i] = step
         FLAGS[i] = OK
         i += 1
+
+    # Early-exit (success) at t0 (pre-phase)
+    if (
+        runtime_ws.stop_phase_mask.shape[0] > 0
+        and (runtime_ws.stop_phase_mask[0] & 1) != 0
+        and runtime_ws.stop_flag.shape[0] > 0
+        and runtime_ws.stop_flag[0] != 0
+    ):
+        i_out[0] = i
+        step_out[0] = step
+        t_out[0] = t
+        status_out[0] = EARLY_EXIT
+        hint_out[0] = m
+        return EARLY_EXIT
     
     # Main iteration loop
     while step < N:
@@ -1235,7 +1374,9 @@ def runner_discrete_base(
             y_curr[k] = y_prop[k]
         step = next_step
 
-        if runtime_ws.aux_values.shape[0] > 0:
+        if runtime_ws.aux_values.shape[0] > 0 or (
+            runtime_ws.stop_phase_mask.shape[0] > 0 and (runtime_ws.stop_phase_mask[0] & 2) != 0
+        ):
             update_aux(t_post, y_curr, params, runtime_ws.aux_values, runtime_ws)
 
         lag_info = runtime_ws.lag_info
@@ -1273,6 +1414,19 @@ def runner_discrete_base(
             STEP[i] = step
             FLAGS[i] = OK
             i += 1
+
+        if (
+            runtime_ws.stop_phase_mask.shape[0] > 0
+            and (runtime_ws.stop_phase_mask[0] & 2) != 0
+            and runtime_ws.stop_flag.shape[0] > 0
+            and runtime_ws.stop_flag[0] != 0
+        ):
+            i_out[0] = i
+            step_out[0] = step
+            t_out[0] = t
+            status_out[0] = EARLY_EXIT
+            hint_out[0] = m
+            return EARLY_EXIT
         
         if user_break_flag[0] != 0:
             i_out[0] = i
@@ -1341,8 +1495,10 @@ def runner_discrete_analysis(
     step = int(step_start)
     m = int(hint_out[0])
     
-    # Refresh aux values before any potential recording at t0
-    if runtime_ws.aux_values.shape[0] > 0:
+    # Refresh aux values / stop flag before any potential recording at t0
+    if runtime_ws.aux_values.shape[0] > 0 or (
+        runtime_ws.stop_phase_mask.shape[0] > 0 and (runtime_ws.stop_phase_mask[0] & 1) != 0
+    ):
         update_aux(t, y_curr, params, runtime_ws.aux_values, runtime_ws)
 
     # Recording at t0
@@ -1363,6 +1519,20 @@ def runner_discrete_analysis(
         STEP[i] = step
         FLAGS[i] = OK
         i += 1
+
+    # Early-exit (success) at t0 (pre-phase)
+    if (
+        runtime_ws.stop_phase_mask.shape[0] > 0
+        and (runtime_ws.stop_phase_mask[0] & 1) != 0
+        and runtime_ws.stop_flag.shape[0] > 0
+        and runtime_ws.stop_flag[0] != 0
+    ):
+        i_out[0] = i
+        step_out[0] = step
+        t_out[0] = t
+        status_out[0] = EARLY_EXIT
+        hint_out[0] = m
+        return EARLY_EXIT
     
     # Main iteration loop
     while step < N:
@@ -1491,7 +1661,9 @@ def runner_discrete_analysis(
             y_curr[k] = y_prop[k]
         step = next_step
 
-        if runtime_ws.aux_values.shape[0] > 0:
+        if runtime_ws.aux_values.shape[0] > 0 or (
+            runtime_ws.stop_phase_mask.shape[0] > 0 and (runtime_ws.stop_phase_mask[0] & 2) != 0
+        ):
             update_aux(t_post, y_curr, params, runtime_ws.aux_values, runtime_ws)
 
         lag_info = runtime_ws.lag_info
@@ -1545,6 +1717,19 @@ def runner_discrete_analysis(
             STEP[i] = step
             FLAGS[i] = OK
             i += 1
+
+        if (
+            runtime_ws.stop_phase_mask.shape[0] > 0
+            and (runtime_ws.stop_phase_mask[0] & 2) != 0
+            and runtime_ws.stop_flag.shape[0] > 0
+            and runtime_ws.stop_flag[0] != 0
+        ):
+            i_out[0] = i
+            step_out[0] = step
+            t_out[0] = t
+            status_out[0] = EARLY_EXIT
+            hint_out[0] = m
+            return EARLY_EXIT
         
         if user_break_flag[0] != 0:
             i_out[0] = i
@@ -1611,7 +1796,9 @@ def runner_discrete_fastpath(
     m = int(hint_out[0])
     
     # Refresh aux values before any potential recording at t0
-    if runtime_ws.aux_values.shape[0] > 0:
+    if runtime_ws.aux_values.shape[0] > 0 or (
+        runtime_ws.stop_phase_mask.shape[0] > 0 and (runtime_ws.stop_phase_mask[0] & 1) != 0
+    ):
         update_aux(t, y_curr, params, runtime_ws.aux_values, runtime_ws)
 
     # Recording at t0
@@ -1624,6 +1811,20 @@ def runner_discrete_fastpath(
         STEP[i] = step
         FLAGS[i] = OK
         i += 1
+
+    # Early-exit (success) at t0 (pre-phase)
+    if (
+        runtime_ws.stop_phase_mask.shape[0] > 0
+        and (runtime_ws.stop_phase_mask[0] & 1) != 0
+        and runtime_ws.stop_flag.shape[0] > 0
+        and runtime_ws.stop_flag[0] != 0
+    ):
+        i_out[0] = i
+        step_out[0] = step
+        t_out[0] = t
+        status_out[0] = EARLY_EXIT
+        hint_out[0] = m
+        return EARLY_EXIT
     
     # Main iteration loop
     while step < N:
@@ -1690,7 +1891,9 @@ def runner_discrete_fastpath(
             y_curr[k] = y_prop[k]
         step = next_step
 
-        if runtime_ws.aux_values.shape[0] > 0:
+        if runtime_ws.aux_values.shape[0] > 0 or (
+            runtime_ws.stop_phase_mask.shape[0] > 0 and (runtime_ws.stop_phase_mask[0] & 2) != 0
+        ):
             update_aux(t_post, y_curr, params, runtime_ws.aux_values, runtime_ws)
 
         lag_info = runtime_ws.lag_info
@@ -1720,6 +1923,19 @@ def runner_discrete_fastpath(
             STEP[i] = step
             FLAGS[i] = OK
             i += 1
+
+        if (
+            runtime_ws.stop_phase_mask.shape[0] > 0
+            and (runtime_ws.stop_phase_mask[0] & 2) != 0
+            and runtime_ws.stop_flag.shape[0] > 0
+            and runtime_ws.stop_flag[0] != 0
+        ):
+            i_out[0] = i
+            step_out[0] = step
+            t_out[0] = t
+            status_out[0] = EARLY_EXIT
+            hint_out[0] = m
+            return EARLY_EXIT
         
         if user_break_flag[0] != 0:
             i_out[0] = i
@@ -1788,8 +2004,10 @@ def runner_discrete_fastpath_analysis(
     step = int(step_start)
     m = int(hint_out[0])
     
-    # Refresh aux values before any potential recording at t0
-    if runtime_ws.aux_values.shape[0] > 0:
+    # Refresh aux values / stop flag before any potential recording at t0
+    if runtime_ws.aux_values.shape[0] > 0 or (
+        runtime_ws.stop_phase_mask.shape[0] > 0 and (runtime_ws.stop_phase_mask[0] & 1) != 0
+    ):
         update_aux(t, y_curr, params, runtime_ws.aux_values, runtime_ws)
 
     # Recording at t0
@@ -1802,6 +2020,20 @@ def runner_discrete_fastpath_analysis(
         STEP[i] = step
         FLAGS[i] = OK
         i += 1
+
+    # Early-exit (success) at t0 (pre-phase)
+    if (
+        runtime_ws.stop_phase_mask.shape[0] > 0
+        and (runtime_ws.stop_phase_mask[0] & 1) != 0
+        and runtime_ws.stop_flag.shape[0] > 0
+        and runtime_ws.stop_flag[0] != 0
+    ):
+        i_out[0] = i
+        step_out[0] = step
+        t_out[0] = t
+        status_out[0] = EARLY_EXIT
+        hint_out[0] = m
+        return EARLY_EXIT
     
     # Main iteration loop
     while step < N:
@@ -1884,7 +2116,9 @@ def runner_discrete_fastpath_analysis(
             y_curr[k] = y_prop[k]
         step = next_step
 
-        if runtime_ws.aux_values.shape[0] > 0:
+        if runtime_ws.aux_values.shape[0] > 0 or (
+            runtime_ws.stop_phase_mask.shape[0] > 0 and (runtime_ws.stop_phase_mask[0] & 2) != 0
+        ):
             update_aux(t_post, y_curr, params, runtime_ws.aux_values, runtime_ws)
 
         lag_info = runtime_ws.lag_info
@@ -1930,6 +2164,19 @@ def runner_discrete_fastpath_analysis(
             STEP[i] = step
             FLAGS[i] = OK
             i += 1
+
+        if (
+            runtime_ws.stop_phase_mask.shape[0] > 0
+            and (runtime_ws.stop_phase_mask[0] & 2) != 0
+            and runtime_ws.stop_flag.shape[0] > 0
+            and runtime_ws.stop_flag[0] != 0
+        ):
+            i_out[0] = i
+            step_out[0] = step
+            t_out[0] = t
+            status_out[0] = EARLY_EXIT
+            hint_out[0] = m
+            return EARLY_EXIT
         
         if user_break_flag[0] != 0:
             i_out[0] = i
@@ -1985,6 +2232,7 @@ def _build_base_namespace() -> dict:
         "OK": OK,
         "STEPFAIL": STEPFAIL,
         "NAN_DETECTED": NAN_DETECTED,
+        "EARLY_EXIT": EARLY_EXIT,
         "DONE": DONE,
         "GROW_REC": GROW_REC,
         "GROW_EVT": GROW_EVT,

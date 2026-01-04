@@ -39,6 +39,8 @@ def _clone_runtime_workspace(template):
         np.array(template.lag_head, copy=True),
         template.lag_info,
         np.array(template.aux_values, copy=True),
+        np.array(template.stop_flag, copy=True),
+        np.array(template.stop_phase_mask, copy=True),
     )
 
 

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 import numpy as np
 
-from dynlib.runtime.runner_api import DONE
+from dynlib.runtime.runner_api import DONE, EARLY_EXIT
 
 __all__ = ["Results"]
 
@@ -206,8 +206,13 @@ class Results:
 
     @property
     def ok(self) -> bool:
-        """Return True when the runner exited cleanly (status == DONE)."""
-        return int(self.status) == DONE
+        """Return True when the runner exited cleanly (DONE or EARLY_EXIT)."""
+        return int(self.status) in (DONE, EARLY_EXIT)
+
+    @property
+    def exited_early(self) -> bool:
+        """Return True when the runner stopped due to sim.stop (status == EARLY_EXIT)."""
+        return int(self.status) == EARLY_EXIT
     
     def get_var(self, name: str) -> np.ndarray:
         """

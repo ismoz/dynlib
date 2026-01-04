@@ -562,9 +562,11 @@ def _compile_update_aux(spec: ModelSpec, nmap: NameMaps):
     """
     import ast
     aux_defs = _aux_defs(spec)
-    
-    if not aux_defs:
-        # No aux variables - return a no-op function
+    stop_spec = getattr(getattr(spec, "sim", None), "stop", None)
+    stop_expr = getattr(stop_spec, "cond", None) if stop_spec is not None else None
+
+    if not aux_defs and not stop_expr:
+        # No aux variables and no stop condition - return a no-op function
         mod = ast.Module(
             body=[
                 ast.Import(names=[ast.alias(name="math", asname=None)]),
@@ -606,6 +608,44 @@ def _compile_update_aux(spec: ModelSpec, nmap: NameMaps):
         )
         body.extend(preamble)
         body.append(assign)
+
+    # Optional stop flag update (numba-friendly): runtime_ws.stop_flag[0] = 1/0
+    if stop_expr:
+        stop_preamble, stop_node = lower_expr_with_preamble(
+            stop_expr, nmap, aux_defs=aux_defs, fn_defs=nmap.functions
+        )
+        stop_assign = ast.Assign(
+            targets=[ast.Subscript(
+                value=ast.Attribute(value=ast.Name(id="runtime_ws", ctx=ast.Load()), attr="stop_flag", ctx=ast.Load()),
+                slice=ast.Constant(value=0),
+                ctx=ast.Store(),
+            )],
+            value=ast.IfExp(
+                test=stop_node,
+                body=ast.Constant(value=1),
+                orelse=ast.Constant(value=0),
+            ),
+        )
+        body.extend(stop_preamble)
+        body.append(
+            ast.If(
+                test=ast.Compare(
+                    left=ast.Attribute(
+                        value=ast.Attribute(
+                            value=ast.Name(id="runtime_ws", ctx=ast.Load()),
+                            attr="stop_flag",
+                            ctx=ast.Load(),
+                        ),
+                        attr="size",
+                        ctx=ast.Load(),
+                    ),
+                    ops=[ast.Gt()],
+                    comparators=[ast.Constant(value=0)],
+                ),
+                body=[stop_assign],
+                orelse=[],
+            )
+        )
     
     mod = ast.Module(
         body=[

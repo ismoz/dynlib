@@ -197,6 +197,12 @@ def _cmd_cache_list(args: argparse.Namespace) -> int:
 
 def _cmd_cache_clear(args: argparse.Namespace) -> int:
     root = resolve_cache_root()
+    if not args.all and not any([args.stepper, args.dtype, args.spec_hash]):
+        print(
+            "cache clear requires --all or one of --stepper/--dtype/--hash",
+            file=sys.stderr,
+        )
+        return 2
     if args.all:
         if args.dry_run:
             if not root.exists():
@@ -214,10 +220,6 @@ def _cmd_cache_clear(args: argparse.Namespace) -> int:
         except OSError as exc:
             print(f"Failed to delete cache root {root}: {exc}", file=sys.stderr)
             return 1
-
-    if not any([args.stepper, args.dtype, args.spec_hash]):
-        print("Specify --all or at least one filter (--stepper/--dtype/--hash).", file=sys.stderr)
-        return 2
 
     entries = _filter_cache_entries(_load_cache_entries(root), args.stepper, args.dtype, args.spec_hash)
     if not entries:

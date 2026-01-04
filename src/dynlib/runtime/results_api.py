@@ -392,6 +392,26 @@ class ResultsView:
     def ok(self) -> bool:
         return bool(self._raw.ok)
 
+    @property
+    def exited_early(self) -> bool:
+        return bool(self._raw.exited_early)
+
+    @property
+    def status(self) -> int:
+        return int(self._raw.status)
+
+    @property
+    def step_count_final(self) -> int:
+        return int(self._raw.step_count_final)
+
+    @property
+    def n(self) -> int:
+        return int(self._raw.n)
+
+    @property
+    def m(self) -> int:
+        return int(self._raw.m)
+
     # ---- runtime analysis (during-run diagnostics) ----
     @property
     def analysis(self) -> Dict[str, AnalysisResult]:

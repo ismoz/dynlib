@@ -264,6 +264,9 @@ def _resolve_unary_map_k(
                 np.array(runtime_ws_seed.lag_ring, copy=True),
                 np.array(runtime_ws_seed.lag_head, copy=True),
                 runtime_ws_seed.lag_info,
+                np.array(runtime_ws_seed.aux_values, copy=True),
+                np.array(runtime_ws_seed.stop_flag, copy=True),
+                np.array(runtime_ws_seed.stop_phase_mask, copy=True),
             )
 
         def g_model(k_iter: int, x: float) -> float:
