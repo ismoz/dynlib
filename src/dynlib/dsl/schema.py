@@ -2,6 +2,7 @@
 from __future__ import annotations
 from typing import Dict, Any, Iterable
 import re
+import difflib
 
 from dynlib.errors import ModelLoadError
 
@@ -82,6 +83,23 @@ def validate_tables(doc: Dict[str, Any]) -> None:
         raise ModelLoadError("[equations] must be a table if present")
 
     if isinstance(eq, dict):
+        # Fail loudly on unknown [equations] keys.
+        # This prevents silent no-op dynamics when users typo 'expr' as 'exprs', etc.
+        allowed_eq_keys = {"rhs", "expr", "jacobian"}
+        unknown_eq_keys = sorted(k for k in eq.keys() if k not in allowed_eq_keys)
+        if unknown_eq_keys:
+            hints = []
+            for bad in unknown_eq_keys:
+                close = difflib.get_close_matches(bad, list(allowed_eq_keys), n=1, cutoff=0.6)
+                if close:
+                    hints.append(f"'{bad}' (did you mean '{close[0]}'?)")
+                else:
+                    hints.append(f"'{bad}'")
+            raise ModelLoadError(
+                f"Unknown key(s) in [equations]: {', '.join(hints)}. "
+                "Valid keys: rhs, expr, jacobian"
+            )
+
         rhs = eq.get("rhs")
         if rhs is not None and not isinstance(rhs, dict):
             raise ModelLoadError("[equations.rhs] must be a table of name = expr")
@@ -91,6 +109,22 @@ def validate_tables(doc: Dict[str, Any]) -> None:
         jac = eq.get("jacobian")
         if jac is not None and not isinstance(jac, dict):
             raise ModelLoadError("[equations.jacobian] must be a table if present")
+
+        if isinstance(jac, dict):
+            allowed_jac_keys = {"expr"}
+            unknown_jac_keys = sorted(k for k in jac.keys() if k not in allowed_jac_keys)
+            if unknown_jac_keys:
+                hints = []
+                for bad in unknown_jac_keys:
+                    close = difflib.get_close_matches(bad, list(allowed_jac_keys), n=1, cutoff=0.6)
+                    if close:
+                        hints.append(f"'{bad}' (did you mean '{close[0]}'?)")
+                    else:
+                        hints.append(f"'{bad}'")
+                raise ModelLoadError(
+                    f"Unknown key(s) in [equations.jacobian]: {', '.join(hints)}. "
+                    "Valid keys: expr"
+                )
 
     funcs = doc.get("functions")
     if funcs is not None and not isinstance(funcs, dict):
@@ -169,6 +203,15 @@ def validate_name_collisions(doc: Dict[str, Any]) -> None:
     states = doc.get("states", {})
     model_type = doc.get("model", {}).get("type", "ode")
     eq = doc.get("equations", {}) if isinstance(doc.get("equations"), dict) else {}
+
+    # Common typo guard: docs specify [equations].expr (singular).
+    # If a model provides [equations].exprs as a string, it will otherwise be
+    # ignored downstream and can silently yield a "frozen" trajectory.
+    if isinstance(eq.get("exprs"), str) and not isinstance(eq.get("expr"), str):
+        raise ModelLoadError(
+            "Invalid equations block key: use [equations].expr (singular), not 'exprs'. "
+            "Example: [equations]\nexpr = \"\"\"dx = ...\n\"\"\""
+        )
 
     rhs = eq.get("rhs") if isinstance(eq.get("rhs"), dict) else None
     expr = eq.get("expr") if isinstance(eq.get("expr"), str) else None

@@ -19,7 +19,7 @@ y = "x * (rho - z) - y"
 z = "x * y - beta * z"
 
 [equations.jacobian]
-exprs = [
+expr = [
     ["-sigma", "sigma", "0"],
     ["rho - z", "-1", "-x"],
     ["y", "x", "-beta"]

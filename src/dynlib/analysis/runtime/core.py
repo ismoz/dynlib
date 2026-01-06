@@ -109,6 +109,7 @@ class AnalysisModule:
     trace_names: Tuple[str, ...] | None = None
     hooks: AnalysisHooks = AnalysisHooks()
     analysis_kind: int = 1
+    stop_phase_mask: int = 0
     _jit_cache: dict[tuple[int, str, int, int], AnalysisHooks] = field(
         init=False, repr=False, compare=False, default_factory=dict
     )
@@ -265,6 +266,9 @@ class CombinedAnalysis(AnalysisModule):
         outputs = sum(mod.output_size for mod in modules)
         output_names = self._merge_names(tuple(mod.output_names or tuple() for mod in modules))
         trace_names = self._merge_names(tuple(mod.trace_names or tuple() for mod in modules))
+        stop_phase_mask = 0
+        for mod in modules:
+            stop_phase_mask |= int(getattr(mod, "stop_phase_mask", 0))
 
         python_hooks = AnalysisHooks(
             pre_step=self._compose_hook(modules, hooks=[m.hooks for m in modules], phase="pre"),
@@ -281,6 +285,7 @@ class CombinedAnalysis(AnalysisModule):
             trace_names=trace_names,
             hooks=python_hooks,
             analysis_kind=analysis_kind,
+            stop_phase_mask=stop_phase_mask,
         )
 
     def signature(self, dtype: np.dtype) -> tuple:

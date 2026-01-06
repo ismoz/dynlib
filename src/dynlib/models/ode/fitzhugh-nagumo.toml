@@ -21,7 +21,7 @@ V = "V - V**3/3 - w + R*I"
 w = "(V + a - b*w) / tau"
 
 [equations.jacobian]
-exprs = [
+expr = [
     ["1 - V**2", "-1.0"],
     ["1 / tau", "-b / tau"]
 ]

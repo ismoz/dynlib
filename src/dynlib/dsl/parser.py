@@ -129,16 +129,20 @@ def _ordered_items(d: Dict[str, Any]) -> List[Tuple[str, Any]]:
 
 def _coerce_jacobian_exprs(jac_tbl: Dict[str, Any]) -> Dict[str, list[list[str]]]:
     """Normalize [equations.jacobian] table to a list-of-lists of strings."""
-    exprs = jac_tbl.get("exprs")
+    exprs = jac_tbl.get("expr")
     if exprs is None:
-        raise ModelLoadError("[equations.jacobian].exprs is required and must be a square list")
+        if "exprs" in jac_tbl:
+            raise ModelLoadError(
+                "Invalid Jacobian key: use [equations.jacobian].expr (singular), not '.exprs'."
+            )
+        raise ModelLoadError("[equations.jacobian].expr is required and must be a square list")
     if not isinstance(exprs, list):
-        raise ModelLoadError("[equations.jacobian].exprs must be a list of rows")
+        raise ModelLoadError("[equations.jacobian].expr must be a list of rows")
 
     rows: list[list[str]] = []
     for i, row in enumerate(exprs):
         if not isinstance(row, list):
-            raise ModelLoadError(f"[equations.jacobian].exprs[{i}] must be a list")
+            raise ModelLoadError(f"[equations.jacobian].expr[{i}] must be a list")
         row_out: list[str] = []
         for j, entry in enumerate(row):
             if isinstance(entry, (int, float)):
@@ -147,10 +151,10 @@ def _coerce_jacobian_exprs(jac_tbl: Dict[str, Any]) -> Dict[str, list[list[str]]
                 row_out.append(entry)
             else:
                 raise ModelLoadError(
-                    f"[equations.jacobian].exprs[{i}][{j}] must be a string or number"
+                    f"[equations.jacobian].expr[{i}][{j}] must be a string or number"
                 )
         rows.append(row_out)
-    return {"exprs": rows}
+    return {"expr": rows}
 
 
 def _read_functions(funcs_tbl: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:

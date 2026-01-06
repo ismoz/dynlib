@@ -1,0 +1,25 @@
+[model]
+type = "ode"
+label = "Duffing Oscillator"
+dtype = "float64"
+
+[states]
+x = 0.1
+y = 0.1
+
+[params]
+delta = 0.2
+alpha = -1.0
+beta  = 1.0
+gamma = 0.3
+omega = 1.2
+
+[equations.rhs]
+x = "y"
+y = "-delta*y - alpha*x - beta*x**3 + gamma*cos(omega*t)"
+
+[equations.jacobian]
+expr = [
+    ["0", "1"],
+    ["-alpha - 3*beta*x**2", "-delta"]
+]

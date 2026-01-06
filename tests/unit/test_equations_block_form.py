@@ -134,6 +134,30 @@ def test_invalid_block_lhs_rejected():
     assert "unknown" in str(exc.value).lower() or "state" in str(exc.value).lower()
 
 
+def test_block_form_exprs_typo_rejected():
+    """Test that [equations].exprs (string) typo raises a clear error.
+
+    The DSL uses [equations].expr (singular) for block-form equations.
+    Using 'exprs' should fail loudly rather than being silently ignored.
+    """
+    doc = {
+        "model": {"type": "ode"},
+        "states": {"x": 1.0, "y": 0.5},
+        "params": {"a": 2.0},
+        "equations": {
+            "exprs": "dx = -a*x\ndy = x",
+        },
+    }
+
+    with pytest.raises(ModelLoadError) as exc:
+        parse_model_v2(doc)
+
+    msg = str(exc.value).lower()
+    assert "[equations]" in msg or "equations" in msg
+    assert "exprs" in msg
+    assert "did you mean" in msg
+
+
 def test_unknown_state_in_block_rejected():
     """Test that referencing unknown state in block raises error."""
     doc = {

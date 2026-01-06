@@ -2,6 +2,33 @@
 
 ---
 
+## [0.36.2] – 2026-01-06
+### Added
+- Added basin of attraction calculation analysis tool `basin_auto` in `analysis/basin.py`. It can search for 
+  attractors and determine their basins using recurrence-based basin estimation method (Datseris & Wagemakers 2022), 
+  with an additional persistence-based early assignment and coarsened-grid fingerprint merging. Internally it is 
+  called PCR-BM (Persistent Cell-Recurrence Basin Mapping).
+- Added Henon map basin of attraction calculation demo example: `basin_henon_demo.py`.
+- Added ODE-based limit cycle basin of attraction calculation example: `basin_limit_cycle.py`.
+- Added basin of attraction plotting utility `plot_basin` in `plot/basin.py`.
+- Added ETO (Energy Template Oscillator) with Circular L Curve built-in model `eto-circular.toml`.
+- Added Duffing oscillator built-in model: `duffing.toml`.
+
+### Changed
+- Replaced underscore (_) from the built-in model names with hypen (-). For example: `exp_if.toml` -> `exp-if.toml`.
+- Analyses can now trigger early exit from hooks by setting `runtime_ws.stop_flag`, even when the DSL stop table is 
+  absent, as long as the analysis declares a `stop_phase_mask` (e.g., post‑step).
+
+### Fixed
+- Some DSL tables were using `expr` keyword for equation definitions and some were using `exprs`. Unified all 
+  equation expression keywords as `expr`. Typos were not causing any errors but steppers would not advance. Now 
+  any typo raises an error with a hint.
+
+### Tests
+- Added tests for analysis triggered early exit in `test_stop_early_exit.py`.
+
+---
+
 ## [0.36.1] – 2026-01-04
 ### Added
 - Added early exit feature: simulations can now stop early when a specified condition is met using the `stop` 

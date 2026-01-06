@@ -1,0 +1,28 @@
+# ETO (Energy Template Oscillator) with Circular L Curve
+# See https://doi.org/10.28948/ngumuh.1458253 (Öztürk, 2024)
+
+[model]
+type = "ode"
+label = "ETO-Circular"
+dtype = "float64"
+
+[states]
+x = 0.1
+y = 0.1
+
+[params]
+# These defaults are for limit cycle
+a  = 2.0
+mu = 0.8
+
+[equations.rhs]
+x = "-x*(x**2+y**2-a) + mu*(x+y)*(x**2+y**2-a) + a*y"
+y = "-y*(x**2+y**2-a) + mu*(y-x)*(x**2+y**2-a) - a*x"
+
+# TODO: Manually calculate and verify the Jacobian
+[equations.jacobian]
+expr = [
+    ["(mu-1)*(x**2 + y**2 - a) + 2*x*((mu-1)*x + mu*y)", "mu*(x**2 + y**2 - a) + 2*y*((mu-1)*x + mu*y) + a"],
+    ["-mu*(x**2 + y**2 - a) + 2*x*(-mu*x + (mu-1)*y) - a", "(mu-1)*(x**2 + y**2 - a) + 2*y*(-mu*x + (mu-1)*y)"]
+]
+

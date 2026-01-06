@@ -3,6 +3,7 @@ import pytest
 from pathlib import Path
 
 from dynlib import Status, build
+from dynlib.analysis.runtime import AnalysisHooks, AnalysisModule, AnalysisRequirements
 from dynlib.errors import ModelLoadError
 from dynlib.runtime.sim import Sim
 
@@ -41,6 +42,41 @@ stop = {{ cond = {cond!r}, phase = {phase!r} }}
     )
 
     return build(str(base_model), mods=[str(mod_file)], jit=False)
+
+
+def _build_logistic_map(*, jit: bool = False):
+    test_dir = Path(__file__).resolve().parents[1]
+    base_model = test_dir / "data" / "models" / "logistic_map.toml"
+    return build(str(base_model), jit=jit)
+
+
+def _analysis_stop_after(step_stop: int) -> AnalysisModule:
+    def _post(
+        t,
+        dt,
+        step,
+        y_curr,
+        y_prev,
+        params,
+        runtime_ws,
+        analysis_ws,
+        analysis_out,
+        trace_buf,
+        trace_count,
+        trace_cap,
+        trace_stride,
+    ):
+        if step >= step_stop and runtime_ws.stop_flag.shape[0] > 0:
+            runtime_ws.stop_flag[0] = 1
+
+    return AnalysisModule(
+        name="analysis_stop",
+        requirements=AnalysisRequirements(fixed_step=True),
+        workspace_size=0,
+        output_size=0,
+        hooks=AnalysisHooks(post_step=_post),
+        stop_phase_mask=2,
+    )
 
 
 def test_stop_early_exit_wrapper_success(tmp_path: Path):
@@ -99,6 +135,35 @@ def test_stop_early_exit_fastpath_jit_success(tmp_path: Path):
     assert int(res.status) == int(Status.EARLY_EXIT)
     assert int(res.step_count_final) == 6
     assert int(res.n) == 7
+
+
+def test_analysis_stop_early_exit_wrapper():
+    model = _build_logistic_map()
+    sim = Sim(model)
+    analysis = _analysis_stop_after(3)
+
+    sim.run(N=50, analysis=analysis)
+    raw = sim.raw_results()
+
+    assert raw.ok is True
+    assert raw.exited_early is True
+    assert int(raw.status) == int(Status.EARLY_EXIT)
+    assert int(raw.step_count_final) == 3
+    assert raw.n == 4
+
+
+def test_analysis_stop_early_exit_fastpath():
+    model = _build_logistic_map()
+    sim = Sim(model)
+    analysis = _analysis_stop_after(3)
+
+    res = sim.fastpath(N=50, analysis=analysis)
+
+    assert res.ok is True
+    assert res.exited_early is True
+    assert int(res.status) == int(Status.EARLY_EXIT)
+    assert int(res.step_count_final) == 3
+    assert int(res.n) == 4
 
 
 @pytest.mark.parametrize("phase", ["pre", "both"])

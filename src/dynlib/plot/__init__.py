@@ -9,6 +9,7 @@ from ._primitives import series, phase, utils
 from ._facet import wrap as facet_wrap
 from . import _export as export
 from .bifurcation import bifurcation_diagram
+from .basin import basin_plot
 from .dynamics import cobweb
 from .vectorfield import (
     vectorfield,
@@ -42,6 +43,7 @@ __all__ = [
     "export",
     "cobweb",
     "bifurcation_diagram",
+    "basin_plot",
     "return_map",
     "vectorfield",
     "eval_vectorfield",

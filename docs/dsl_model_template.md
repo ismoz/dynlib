@@ -31,8 +31,8 @@ It lists all available tables and their keys.
 - `expr = """dx = expression \n dy = expression"""`
 
 ### [equations.jacobian] (optional dense Jacobian)
-- `exprs = [[ "...", "...", ... ], [...], ...]` (n × n matrix of expressions)
-- State vector order is the [states] declaration order (after mods). For `state_names = (s0, s1, ...)`, `exprs[i][j]` is ∂f_state_names[i]/∂state_names[j]. Reordering [states] is a semantic change and changes how matrix literals are interpreted.
+- `expr = [[ "...", "...", ... ], [...], ...]` (n × n matrix of expressions)
+- State vector order is the [states] declaration order (after mods). For `state_names = (s0, s1, ...)`, `expr[i][j]` is ∂f_state_names[i]/∂state_names[j]. Reordering [states] is a semantic change and changes how matrix literals are interpreted.
 
 ### [aux]
 - `aux_name = "expression"`

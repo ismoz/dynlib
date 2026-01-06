@@ -14,7 +14,7 @@ pi = 3.141592653589793
 x = "r * sin(pi * x)"
 
 [equations.jacobian]
-exprs = [
+expr = [
     ["r * pi * cos(pi * x)"]
 ]
 

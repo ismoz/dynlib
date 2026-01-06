@@ -204,16 +204,16 @@ def test_state_order_is_authoritative_and_hashes_change():
 
 def test_jacobian_matrix_roundtrip_and_validation():
     n = minimal_doc()
-    n["equations"]["jacobian"] = {"exprs": [["-a", "1"], ["x", "0"]]}
+    n["equations"]["jacobian"] = {"expr": [["-a", "1"], ["x", "0"]]}
     spec = build_spec(parse_model_v2(n))
     assert spec.jacobian_exprs == (("-a", "1"), ("x", "0"))
 
     bad_shape = minimal_doc()
-    bad_shape["equations"]["jacobian"] = {"exprs": [["1"]]}
+    bad_shape["equations"]["jacobian"] = {"expr": [["1"]]}
     with pytest.raises(ModelLoadError, match=r"must have 2 rows"):
         build_spec(parse_model_v2(bad_shape))
 
     bad_ident = minimal_doc()
-    bad_ident["equations"]["jacobian"] = {"exprs": [["unknown", "0"], ["0", "0"]]}
+    bad_ident["equations"]["jacobian"] = {"expr": [["unknown", "0"], ["0", "0"]]}
     with pytest.raises(ModelLoadError, match=r"Unknown identifier"):
         build_spec(parse_model_v2(bad_ident))

@@ -130,12 +130,16 @@ def run_with_wrapper(
         # Ensure it's the right dtype
         stepper_config = np.asarray(stepper_config, dtype=np.float64)
 
+    effective_stop_phase_mask = int(stop_phase_mask)
+    if analysis is not None:
+        effective_stop_phase_mask |= int(getattr(analysis, "stop_phase_mask", 0))
+
     runtime_ws = make_runtime_workspace(
         lag_state_info=lag_state_info,
         dtype=dtype,
         n_aux=n_aux,
-        stop_enabled=int(stop_phase_mask) != 0,
-        stop_phase_mask=int(stop_phase_mask),
+        stop_enabled=effective_stop_phase_mask != 0,
+        stop_phase_mask=effective_stop_phase_mask,
     )
     stepper_ws = make_stepper_workspace() if make_stepper_workspace else None
 

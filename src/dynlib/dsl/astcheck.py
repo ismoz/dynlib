@@ -499,6 +499,12 @@ def validate_no_duplicate_equation_targets(normal: Dict[str, Any]) -> None:
     equations = normal.get("equations", {})
     model_type = normal.get("model", {}).get("type", "ode")
     states = set(normal.get("states", {}).keys())
+
+    # Common typo guard: [equations].expr is the block-form key (singular).
+    # If 'exprs' is provided as a string, it would otherwise be ignored and can
+    # silently result in missing dynamics.
+    if isinstance(equations.get("exprs"), str) and not equations.get("expr"):
+        raise ModelLoadError("Invalid equations key: use [equations].expr (singular), not 'exprs'.")
     rhs_dict = equations.get("rhs")
     rhs_targets = set(rhs_dict.keys()) if rhs_dict else set()
     
@@ -698,9 +704,9 @@ def validate_identifiers_resolved(normal: Dict[str, Any]) -> None:
 
     # equations.jacobian entries
     jac_tbl = (normal.get("equations") or {}).get("jacobian") or {}
-    for i, row in enumerate(jac_tbl.get("exprs", []) or []):
+    for i, row in enumerate(jac_tbl.get("expr", []) or []):
         for j, expr in enumerate(row):
-            _check_expr(expr, f"[equations.jacobian].exprs[{i}][{j}]")
+            _check_expr(expr, f"[equations.jacobian].expr[{i}][{j}]")
 
 
 def validate_jacobian_matrix(normal: Dict[str, Any]) -> None:
@@ -709,19 +715,19 @@ def validate_jacobian_matrix(normal: Dict[str, Any]) -> None:
     if not jac_tbl:
         return
 
-    exprs = jac_tbl.get("exprs") or []
+    exprs = jac_tbl.get("expr") or []
     n_state = len(normal["states"])
     if len(exprs) != n_state:
         raise ModelLoadError(
-            f"[equations.jacobian].exprs must have {n_state} rows to match [states]; got {len(exprs)}"
+            f"[equations.jacobian].expr must have {n_state} rows to match [states]; got {len(exprs)}"
         )
     for i, row in enumerate(exprs):
         if len(row) != n_state:
             raise ModelLoadError(
-                f"[equations.jacobian].exprs[{i}] must have {n_state} columns to match [states]; got {len(row)}"
+                f"[equations.jacobian].expr[{i}] must have {n_state} columns to match [states]; got {len(row)}"
             )
         for j, expr in enumerate(row):
             if not isinstance(expr, str):
                 raise ModelLoadError(
-                    f"[equations.jacobian].exprs[{i}][{j}] must be a string expression"
+                    f"[equations.jacobian].expr[{i}][{j}] must be a string expression"
                 )

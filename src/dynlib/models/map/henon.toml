@@ -16,7 +16,7 @@ x = "1.0 - a * x**2 + y"
 y = "b * x"
 
 [equations.jacobian]
-exprs = [
+expr = [
     ["-2.0 * a * x", "1.0"],
     ["b", "0.0"]
 ]

@@ -203,7 +203,7 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
     eq_block = eq.get("expr") if isinstance(eq.get("expr"), str) else None
     jacobian_exprs = None
     if isinstance(eq.get("jacobian"), dict):
-        expr_rows = eq["jacobian"].get("exprs") or []
+        expr_rows = eq["jacobian"].get("expr") or []
         jacobian_exprs = tuple(tuple(str(item) for item in row) for row in expr_rows)
 
     aux = dict(normal.get("aux", {}))

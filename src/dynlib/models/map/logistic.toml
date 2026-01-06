@@ -12,6 +12,6 @@ r=4.0
 x = "r * x * (1 - x)"
 
 [equations.jacobian]
-exprs = [
+expr = [
     ["r - 2 * r * x"]
 ]
