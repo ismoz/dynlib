@@ -53,16 +53,23 @@ def _resolve_labels(res, labels: np.ndarray | None, grid: Sequence[int] | int | 
         if grid_tuple is None:
             raise ValueError("1D basin labels require grid=(nx, ny) to reshape.")
         nx, ny = grid_tuple
-        shape = (int(ny), int(nx))
+        # Basin labels are flattened from (nx, ny) with indexing='ij'
+        # Need to reshape to (nx, ny) then transpose to (ny, nx) for pcolormesh
+        shape = (int(nx), int(ny))
         if labels_arr.size != shape[0] * shape[1]:
             raise ValueError("grid size does not match labels length.")
-        labels_arr = labels_arr.reshape(shape)
+        labels_arr = labels_arr.reshape(shape).T
     elif labels_arr.ndim == 2:
         if grid_tuple is not None:
             nx, ny = grid_tuple
+            # For 2D labels, verify they match expected transpose shape (ny, nx)
             shape = (int(ny), int(nx))
             if labels_arr.shape != shape:
-                raise ValueError("grid size does not match labels shape.")
+                # Maybe they're in (nx, ny) format, try transposing
+                if labels_arr.shape == (int(nx), int(ny)):
+                    labels_arr = labels_arr.T
+                else:
+                    raise ValueError("grid size does not match labels shape.")
     else:
         raise ValueError("labels must be 1D or 2D for basin_plot.")
 
@@ -106,6 +113,27 @@ def _resolve_attractor_ids(res, labels: np.ndarray) -> list[int]:
         return [int(attr.id) for attr in registry]
     unique_ids = np.unique(labels[labels >= 0])
     return [int(x) for x in unique_ids.tolist()]
+
+
+def _resolve_attractor_labels(
+    meta: Mapping[str, object],
+    attr_ids: Sequence[int],
+    attractor_label: str,
+) -> list[str]:
+    labels = meta.get("attractor_labels")
+    if labels is None:
+        labels = meta.get("attractor_names")
+    if labels is None:
+        return [f"{attractor_label}{attr_id}" for attr_id in attr_ids]
+    if isinstance(labels, Mapping):
+        return [str(labels.get(attr_id, f"{attractor_label}{attr_id}")) for attr_id in attr_ids]
+    try:
+        labels_list = list(labels)
+    except TypeError:
+        return [f"{attractor_label}{attr_id}" for attr_id in attr_ids]
+    if len(labels_list) != len(attr_ids):
+        return [f"{attractor_label}{attr_id}" for attr_id in attr_ids]
+    return [str(label) for label in labels_list]
 
 
 def basin_plot(
@@ -167,6 +195,8 @@ def basin_plot(
         Override labels to plot (useful when res is not a BasinResult).
     x, y : np.ndarray, optional
         Explicit axis coordinates. Must be 1D arrays matching labels shape.
+    Attractor labels fall back to ``res.meta['attractor_labels']`` or
+    ``res.meta['attractor_names']`` when provided and ``attractor_labels`` is None.
     """
     labels_arr, meta = _resolve_labels(res, labels, grid)
     if bounds is None:
@@ -254,7 +284,7 @@ def basin_plot(
         ticks = special_values + list(range(len(attr_ids)))
         tick_labels = [default_labels.get(int(label), str(label)) for label in special_order]
         if attractor_labels is None:
-            tick_labels += [f"{attractor_label}{attr_id}" for attr_id in attr_ids]
+            tick_labels += _resolve_attractor_labels(meta, attr_ids, attractor_label)
         else:
             if len(attractor_labels) != len(attr_ids):
                 raise ValueError("attractor_labels must match number of attractors.")

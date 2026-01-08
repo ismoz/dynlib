@@ -97,7 +97,7 @@ ax[1, 0].text(3.5699, 0.32, 'Feigenbaum point\nr∞≈3.5699',
               bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
 
 export.show()
-export.savefig(ax, "bifurcation_logistic_map_annotated.png", dpi=300)
+# export.savefig(ax, "bifurcation_logistic_map_annotated.png", dpi=300)
 
 print("\nKey bifurcation points:")
 print("  r = 1.0    : Transcritical bifurcation (fixed point emerges)")

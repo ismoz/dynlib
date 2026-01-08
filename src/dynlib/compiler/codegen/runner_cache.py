@@ -178,9 +178,12 @@ def _render_runner_module_source(
     function_name: str,
 ) -> str:
     runner_src = textwrap.dedent(source).lstrip()
+    # Analysis variants inject hooks as globals, which numba won't cache reliably.
+    cache_enabled = not request.variant.endswith("ANALYSIS")
+    decorator = "@njit(cache=True, nogil=True)" if cache_enabled else "@njit(cache=False, nogil=True)"
     decorated = runner_src.replace(
         f"def {function_name}(",
-        f"@njit(cache=True)\ndef {function_name}(",
+        f"{decorator}\ndef {function_name}(",
         1,
     )
     guards_src = _render_guards_inline_source()

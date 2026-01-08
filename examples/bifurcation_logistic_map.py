@@ -58,4 +58,4 @@ bifurcation_diagram(
 
 export.show()
 # Save figure with high dpi will be more smooth
-export.savefig(ax, "bifurcation_logistic_map.png", dpi=600)
+# export.savefig(ax, "bifurcation_logistic_map.png", dpi=600)

@@ -22,7 +22,7 @@ from dynlib.plot import series, export, theme, fig, bifurcation_diagram
 # Setup simulation
 sim = setup("builtin://map/logistic", jit=True, disk_cache=False)
 
-# Parameter sweep configuration
+# Parameter sweep configuration (1000 points won't trigger parallelisation in auto mode)
 r_values = np.linspace(2.5, 4.0, 1000)  
 record_every = 1
 

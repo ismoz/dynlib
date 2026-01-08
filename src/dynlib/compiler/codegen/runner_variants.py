@@ -71,7 +71,7 @@ class RunnerVariant(Enum):
     FASTPATH_ANALYSIS = auto()
 
 
-_RUNNER_TEMPLATE_VERSION = "v2"
+_RUNNER_TEMPLATE_VERSION = "v3"
 
 
 class _LRUVariantCache:
@@ -2298,7 +2298,7 @@ def _compile_runner(
     
     if jit and _NUMBA_AVAILABLE:
         from numba import njit
-        return njit(cache=False)(runner_fn)
+        return njit(cache=False, nogil=True)(runner_fn)
     
     return runner_fn
 

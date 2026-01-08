@@ -140,7 +140,7 @@ r = 2.0
 x = "r * x"
 
 [equations.jacobian]
-exprs = [
+expr = [
     ["r"]
 ]
 """

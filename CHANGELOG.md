@@ -2,6 +2,25 @@
 
 ---
 
+## [0.36.3] – 2026-01-08
+### Added
+- Added basin of attraction calculation analysis tool `basin_known`. It can calculate basin of attraction of known
+  attractors numerically.
+- Added various basin of attraction calculation examples.
+- Added `basin_plot` utility for plottin basin of attraction results.
+- Added various utilities for investigating basin analysis results in `basin_stats.py`.
+
+### Changed
+- For sweep and basin analyses introduced chunk-based process parallelism with efficient worker initialization: 
+  a chunk of the analysis is assigned to a worker; each worker process initializes its `Sim` object once and reuses 
+  it across all chunks assigned to that worker, avoiding redundant JIT compilation and allocation overheads.
+- Renamed `analysis/basin.py` -> `analysis/basin_auto.py`.
+
+### Tests
+- Fixed tests that contain `exprs` keyword.
+
+---
+
 ## [0.36.2] – 2026-01-06
 ### Added
 - Added basin of attraction calculation analysis tool `basin_auto` in `analysis/basin.py`. It can search for 

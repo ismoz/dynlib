@@ -4,9 +4,10 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Mapping, Sequence
+from typing import Mapping, Sequence, TYPE_CHECKING
 
-from dynlib.analysis.runtime import AnalysisModule
+if TYPE_CHECKING:
+    from dynlib.analysis.runtime import AnalysisModule
 
 __all__ = ["build_analysis_metadata"]
 

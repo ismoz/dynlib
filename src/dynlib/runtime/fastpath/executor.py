@@ -3,8 +3,10 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Iterable, Literal, Optional, Sequence
+from typing import Iterable, Literal, NamedTuple, Optional, Sequence
 import math
+import os
+import threading
 import numpy as np
 
 from dynlib.analysis.runtime import AnalysisModule, analysis_noop_variational_step
@@ -12,7 +14,11 @@ from dynlib.runtime.fastpath.plans import RecordingPlan
 from dynlib.runtime.fastpath.capability import assess_capability, FastpathSupport
 from dynlib.runtime.results import Results
 from dynlib.runtime.analysis_meta import build_analysis_metadata
-from dynlib.runtime.workspace import make_runtime_workspace, snapshot_workspace
+from dynlib.runtime.workspace import (
+    initialize_lag_runtime_workspace,
+    make_runtime_workspace,
+    snapshot_workspace,
+)
 from dynlib.runtime.sim import Segment, Sim
 from dynlib.runtime.results_api import ResultsView
 from dynlib.runtime.runner_api import DONE, EARLY_EXIT, NAN_DETECTED, TRACE_OVERFLOW
@@ -21,6 +27,7 @@ from dynlib.compiler.codegen.runner_variants import RunnerVariant, get_runner
 __all__ = [
     "run_single_fastpath",
     "run_batch_fastpath",
+    "run_batch_fastpath_optimized",
     "fastpath_for_sim",
     "fastpath_batch_for_sim",
 ]
@@ -103,6 +110,268 @@ class _RunContext:
     transient: float
     record_interval: int
 
+
+class FastpathAnalysisResult(NamedTuple):
+    status: int
+    analysis_status: float
+    analysis_matched_id: float
+    step_count: int
+
+
+class _WorkspaceBundle:
+    def __init__(
+        self,
+        *,
+        model,
+        plan: RecordingPlan,
+        ctx: _RunContext,
+        state_rec_indices: np.ndarray,
+        aux_rec_indices: np.ndarray,
+        state_names: list[str],
+        aux_names: list[str],
+        stepper_config: np.ndarray | None,
+        analysis: AnalysisModule | None,
+    ) -> None:
+        self.model = model
+        self.plan = plan
+        self.ctx = ctx
+        self.state_rec_indices = state_rec_indices
+        self.aux_rec_indices = aux_rec_indices
+        self.state_names = state_names
+        self.aux_names = aux_names
+        self.analysis = analysis
+
+        self.dtype = model.dtype
+        self.n_state = len(model.spec.states)
+        self.n_aux = len(model.spec.aux)
+        self.n_rec_states = len(state_rec_indices)
+        self.n_rec_aux = len(aux_rec_indices)
+        self.is_jit = _is_jitted_runner(model.runner)
+        self.is_discrete = model.spec.kind == "map"
+
+        if stepper_config is None:
+            self.stepper_config = np.array([], dtype=np.float64)
+        else:
+            self.stepper_config = np.asarray(stepper_config, dtype=np.float64)
+
+        rec_every = int(ctx.record_interval)
+        total_steps = (
+            ctx.target_steps
+            if ctx.target_steps is not None
+            else math.ceil(max(0.0, ctx.t_end - ctx.t0) / ctx.dt)
+        )
+        self.rec_every = rec_every
+        self.total_steps = total_steps
+        self.cap_rec = 1 if rec_every <= 0 else max(1, int(plan.capacity(total_steps=total_steps) + 1))
+        self.cap_evt = 1
+        self.max_log_width = _max_event_log_width(model.spec.events)
+
+        # Recording buffers
+        self.T = np.zeros((self.cap_rec,), dtype=np.float64)
+        self.Y = (
+            np.zeros((self.n_rec_states, self.cap_rec), dtype=self.dtype)
+            if self.n_rec_states > 0
+            else np.zeros((0, self.cap_rec), dtype=self.dtype)
+        )
+        self.AUX = (
+            np.zeros((self.n_rec_aux, self.cap_rec), dtype=self.dtype)
+            if self.n_rec_aux > 0
+            else np.zeros((0, self.cap_rec), dtype=self.dtype)
+        )
+        self.STEP = np.zeros((self.cap_rec,), dtype=np.int64)
+        self.FLAGS = np.zeros((self.cap_rec,), dtype=np.int32)
+
+        self.EVT_CODE = np.zeros((self.cap_evt,), dtype=np.int32)
+        self.EVT_INDEX = np.zeros((self.cap_evt,), dtype=np.int32)
+        self.EVT_LOG_DATA = np.zeros((self.cap_evt, max(1, self.max_log_width)), dtype=self.dtype)
+
+        # Work arrays
+        self.y_curr = np.zeros((self.n_state,), dtype=self.dtype)
+        self.y_prev = np.zeros((self.n_state,), dtype=self.dtype)
+        self.y_prop = np.zeros((self.n_state,), dtype=self.dtype)
+        self.t_prop = np.zeros((1,), dtype=np.float64)
+        self.dt_next = np.zeros((1,), dtype=np.float64)
+        self.err_est = np.zeros((1,), dtype=np.float64)
+        self.evt_log_scratch = np.zeros((max(1, self.max_log_width),), dtype=self.dtype)
+
+        self.user_break_flag = np.zeros((1,), dtype=np.int32)
+        self.status_out = np.zeros((1,), dtype=np.int32)
+        self.hint_out = np.zeros((1,), dtype=np.int32)
+        self.i_out = np.zeros((1,), dtype=np.int64)
+        self.step_out = np.zeros((1,), dtype=np.int64)
+        self.t_out = np.zeros((1,), dtype=np.float64)
+
+        # Analysis buffers (present even for base runner for ABI compatibility)
+        self.variational_step_enabled = 0
+        self.variational_step_fn = analysis_noop_variational_step()
+        if analysis is not None:
+            ws_size = int(analysis.workspace_size)
+            out_size = int(analysis.output_size)
+            self.analysis_ws = np.zeros((ws_size,), dtype=self.dtype) if ws_size > 0 else np.zeros((0,), dtype=self.dtype)
+            self.analysis_out = np.zeros((out_size,), dtype=self.dtype) if out_size > 0 else np.zeros((0,), dtype=self.dtype)
+
+            trace_width = analysis.trace.width if analysis.trace else 0
+            if trace_width > 0:
+                if analysis.trace is None:
+                    raise RuntimeError("analysis trace requested but TracePlan is missing")
+                trace_cap = int(analysis.trace.capacity(total_steps=total_steps))
+                if trace_cap <= 0:
+                    raise RuntimeError("TracePlan must provide positive capacity for fastpath analysis.")
+                self.analysis_trace = np.zeros((trace_cap, trace_width), dtype=self.dtype)
+                self.analysis_trace_cap = int(trace_cap)
+                self.analysis_trace_stride = int(analysis.trace.record_interval())
+            else:
+                self.analysis_trace = np.zeros((0, 0), dtype=self.dtype)
+                self.analysis_trace_cap = 0
+                self.analysis_trace_stride = 0
+            self.analysis_trace_count = np.zeros((1,), dtype=np.int64)
+
+            runner_var = getattr(analysis, "runner_variational_step", None)
+            if callable(runner_var):
+                var_fn = runner_var(jit=self.is_jit)
+                if var_fn is not None:
+                    self.variational_step_enabled = 1
+                    self.variational_step_fn = var_fn
+        else:
+            self.analysis_ws = np.zeros((0,), dtype=self.dtype)
+            self.analysis_out = np.zeros((0,), dtype=self.dtype)
+            self.analysis_trace = np.zeros((0, 0), dtype=self.dtype)
+            self.analysis_trace_count = np.zeros((1,), dtype=np.int64)
+            self.analysis_trace_cap = 0
+            self.analysis_trace_stride = 0
+
+        stop_phase_mask = 0
+        stop_spec = getattr(model.spec.sim, "stop", None)
+        if stop_spec is not None:
+            phase = stop_spec.phase
+            if phase in ("pre", "both"):
+                stop_phase_mask |= 1
+            if phase in ("post", "both"):
+                stop_phase_mask |= 2
+        if analysis is not None:
+            stop_phase_mask |= int(getattr(analysis, "stop_phase_mask", 0))
+
+        self.runtime_ws = make_runtime_workspace(
+            lag_state_info=model.lag_state_info,
+            dtype=self.dtype,
+            n_aux=self.n_aux,
+            stop_enabled=stop_phase_mask != 0,
+            stop_phase_mask=stop_phase_mask,
+        )
+        self.stepper_ws = model.make_stepper_workspace() if model.make_stepper_workspace else None
+        self.lag_state_info = model.lag_state_info
+
+        variant = RunnerVariant.FASTPATH_ANALYSIS if analysis is not None else RunnerVariant.FASTPATH
+        self.runner = get_runner(
+            variant,
+            model_hash=model.spec_hash,
+            stepper_name=model.stepper_name,
+            analysis=analysis,
+            dtype=self.dtype,
+            jit=self.is_jit,
+            discrete=self.is_discrete,
+        )
+
+        self.i_start = np.int64(0)
+        self.step_start = np.int64(0)
+
+    def reset(self, ic: np.ndarray) -> None:
+        np.copyto(self.y_curr, ic, casting="unsafe")
+        np.copyto(self.y_prev, ic, casting="unsafe")
+        if self.runtime_ws.stop_flag.size > 0:
+            self.runtime_ws.stop_flag[0] = 0
+        if self.runtime_ws.aux_values.size > 0:
+            self.runtime_ws.aux_values.fill(0)
+        if self.lag_state_info:
+            initialize_lag_runtime_workspace(
+                self.runtime_ws,
+                lag_state_info=self.lag_state_info,
+                y_curr=self.y_curr,
+            )
+        if self.analysis_trace_count.size > 0:
+            self.analysis_trace_count[0] = 0
+        if self.analysis_out.size > 0:
+            self.analysis_out.fill(0.0)
+        self.user_break_flag[0] = 0
+        self.status_out[0] = 0
+        self.hint_out[0] = 0
+        self.i_out[0] = 0
+        self.step_out[0] = 0
+        self.t_out[0] = 0.0
+
+    def run_analysis_only(self, *, ic: np.ndarray, params: np.ndarray) -> FastpathAnalysisResult:
+        self.reset(ic)
+        status = self.runner(
+            float(self.ctx.t0),
+            float(self.ctx.target_steps if self.ctx.target_steps is not None else self.ctx.t_end),
+            float(self.ctx.dt),
+            int(self.ctx.max_steps),
+            int(self.n_state),
+            int(self.rec_every),
+            self.y_curr,
+            self.y_prev,
+            params,
+            self.runtime_ws,
+            self.stepper_ws,
+            self.stepper_config,
+            self.y_prop,
+            self.t_prop,
+            self.dt_next,
+            self.err_est,
+            self.T,
+            self.Y,
+            self.AUX,
+            self.STEP,
+            self.FLAGS,
+            self.EVT_CODE,
+            self.EVT_INDEX,
+            self.EVT_LOG_DATA,
+            self.evt_log_scratch,
+            self.analysis_ws,
+            self.analysis_out,
+            self.analysis_trace,
+            self.analysis_trace_count,
+            int(self.analysis_trace_cap),
+            int(self.analysis_trace_stride),
+            int(self.variational_step_enabled),
+            self.variational_step_fn,
+            self.i_start,
+            self.step_start,
+            int(self.cap_rec),
+            int(self.cap_evt),
+            self.user_break_flag,
+            self.status_out,
+            self.hint_out,
+            self.i_out,
+            self.step_out,
+            self.t_out,
+            self.model.stepper,
+            self.model.rhs,
+            self.model.events_pre,
+            self.model.events_post,
+            self.model.update_aux,
+            self.state_rec_indices,
+            self.aux_rec_indices,
+            self.n_rec_states,
+            self.n_rec_aux,
+        )
+
+        status_value = int(status)
+        if status_value not in (DONE, EARLY_EXIT, TRACE_OVERFLOW, NAN_DETECTED):
+            raise RuntimeError(f"Fastpath runner exited with status {status_value}")
+
+        analysis_status = 0.0
+        analysis_matched_id = -1.0
+        if self.analysis_out.size >= 2:
+            analysis_status = float(self.analysis_out[0])
+            analysis_matched_id = float(self.analysis_out[1])
+
+        return FastpathAnalysisResult(
+            status=status_value,
+            analysis_status=analysis_status,
+            analysis_matched_id=analysis_matched_id,
+            step_count=int(self.step_out[0]),
+        )
 
 def _call_runner(
     *,
@@ -606,8 +875,175 @@ def run_batch_fastpath(
     if backend != "threads":
         raise ValueError(f"Unknown parallel_mode {parallel_mode!r}")
 
+    if max_workers is None:
+        cpu_count = os.cpu_count() or 1
+        max_workers = min(32, cpu_count + 4)
+    max_workers = max(1, int(max_workers))
+
+    if batch <= max_workers:
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            return list(ex.map(_run, range(batch)))
+
+    chunk_size = (batch + max_workers - 1) // max_workers
+    chunks = [
+        (start, min(start + chunk_size, batch))
+        for start in range(0, batch, chunk_size)
+    ]
+
+    def _run_chunk(start: int, stop: int) -> list[Results]:
+        return [_run(i) for i in range(start, stop)]
+
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        return list(ex.map(_run, range(batch)))
+        futures = [ex.submit(_run_chunk, start, stop) for start, stop in chunks]
+        results: list[Results] = []
+        for fut in futures:
+            results.extend(fut.result())
+        return results
+
+
+def run_batch_fastpath_optimized(
+    *,
+    model,
+    plan: RecordingPlan,
+    t0: float,
+    t_end: float | None,
+    target_steps: int | None,
+    dt: float,
+    max_steps: int,
+    transient: float,
+    state_rec_indices: np.ndarray,
+    aux_rec_indices: np.ndarray,
+    state_names: list[str],
+    aux_names: list[str],
+    params: np.ndarray,
+    ic: np.ndarray,
+    stepper_config: np.ndarray | None = None,
+    parallel_mode: Literal["auto", "threads", "process", "none"] = "auto",
+    max_workers: Optional[int] = None,
+    analysis: AnalysisModule | None = None,
+    analysis_only: bool = False,
+) -> list[Results] | list[FastpathAnalysisResult]:
+    """
+    Optimized batch fastpath execution with reusable workspaces.
+
+    When analysis_only is True, returns FastpathAnalysisResult entries and skips
+    full Results construction.
+    """
+    if not analysis_only:
+        return run_batch_fastpath(
+            model=model,
+            plan=plan,
+            t0=t0,
+            t_end=t_end,
+            target_steps=target_steps,
+            dt=dt,
+            max_steps=max_steps,
+            transient=transient,
+            state_rec_indices=state_rec_indices,
+            aux_rec_indices=aux_rec_indices,
+            state_names=state_names,
+            aux_names=aux_names,
+            params=params,
+            ic=ic,
+            stepper_config=stepper_config,
+            parallel_mode=parallel_mode,
+            max_workers=max_workers,
+            analysis=analysis,
+        )
+
+    if analysis is None:
+        raise ValueError("analysis_only=True requires an analysis module.")
+    if transient:
+        raise ValueError("analysis_only fastpath does not support transient warm-up.")
+
+    n_state = len(model.spec.states)
+    n_params = len(model.spec.params)
+    ic_batch, params_batch, batch = _normalize_batch_inputs(
+        ic=ic, params=params, n_state=n_state, n_params=n_params
+    )
+    if batch == 0:
+        return []
+
+    ctx = _RunContext(
+        t0=float(t0),
+        t_end=float(t_end if t_end is not None else t0),
+        target_steps=target_steps,
+        dt=float(dt),
+        max_steps=max_steps,
+        transient=0.0,
+        record_interval=plan.record_interval(),
+    )
+
+    backend = parallel_mode
+    is_jit = _is_jitted_runner(model.runner)
+    if backend == "auto":
+        backend = "threads" if is_jit else "threads"
+
+    if backend == "process":
+        backend = "threads"
+    if backend not in {"threads", "none"}:
+        raise ValueError(f"Unknown parallel_mode {parallel_mode!r}")
+
+    if max_workers is None:
+        cpu_count = os.cpu_count() or 1
+        max_workers = min(32, cpu_count + 4)
+    max_workers = max(1, int(max_workers))
+
+    def _make_bundle() -> _WorkspaceBundle:
+        return _WorkspaceBundle(
+            model=model,
+            plan=plan,
+            ctx=ctx,
+            state_rec_indices=state_rec_indices,
+            aux_rec_indices=aux_rec_indices,
+            state_names=state_names,
+            aux_names=aux_names,
+            stepper_config=stepper_config,
+            analysis=analysis,
+        )
+
+    if backend == "none" or max_workers == 1 or batch == 1:
+        bundle = _make_bundle()
+        return [
+            bundle.run_analysis_only(ic=ic_batch[i], params=params_batch[i])
+            for i in range(batch)
+        ]
+
+    call_token = object()
+    thread_local = threading.local()
+
+    def _get_bundle() -> _WorkspaceBundle:
+        bundle = getattr(thread_local, "bundle", None)
+        token = getattr(thread_local, "bundle_token", None)
+        if bundle is None or token is not call_token:
+            bundle = _make_bundle()
+            thread_local.bundle = bundle
+            thread_local.bundle_token = call_token
+        return bundle
+
+    def _run(idx: int) -> FastpathAnalysisResult:
+        bundle = _get_bundle()
+        return bundle.run_analysis_only(ic=ic_batch[idx], params=params_batch[idx])
+
+    if batch <= max_workers:
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            return list(ex.map(_run, range(batch)))
+
+    chunk_size = (batch + max_workers - 1) // max_workers
+    chunks = [
+        (start, min(start + chunk_size, batch))
+        for start in range(0, batch, chunk_size)
+    ]
+
+    def _run_chunk(start: int, stop: int) -> list[FastpathAnalysisResult]:
+        return [_run(i) for i in range(start, stop)]
+
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = [ex.submit(_run_chunk, start, stop) for start, stop in chunks]
+        results: list[FastpathAnalysisResult] = []
+        for fut in futures:
+            results.extend(fut.result())
+        return results
 
 
 def fastpath_for_sim(

@@ -25,7 +25,7 @@ sigma, beta = 10.0, 8.0/3.0
 initial_state = {"x": 1.0, "y": 1.0, "z": 1.0}
 
 # Sweep configuration
-rho_values = np.linspace(0.0, 200.0, 1000)
+rho_values = np.linspace(0.0, 200.0, 4000)
 dt = 0.01
 total_time = 50.0
 transient = 50.0

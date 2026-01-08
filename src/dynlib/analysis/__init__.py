@@ -13,6 +13,7 @@ from dynlib.analysis.runtime import (
     lyapunov_mle,
 )
 
+
 if TYPE_CHECKING:
     from dynlib.analysis.basin import (
         BLOWUP,
@@ -20,7 +21,19 @@ if TYPE_CHECKING:
         UNRESOLVED,
         Attractor,
         BasinResult,
-        basin_auto,
+        FixedPoint,
+        ReferenceRun,
+        KnownAttractorLibrary,
+        build_known_attractors_psc,
+    )
+    from dynlib.analysis.basin_auto import basin_auto
+    from dynlib.analysis.basin_known import basin_known
+    from dynlib.analysis.basin_stats import (
+        BasinStats,
+        AttractorStats,
+        basin_stats,
+        basin_summary,
+        print_basin_summary,
     )
     from dynlib.analysis.sweep import (
         SweepResult,
@@ -58,7 +71,20 @@ _BASIN_EXPORTS = {
     "UNRESOLVED",
     "Attractor",
     "BasinResult",
+    "FixedPoint",
+    "ReferenceRun",
+    "KnownAttractorLibrary",
     "basin_auto",
+    "build_known_attractors_psc",
+    "basin_known",
+}
+
+_BASIN_STATS_EXPORTS = {
+    "BasinStats",
+    "AttractorStats",
+    "basin_stats",
+    "basin_summary",
+    "print_basin_summary",
 }
 
 __all__ = [
@@ -76,6 +102,8 @@ __all__ = [
     *_POST_EXPORTS,
     # Basin analysis
     *_BASIN_EXPORTS,
+    # Basin statistics
+    *_BASIN_STATS_EXPORTS,
 ]
 
 
@@ -91,7 +119,17 @@ def __getattr__(name):
         globals()[name] = value
         return value
     if name in _BASIN_EXPORTS:
-        module = importlib.import_module("dynlib.analysis.basin")
+        if name == "basin_auto":
+            module = importlib.import_module("dynlib.analysis.basin_auto")
+        elif name == "basin_known":
+            module = importlib.import_module("dynlib.analysis.basin_known")
+        else:
+            module = importlib.import_module("dynlib.analysis.basin")
+        value = getattr(module, name)
+        globals()[name] = value
+        return value
+    if name in _BASIN_STATS_EXPORTS:
+        module = importlib.import_module("dynlib.analysis.basin_stats")
         value = getattr(module, name)
         globals()[name] = value
         return value

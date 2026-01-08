@@ -61,7 +61,7 @@ r = 3.5
 xy = "x * y"
 x2 = "x^2"
 
-[equations.next]
+[equations.rhs]
 x = "r * x * (1 - x)"
 y = "0.5 * y + 0.1 * x"
 """

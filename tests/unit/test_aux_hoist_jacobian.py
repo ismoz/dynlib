@@ -25,7 +25,7 @@ a = "x + 2"
 expr = "dx = b"
 
 [equations.jacobian]
-exprs = [
+expr = [
     ["1.0"]
 ]
 """

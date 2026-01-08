@@ -1,8 +1,10 @@
 # src/dynlib/analysis/sweep.py
 from __future__ import annotations
 
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from typing import Iterable, Literal, Mapping, Sequence, TYPE_CHECKING
+import os
 import warnings
 import numpy as np
 
@@ -362,6 +364,393 @@ def _warn_fastpath_fallback(support: FastpathSupport, *, stacklevel: int) -> Non
     )
 
 
+def _is_jitted_runner(fn) -> bool:
+    """Best-effort detection of a numba-compiled runner."""
+    return bool(getattr(fn, "signatures", None))
+
+
+def _resolve_process_workers(max_workers: int | None) -> int:
+    if max_workers is None:
+        cpu_count = os.cpu_count() or 1
+        return min(cpu_count, 8)
+    return max(1, int(max_workers))
+
+
+def _chunk_ranges(total: int, n_workers: int) -> list[tuple[int, int]]:
+    if total <= 0:
+        return []
+    chunk_size = (total + n_workers - 1) // n_workers
+    return [
+        (start, min(start + chunk_size, total))
+        for start in range(0, total, chunk_size)
+    ]
+
+
+# Module-level worker state for process-based sweeps
+_sweep_worker_sim: "Sim | None" = None
+_sweep_worker_config: dict | None = None
+_sweep_worker_analysis: object | None = None
+
+
+def _build_worker_sim(init_config: dict) -> "Sim":
+    from dynlib.compiler.build import build
+    from dynlib.runtime.sim import Sim as SimClass
+
+    full_model = build(
+        init_config["model_spec"],
+        stepper=init_config["stepper"],
+        jit=bool(init_config.get("jit", True)),
+    )
+    sim = SimClass(full_model)
+
+    session_params = init_config.get("session_params")
+    if session_params is not None:
+        sim.assign(**{
+            name: val for name, val in zip(sim.model.spec.params, session_params)
+        })
+    return sim
+
+
+def _init_sweep_traj_worker(init_config: dict) -> None:
+    global _sweep_worker_sim, _sweep_worker_config, _sweep_worker_analysis
+    _sweep_worker_sim = _build_worker_sim(init_config)
+    _sweep_worker_config = init_config
+    _sweep_worker_analysis = None
+
+
+def _sweep_traj_chunk_worker(args: tuple[np.ndarray, int]):
+    global _sweep_worker_sim, _sweep_worker_config
+    values, start = args
+    if _sweep_worker_sim is None or _sweep_worker_config is None:
+        raise RuntimeError("Worker not initialized. Call _init_sweep_traj_worker first.")
+
+    sim = _sweep_worker_sim
+    cfg = _sweep_worker_config
+    values = np.asarray(values, dtype=float)
+    count = int(values.size)
+    if count == 0:
+        return start, [], []
+
+    base_states = cfg["base_states"]
+    base_params = cfg["base_params"]
+    param_idx = int(cfg["param_idx"])
+    record_vars = cfg["record_vars"]
+    record_vars_tuple = cfg["record_vars_tuple"]
+    t0 = cfg["t0"]
+    T = cfg["T"]
+    N = cfg["N"]
+    dt = cfg["dt"]
+    transient = cfg["transient"]
+    record_interval = cfg["record_interval"]
+    max_steps = cfg["max_steps"]
+
+    ic_stack = np.repeat(base_states[np.newaxis, :], count, axis=0)
+    params_stack = np.repeat(base_params[np.newaxis, :], count, axis=0)
+    params_stack[:, param_idx] = values
+
+    views: list[ResultsView]
+    use_fastpath = bool(cfg["fastpath_ok"])
+    if use_fastpath:
+        stride = int(record_interval) if record_interval is not None else 1
+        plan = FixedStridePlan(stride=stride)
+        views = fastpath_batch_for_sim(
+            sim,
+            plan=plan,
+            t0=t0,
+            T=T,
+            N=int(N) if N is not None else None,
+            dt=dt,
+            record_vars=record_vars,
+            transient=transient,
+            record_interval=record_interval,
+            max_steps=max_steps,
+            ic=ic_stack,
+            params=params_stack,
+            parallel_mode="none",
+            max_workers=1,
+        )
+        if views is None:
+            use_fastpath = False
+
+    if not use_fastpath:
+        views = []
+        for v in values:
+            ic = base_states.copy()
+            params = base_params.copy()
+            params[param_idx] = v
+
+            kwargs: dict[str, object] = dict(
+                record=True,
+                record_vars=record_vars,
+                transient=transient,
+                resume=False,
+            )
+            if t0 is not None:
+                kwargs["t0"] = float(t0)
+            if T is not None:
+                kwargs["T"] = float(T)
+            if N is not None:
+                kwargs["N"] = int(N)
+            if dt is not None:
+                kwargs["dt"] = float(dt)
+            if record_interval is not None:
+                kwargs["record_interval"] = int(record_interval)
+            if max_steps is not None:
+                kwargs["max_steps"] = int(max_steps)
+
+            sim.run(ic=ic, params=params, **kwargs)
+            views.append(sim.results())
+
+    t_list: list[np.ndarray] = []
+    data_list: list[np.ndarray] = []
+    for res in views:
+        seg = res.segment[-1]
+        t_full = seg.t
+        if t_full.size == 0:
+            raise RuntimeError("No samples recorded; adjust T/N/record_interval.")
+        series = seg[list(record_vars_tuple)]
+        t_list.append(t_full)
+        data_list.append(series)
+
+    return start, t_list, data_list
+
+
+def _init_sweep_mle_worker(init_config: dict) -> None:
+    global _sweep_worker_sim, _sweep_worker_config, _sweep_worker_analysis
+    _sweep_worker_sim = _build_worker_sim(init_config)
+    _sweep_worker_config = init_config
+    from dynlib.analysis.runtime import lyapunov_mle as lyapunov_mle_module
+
+    _sweep_worker_analysis = lyapunov_mle_module(
+        model=_sweep_worker_sim.model,
+        record_interval=init_config.get("record_interval"),
+        analysis_kind=init_config.get("analysis_kind", 1),
+    )
+
+
+def _sweep_mle_chunk_worker(args: tuple[np.ndarray, int]):
+    global _sweep_worker_sim, _sweep_worker_config, _sweep_worker_analysis
+    values, start = args
+    if _sweep_worker_sim is None or _sweep_worker_config is None:
+        raise RuntimeError("Worker not initialized. Call _init_sweep_mle_worker first.")
+    if _sweep_worker_analysis is None:
+        raise RuntimeError("Lyapunov MLE analysis not initialized.")
+
+    sim = _sweep_worker_sim
+    cfg = _sweep_worker_config
+    analysis = _sweep_worker_analysis
+    values = np.asarray(values, dtype=float)
+    count = int(values.size)
+    if count == 0:
+        return start, np.array([], dtype=float), np.array([], dtype=float), np.array([], dtype=float), []
+
+    base_states = cfg["base_states"]
+    base_params = cfg["base_params"]
+    param_idx = int(cfg["param_idx"])
+    t0 = cfg["t0"]
+    T = cfg["T"]
+    N = cfg["N"]
+    dt = cfg["dt"]
+    transient = cfg["transient"]
+    record_interval = cfg["record_interval"]
+    max_steps = cfg["max_steps"]
+
+    ic_stack = np.repeat(base_states[np.newaxis, :], count, axis=0)
+    params_stack = np.repeat(base_params[np.newaxis, :], count, axis=0)
+    params_stack[:, param_idx] = values
+
+    views: list[ResultsView]
+    use_fastpath = bool(cfg["fastpath_ok"])
+    if use_fastpath:
+        stride = int(record_interval) if record_interval is not None else 1
+        plan = FixedStridePlan(stride=stride)
+        views = fastpath_batch_for_sim(
+            sim,
+            plan=plan,
+            t0=t0,
+            T=T,
+            N=int(N) if N is not None else None,
+            dt=dt,
+            record_vars=None,
+            transient=transient,
+            record_interval=record_interval,
+            max_steps=max_steps,
+            ic=ic_stack,
+            params=params_stack,
+            parallel_mode="none",
+            max_workers=1,
+            analysis=analysis,
+        )
+        if views is None:
+            use_fastpath = False
+
+    if not use_fastpath:
+        views = []
+        for v in values:
+            ic = base_states.copy()
+            params = base_params.copy()
+            params[param_idx] = v
+
+            kwargs: dict[str, object] = dict(
+                record=False,
+                transient=transient,
+                resume=False,
+                analysis=analysis,
+            )
+            if t0 is not None:
+                kwargs["t0"] = float(t0)
+            if T is not None:
+                kwargs["T"] = float(T)
+            if N is not None:
+                kwargs["N"] = int(N)
+            if dt is not None:
+                kwargs["dt"] = float(dt)
+            if record_interval is not None:
+                kwargs["record_interval"] = int(record_interval)
+            if max_steps is not None:
+                kwargs["max_steps"] = int(max_steps)
+
+            sim.run(ic=ic, params=params, **kwargs)
+            views.append(sim.results())
+
+    mle_values = np.zeros(count, dtype=float)
+    log_growth = np.zeros(count, dtype=float)
+    steps_values = np.zeros(count, dtype=float)
+    trace_list: list[np.ndarray] | None = [] if record_interval else None
+
+    for i, res in enumerate(views):
+        lyap_result = res.analysis["lyapunov_mle"]
+        mle_values[i] = float(lyap_result.mle)
+        log_growth[i] = float(lyap_result.log_growth)
+        steps_values[i] = float(lyap_result.steps)
+        if trace_list is not None:
+            trace_list.append(lyap_result["mle"])
+
+    return start, mle_values, log_growth, steps_values, trace_list
+
+
+def _init_sweep_spectrum_worker(init_config: dict) -> None:
+    global _sweep_worker_sim, _sweep_worker_config, _sweep_worker_analysis
+    _sweep_worker_sim = _build_worker_sim(init_config)
+    _sweep_worker_config = init_config
+    from dynlib.analysis.runtime import lyapunov_spectrum as lyapunov_spectrum_module
+
+    _sweep_worker_analysis = lyapunov_spectrum_module(
+        model=_sweep_worker_sim.model,
+        k=init_config["k"],
+        init_basis=init_config.get("init_basis"),
+        record_interval=init_config.get("record_interval"),
+        analysis_kind=init_config.get("analysis_kind", 1),
+    )
+
+
+def _sweep_spectrum_chunk_worker(args: tuple[np.ndarray, int]):
+    global _sweep_worker_sim, _sweep_worker_config, _sweep_worker_analysis
+    values, start = args
+    if _sweep_worker_sim is None or _sweep_worker_config is None:
+        raise RuntimeError("Worker not initialized. Call _init_sweep_spectrum_worker first.")
+    if _sweep_worker_analysis is None:
+        raise RuntimeError("Lyapunov spectrum analysis not initialized.")
+
+    sim = _sweep_worker_sim
+    cfg = _sweep_worker_config
+    analysis = _sweep_worker_analysis
+    values = np.asarray(values, dtype=float)
+    count = int(values.size)
+    if count == 0:
+        return start, np.zeros((0, int(cfg["k"])), dtype=float), np.zeros((0, int(cfg["k"])), dtype=float), np.array([], dtype=float)
+
+    base_states = cfg["base_states"]
+    base_params = cfg["base_params"]
+    param_idx = int(cfg["param_idx"])
+    k_use = int(cfg["k"])
+    t0 = cfg["t0"]
+    T = cfg["T"]
+    N = cfg["N"]
+    dt = cfg["dt"]
+    transient = cfg["transient"]
+    record_interval = cfg["record_interval"]
+    max_steps = cfg["max_steps"]
+
+    ic_stack = np.repeat(base_states[np.newaxis, :], count, axis=0)
+    params_stack = np.repeat(base_params[np.newaxis, :], count, axis=0)
+    params_stack[:, param_idx] = values
+
+    views: list[ResultsView]
+    use_fastpath = bool(cfg["fastpath_ok"])
+    if use_fastpath:
+        stride = int(record_interval) if record_interval is not None else 1
+        plan = FixedStridePlan(stride=stride)
+        views = fastpath_batch_for_sim(
+            sim,
+            plan=plan,
+            t0=t0,
+            T=T,
+            N=int(N) if N is not None else None,
+            dt=dt,
+            record_vars=None,
+            transient=transient,
+            record_interval=record_interval,
+            max_steps=max_steps,
+            ic=ic_stack,
+            params=params_stack,
+            parallel_mode="none",
+            max_workers=1,
+            analysis=analysis,
+        )
+        if views is None:
+            use_fastpath = False
+
+    if not use_fastpath:
+        views = []
+        for v in values:
+            ic = base_states.copy()
+            params = base_params.copy()
+            params[param_idx] = v
+
+            kwargs: dict[str, object] = dict(
+                record=False,
+                transient=transient,
+                resume=False,
+                analysis=analysis,
+            )
+            if t0 is not None:
+                kwargs["t0"] = float(t0)
+            if T is not None:
+                kwargs["T"] = float(T)
+            if N is not None:
+                kwargs["N"] = int(N)
+            if dt is not None:
+                kwargs["dt"] = float(dt)
+            if record_interval is not None:
+                kwargs["record_interval"] = int(record_interval)
+            if max_steps is not None:
+                kwargs["max_steps"] = int(max_steps)
+
+            sim.run(ic=ic, params=params, **kwargs)
+            views.append(sim.results())
+
+    spectrum_values = np.zeros((count, k_use), dtype=float)
+    log_r_values = np.zeros((count, k_use), dtype=float)
+    steps_values = np.zeros(count, dtype=float)
+
+    for i, res in enumerate(views):
+        lyap_result = res.analysis["lyapunov_spectrum"]
+        out = lyap_result["out"]
+        if out is None or out.size < k_use + 2:
+            raise RuntimeError("Lyapunov spectrum analysis output missing or incomplete.")
+        log_r = np.asarray(out[:k_use], dtype=float)
+        denom = float(out[k_use])
+        if denom <= 0.0:
+            denom = 1.0
+
+        spectrum_values[i] = log_r / denom
+        log_r_values[i] = log_r
+        steps_values[i] = float(out[k_use + 1]) if out.size > k_use + 1 else 0.0
+
+    return start, spectrum_values, log_r_values, steps_values
+
+
 def _run_batch_fast(
     sim: Sim,
     *,
@@ -637,7 +1026,7 @@ def traj(
     transient: float | None = None,
     record_interval: int | None = None,
     max_steps: int | None = None,
-    parallel_mode: Literal["auto", "threads", "none"] = "auto",
+    parallel_mode: Literal["auto", "threads", "process", "none"] = "auto",
     max_workers: int | None = None,
 ) -> SweepResult:
     """Sweep a parameter and collect full time-series trajectories for each run.
@@ -659,8 +1048,8 @@ def traj(
         transient: Time/iterations to discard before recording (default from sim config)
         record_interval: Record every Nth step (memory optimization)
         max_steps: Safety limit on total steps
-        parallel_mode: Parallel execution mode for fast-path batch runs ("auto", "threads", "none")
-        max_workers: Maximum worker threads when parallel_mode uses threads (None = default)
+        parallel_mode: Parallel execution mode for fast-path batch runs ("auto", "threads", "process", "none")
+        max_workers: Maximum worker threads/processes when parallel_mode uses threads or process (None = default)
     
     Returns:
         SweepResult(kind="trajectory") with:
@@ -694,6 +1083,89 @@ def traj(
 
     record_vars_list = list(record_vars)
 
+    use_process_parallel = parallel_mode in ("process", "auto") and M > 1000
+    n_workers = _resolve_process_workers(max_workers)
+    if n_workers == 1:
+        use_process_parallel = False
+    if use_process_parallel:
+        stride = int(record_interval) if record_interval is not None else 1
+        plan = FixedStridePlan(stride=stride)
+        support = _assess_fastpath_support(
+            sim,
+            plan=plan,
+            record_vars=record_vars_list,
+            dt=dt,
+            transient=transient,
+        )
+        if not support.ok:
+            _warn_fastpath_fallback(support, stacklevel=2)
+
+        init_config = dict(
+            model_spec=sim.model.spec,
+            stepper=sim.model.stepper_name,
+            jit=_is_jitted_runner(sim.model.runner),
+            session_params=base_params,
+            base_states=base_states,
+            base_params=base_params,
+            param_idx=p_idx,
+            record_vars=record_vars_list,
+            record_vars_tuple=record_vars_tuple,
+            t0=t0,
+            T=T,
+            N=N,
+            dt=dt,
+            transient=transient,
+            record_interval=record_interval,
+            max_steps=max_steps,
+            fastpath_ok=support.ok,
+        )
+
+        chunks = _chunk_ranges(M, n_workers)
+        chunk_args = [(vals[start:stop], start) for start, stop in chunks]
+        t_list: list[np.ndarray] = []
+        data_list: list[np.ndarray] = []
+        with ProcessPoolExecutor(
+            max_workers=n_workers,
+            initializer=_init_sweep_traj_worker,
+            initargs=(init_config,),
+        ) as executor:
+            for _, t_chunk, data_chunk in executor.map(_sweep_traj_chunk_worker, chunk_args):
+                t_list.extend(t_chunk)
+                data_list.extend(data_chunk)
+
+        meta = dict(
+            stepper=sim.model.stepper_name,
+            kind=sim.model.spec.kind,
+            t0=t0,
+            T=T,
+            N=N,
+            dt=dt,
+            transient=transient,
+            record_interval=record_interval,
+            parallel_mode=parallel_mode,
+            max_workers=max_workers,
+        )
+        payload = TrajectoryPayload(
+            record_vars=record_vars_tuple,
+            t_runs=t_list,
+            data=data_list,
+            values=vals,
+        )
+        meta.update(record_vars=record_vars_tuple)
+        return SweepResult(
+            param_name=param,
+            values=vals,
+            kind="trajectory",
+            outputs={},
+            traces={},
+            meta=meta,
+            payload=payload,
+        )
+
+    effective_parallel_mode = parallel_mode
+    if parallel_mode == "process" and not use_process_parallel:
+        effective_parallel_mode = "none"
+
     batch_views, batch_support = _run_batch_fast(
         sim,
         param_idx=p_idx,
@@ -708,7 +1180,7 @@ def traj(
         transient=transient,
         record_interval=record_interval,
         max_steps=max_steps,
-        parallel_mode=parallel_mode,
+        parallel_mode=effective_parallel_mode,
         max_workers=max_workers,
     )
 
@@ -790,7 +1262,7 @@ def lyapunov_mle(
     transient: float | None = None,
     record_interval: int | None = None,
     max_steps: int | None = None,
-    parallel_mode: Literal["auto", "threads", "none"] = "auto",
+    parallel_mode: Literal["auto", "threads", "process", "none"] = "auto",
     max_workers: int | None = None,
     analysis_kind: int = 1,
 ) -> SweepResult:
@@ -811,8 +1283,8 @@ def lyapunov_mle(
         transient: Time/iterations to discard before recording
         record_interval: Record trace every Nth step (1 = every step)
         max_steps: Safety limit on total steps
-        parallel_mode: Parallel execution ("auto", "threads", "none")
-        max_workers: Maximum worker threads (None = default)
+        parallel_mode: Parallel execution ("auto", "threads", "process", "none")
+        max_workers: Maximum worker threads/processes (None = default)
         analysis_kind: Lyapunov algorithm variant (default 1)
     
     Returns:
@@ -850,6 +1322,11 @@ def lyapunov_mle(
     steps_values = np.zeros(M, dtype=float)
     trace_list: list[np.ndarray] | None = [] if record_interval else None
 
+    use_process_parallel = parallel_mode in ("process", "auto") and M > 1000
+    n_workers = _resolve_process_workers(max_workers)
+    if n_workers == 1:
+        use_process_parallel = False
+
     # Try batch fast-path execution
     ic_stack = np.repeat(base_states[np.newaxis, :], values.size, axis=0)
     params_stack = np.repeat(base_params[np.newaxis, :], values.size, axis=0)
@@ -865,6 +1342,84 @@ def lyapunov_mle(
         transient=transient,
     )
 
+    if use_process_parallel:
+        if not support.ok:
+            _warn_fastpath_fallback(support, stacklevel=2)
+
+        init_config = dict(
+            model_spec=sim.model.spec,
+            stepper=sim.model.stepper_name,
+            jit=_is_jitted_runner(sim.model.runner),
+            session_params=base_params,
+            base_states=base_states,
+            base_params=base_params,
+            param_idx=p_idx,
+            t0=t0,
+            T=T,
+            N=N,
+            dt=dt,
+            transient=transient,
+            record_interval=record_interval,
+            max_steps=max_steps,
+            analysis_kind=analysis_kind,
+            fastpath_ok=support.ok,
+        )
+
+        chunks = _chunk_ranges(M, n_workers)
+        chunk_args = [(vals[start:stop], start) for start, stop in chunks]
+        log_growth_values = np.zeros(M, dtype=float)
+        trace_list: list[np.ndarray] | None = [None] * M if record_interval else None
+        with ProcessPoolExecutor(
+            max_workers=n_workers,
+            initializer=_init_sweep_mle_worker,
+            initargs=(init_config,),
+        ) as executor:
+            for start, mle_chunk, log_growth_chunk, steps_chunk, trace_chunk in executor.map(
+                _sweep_mle_chunk_worker,
+                chunk_args,
+            ):
+                end = start + len(mle_chunk)
+                mle_values[start:end] = mle_chunk
+                log_growth_values[start:end] = log_growth_chunk
+                steps_values[start:end] = steps_chunk
+                if trace_list is not None and trace_chunk is not None:
+                    trace_list[start:end] = trace_chunk
+
+        meta = dict(
+            stepper=sim.model.stepper_name,
+            kind=sim.model.spec.kind,
+            t0=t0,
+            T=T,
+            N=N,
+            dt=dt,
+            transient=transient,
+            record_interval=record_interval,
+            parallel_mode=parallel_mode,
+            max_workers=max_workers,
+            analysis_kind=analysis_kind,
+        )
+        outputs = dict(
+            mle=mle_values,
+            log_growth=log_growth_values,
+            steps=steps_values,
+        )
+        traces: dict[str, object] = {}
+        if trace_list is not None:
+            traces["mle"] = trace_list
+
+        return SweepResult(
+            param_name=param,
+            values=vals,
+            kind="mle",
+            outputs=outputs,
+            traces=traces,
+            meta=meta,
+        )
+
+    effective_parallel_mode = parallel_mode
+    if parallel_mode == "process" and not use_process_parallel:
+        effective_parallel_mode = "none"
+
     batch_views = fastpath_batch_for_sim(
         sim,
         plan=plan,
@@ -878,7 +1433,7 @@ def lyapunov_mle(
         max_steps=max_steps,
         ic=ic_stack,
         params=params_stack,
-        parallel_mode=parallel_mode,  # type: ignore[arg-type]
+        parallel_mode=effective_parallel_mode,  # type: ignore[arg-type]
         max_workers=max_workers,
         analysis=analysis,
     )
@@ -975,7 +1530,7 @@ def lyapunov_spectrum(
     transient: float | None = None,
     record_interval: int | None = None,
     max_steps: int | None = None,
-    parallel_mode: Literal["auto", "threads", "none"] = "auto",
+    parallel_mode: Literal["auto", "threads", "process", "none"] = "auto",
     max_workers: int | None = None,
     analysis_kind: int = 1,
     init_basis: np.ndarray | None = None,
@@ -998,8 +1553,8 @@ def lyapunov_spectrum(
         transient: Time/iterations to discard before recording
         record_interval: Record trace every Nth step (1 = every step)
         max_steps: Safety limit on total steps
-        parallel_mode: Parallel execution ("auto", "threads", "none")
-        max_workers: Maximum worker threads (None = default)
+        parallel_mode: Parallel execution ("auto", "threads", "process", "none")
+        max_workers: Maximum worker threads/processes (None = default)
         analysis_kind: Lyapunov algorithm variant (default 1)
         init_basis: Optional initial tangent basis (shape: n_state x k)
     
@@ -1041,6 +1596,11 @@ def lyapunov_spectrum(
     spectrum_values = np.zeros((M, k_use), dtype=float)
     log_r_values = np.zeros((M, k_use), dtype=float)
     steps_values = np.zeros(M, dtype=float)
+    use_process_parallel = parallel_mode in ("process", "auto") and M > 1000
+    n_workers = _resolve_process_workers(max_workers)
+    if n_workers == 1:
+        use_process_parallel = False
+
     # Try batch fast-path execution
     ic_stack = np.repeat(base_states[np.newaxis, :], values.size, axis=0)
     params_stack = np.repeat(base_params[np.newaxis, :], values.size, axis=0)
@@ -1056,6 +1616,83 @@ def lyapunov_spectrum(
         transient=transient,
     )
 
+    if use_process_parallel:
+        if not support.ok:
+            _warn_fastpath_fallback(support, stacklevel=2)
+
+        init_config = dict(
+            model_spec=sim.model.spec,
+            stepper=sim.model.stepper_name,
+            jit=_is_jitted_runner(sim.model.runner),
+            session_params=base_params,
+            base_states=base_states,
+            base_params=base_params,
+            param_idx=p_idx,
+            t0=t0,
+            T=T,
+            N=N,
+            dt=dt,
+            transient=transient,
+            record_interval=record_interval,
+            max_steps=max_steps,
+            analysis_kind=analysis_kind,
+            k=k_use,
+            init_basis=init_basis,
+            fastpath_ok=support.ok,
+        )
+
+        chunks = _chunk_ranges(M, n_workers)
+        chunk_args = [(vals[start:stop], start) for start, stop in chunks]
+        with ProcessPoolExecutor(
+            max_workers=n_workers,
+            initializer=_init_sweep_spectrum_worker,
+            initargs=(init_config,),
+        ) as executor:
+            for start, spectrum_chunk, log_r_chunk, steps_chunk in executor.map(
+                _sweep_spectrum_chunk_worker,
+                chunk_args,
+            ):
+                end = start + spectrum_chunk.shape[0]
+                spectrum_values[start:end] = spectrum_chunk
+                log_r_values[start:end] = log_r_chunk
+                steps_values[start:end] = steps_chunk
+
+        meta = dict(
+            stepper=sim.model.stepper_name,
+            kind=sim.model.spec.kind,
+            t0=t0,
+            T=T,
+            N=N,
+            dt=dt,
+            transient=transient,
+            record_interval=record_interval,
+            parallel_mode=parallel_mode,
+            max_workers=max_workers,
+            analysis_kind=analysis_kind,
+            k=k_use,
+        )
+        outputs = dict(
+            spectrum=spectrum_values,
+            log_r=log_r_values,
+            steps=steps_values,
+        )
+        for j in range(k_use):
+            outputs[f"lyap{j}"] = spectrum_values[:, j]
+        traces: dict[str, object] = {}
+
+        return SweepResult(
+            param_name=param,
+            values=vals,
+            kind="spectrum",
+            outputs=outputs,
+            traces=traces,
+            meta=meta,
+        )
+
+    effective_parallel_mode = parallel_mode
+    if parallel_mode == "process" and not use_process_parallel:
+        effective_parallel_mode = "none"
+
     batch_views = fastpath_batch_for_sim(
         sim,
         plan=plan,
@@ -1069,7 +1706,7 @@ def lyapunov_spectrum(
         max_steps=max_steps,
         ic=ic_stack,
         params=params_stack,
-        parallel_mode=parallel_mode,  # type: ignore[arg-type]
+        parallel_mode=effective_parallel_mode,  # type: ignore[arg-type]
         max_workers=max_workers,
         analysis=analysis,
     )
