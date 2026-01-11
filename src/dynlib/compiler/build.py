@@ -112,12 +112,14 @@ class CompiledPieces:
     events_post: callable
     update_aux: callable
     spec_hash: str
+    inv_rhs: Optional[Callable] = None
     triplet_digest: Optional[str] = None
     triplet_from_disk: bool = False
     rhs_source: Optional[str] = None
     events_pre_source: Optional[str] = None
     events_post_source: Optional[str] = None
     update_aux_source: Optional[str] = None
+    inv_rhs_source: Optional[str] = None
 
 @dataclass(frozen=True)
 class FullModel:
@@ -126,6 +128,7 @@ class FullModel:
     stepper_name: str
     workspace_sig: Tuple[int, ...]
     rhs: Callable
+    inv_rhs: Optional[Callable]
     events_pre: Callable
     events_post: Callable
     update_aux: Callable
@@ -137,6 +140,7 @@ class FullModel:
     jacobian: Optional[Callable] = None
     guards: Optional[Tuple[Callable, Callable]] = None  # (allfinite1d, allfinite_scalar)
     rhs_source: Optional[str] = None
+    inv_rhs_source: Optional[str] = None
     events_pre_source: Optional[str] = None
     events_post_source: Optional[str] = None
     update_aux_source: Optional[str] = None
@@ -326,20 +330,23 @@ def build_callables(
         tri = cached.get("triplet")  # OLD: 3-tuple without update_aux
         meta = cached.get("triplet_meta", {})
         sources = cached.get("sources", {})
+        inv_rhs_cached = cached.get("inv_rhs")
         
         # Handle old caches (3-tuple) vs new caches (4-tuple)
         if quad and len(quad) == 4:
             return CompiledPieces(
-                spec,
-                stepper_name,
-                quad[0],
-                quad[1],
-                quad[2],
-                quad[3],
-                s_hash,
+                spec=spec,
+                stepper_name=stepper_name,
+                rhs=quad[0],
+                events_pre=quad[1],
+                events_post=quad[2],
+                update_aux=quad[3],
+                inv_rhs=inv_rhs_cached,
+                spec_hash=s_hash,
                 triplet_digest=meta.get("digest"),
                 triplet_from_disk=meta.get("from_disk", False),
                 rhs_source=sources.get("rhs"),
+                inv_rhs_source=sources.get("inv_rhs"),
                 events_pre_source=sources.get("events_pre"),
                 events_post_source=sources.get("events_post"),
                 update_aux_source=sources.get("update_aux"),
@@ -368,6 +375,7 @@ def build_callables(
                 "events_pre": cc.events_pre_source,
                 "events_post": cc.events_post_source,
                 "update_aux": cc.update_aux_source,
+                "inv_rhs": cc.inv_rhs_source,
             },
         )
 
@@ -381,6 +389,17 @@ def build_callables(
         cache_setup=cache_context.configure if cache_context else None,
     )
 
+    inv_rhs_fn = None
+    inv_rhs_digest = None
+    inv_rhs_from_disk = False
+    if cc.inv_rhs is not None:
+        if use_disk_cache and cache_context is not None:
+            cache_context.configure("inv_rhs")
+        inv_rhs_art = jit_compile(cc.inv_rhs, jit=jit, cache=use_disk_cache)
+        inv_rhs_fn = inv_rhs_art.fn
+        inv_rhs_digest = inv_rhs_art.cache_digest
+        inv_rhs_from_disk = bool(inv_rhs_art.cache_hit)
+
     triplet_digest = rhs_art.cache_digest or pre_art.cache_digest or post_art.cache_digest or aux_art.cache_digest
     triplet_from_disk = rhs_art.cache_hit and pre_art.cache_hit and post_art.cache_hit and aux_art.cache_hit
 
@@ -390,28 +409,33 @@ def build_callables(
         key,
         {
             "quadruplet": (rhs_fn, pre_fn, post_fn, aux_fn),
+            "inv_rhs": inv_rhs_fn,
             "jit": bool(jit),
             "triplet_meta": {"digest": triplet_digest, "from_disk": triplet_from_disk},
+            "inv_rhs_meta": {"digest": inv_rhs_digest, "from_disk": inv_rhs_from_disk},
             "sources": {
                 "rhs": cc.rhs_source,
                 "events_pre": cc.events_pre_source,
                 "events_post": cc.events_post_source,
                 "update_aux": cc.update_aux_source,
+                "inv_rhs": cc.inv_rhs_source,
             },
         },
     )
 
     return CompiledPieces(
-        spec,
-        stepper_name,
-        rhs_fn,
-        pre_fn,
-        post_fn,
-        aux_fn,
-        s_hash,
+        spec=spec,
+        stepper_name=stepper_name,
+        rhs=rhs_fn,
+        events_pre=pre_fn,
+        events_post=post_fn,
+        update_aux=aux_fn,
+        inv_rhs=inv_rhs_fn,
+        spec_hash=s_hash,
         triplet_digest=triplet_digest,
         triplet_from_disk=triplet_from_disk,
         rhs_source=cc.rhs_source,
+        inv_rhs_source=cc.inv_rhs_source,
         events_pre_source=cc.events_pre_source,
         events_post_source=cc.events_post_source,
         update_aux_source=cc.update_aux_source,
@@ -1032,6 +1056,7 @@ def build(
         stepper_name=stepper_name,
         workspace_sig=workspace_sig,
         rhs=pieces.rhs,
+        inv_rhs=pieces.inv_rhs,
         events_pre=pieces.events_pre,
         events_post=pieces.events_post,
         update_aux=pieces.update_aux,
@@ -1043,6 +1068,7 @@ def build(
         jacobian=jacobian_fn,
         guards=guards_tuple,
         rhs_source=pieces.rhs_source,
+        inv_rhs_source=pieces.inv_rhs_source,
         events_pre_source=pieces.events_pre_source,
         events_post_source=pieces.events_post_source,
         update_aux_source=pieces.update_aux_source,
@@ -1085,6 +1111,7 @@ def export_model_sources(model: FullModel, output_dir: Union[str, Path]) -> Dict
     # Export each component's source if available
     components = [
         ("rhs", model.rhs_source),
+        ("inv_rhs", getattr(model, "inv_rhs_source", None)),
         ("events_pre", model.events_pre_source),
         ("events_post", model.events_post_source),
         ("update_aux", getattr(model, "update_aux_source", None)),

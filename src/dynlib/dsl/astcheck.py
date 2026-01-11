@@ -211,6 +211,13 @@ def collect_lag_requests(normal: Dict[str, Any]) -> Dict[str, int]:
             merge_requests(expr, f"[equations.rhs.{name}]")
     if eq.get("expr"):
         merge_requests(eq["expr"], "[equations].expr")
+    inv = eq.get("inverse") or {}
+    if isinstance(inv, dict):
+        if inv.get("rhs"):
+            for name, expr in inv["rhs"].items():
+                merge_requests(expr, f"[equations.inverse.rhs.{name}]")
+        if inv.get("expr"):
+            merge_requests(inv["expr"], "[equations.inverse].expr")
     
     # Scan aux
     for name, expr in (normal.get("aux") or {}).items():
@@ -507,54 +514,55 @@ def validate_no_duplicate_equation_targets(normal: Dict[str, Any]) -> None:
         raise ModelLoadError("Invalid equations key: use [equations].expr (singular), not 'exprs'.")
     rhs_dict = equations.get("rhs")
     rhs_targets = set(rhs_dict.keys()) if rhs_dict else set()
-    
-    block_expr = equations.get("expr")
-    if not block_expr:
-        return  # No block form, nothing to check
-    
-    block_targets: Set[str] = set()
-    # Parse block form to extract state names
-    for line in block_expr.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        
-        # Split on '=' to get LHS and RHS
-        if "=" not in line:
-            raise ModelLoadError(f"Block equation line must contain '=': {line!r}")
-        
-        lhs, rhs = [p.strip() for p in line.split("=", 1)]
-        
-        # Try to match derivative notation
-        m = _DFUNC_PAREN.match(lhs) or _DFUNC_FLAT.match(lhs)
-        if m:
-            # Looks like derivative notation, but verify the extracted name is a state
-            name = m.group(1)
-            
-            # Only treat as derivative if the name is actually a declared state
-            if name in states:
-                # For map models, derivative notation is not allowed
-                if model_type == "map":
-                    raise ModelLoadError(
-                        f"Map models do not support derivative notation (d(x) or dx). "
-                        f"Use direct assignment (x = expr). Got: {lhs!r} in line: {line!r}"
-                    )
-                block_targets.add(name)
+
+    def _block_targets(expr: str | None) -> Set[str]:
+        if not expr:
+            return set()
+        block_targets: Set[str] = set()
+        for line in expr.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+
+            if "=" not in line:
+                raise ModelLoadError(f"Block equation line must contain '=': {line!r}")
+
+            lhs, rhs = [p.strip() for p in line.split("=", 1)]
+
+            m = _DFUNC_PAREN.match(lhs) or _DFUNC_FLAT.match(lhs)
+            if m:
+                name = m.group(1)
+                if name in states:
+                    if model_type == "map":
+                        raise ModelLoadError(
+                            f"Map models do not support derivative notation (d(x) or dx). "
+                            f"Use direct assignment (x = expr). Got: {lhs!r} in line: {line!r}"
+                        )
+                    block_targets.add(name)
+                else:
+                    block_targets.add(lhs)
             else:
-                # Pattern matched but name not a state - treat as direct assignment
-                # This handles cases like 'delta' which matches 'd' + 'elta' but 'elta' is not a state
                 block_targets.add(lhs)
-        else:
-            # Direct assignment (x = expr)
-            # For both ODE and map models, this is valid
-            block_targets.add(lhs)
-    
-    # Check for overlap
+        return block_targets
+
+    block_targets = _block_targets(equations.get("expr"))
     overlap = rhs_targets & block_targets
     if overlap:
         raise ModelLoadError(
             f"States defined in both [equations.rhs] and [equations].expr: {sorted(overlap)}"
         )
+
+    inv_tbl = equations.get("inverse") if isinstance(equations.get("inverse"), dict) else None
+    if inv_tbl:
+        inv_rhs = inv_tbl.get("rhs")
+        inv_rhs_targets = set(inv_rhs.keys()) if inv_rhs else set()
+        inv_block_targets = _block_targets(inv_tbl.get("expr"))
+        inv_overlap = inv_rhs_targets & inv_block_targets
+        if inv_overlap:
+            raise ModelLoadError(
+                "States defined in both [equations.inverse.rhs] and "
+                f"[equations.inverse].expr: {sorted(inv_overlap)}"
+            )
 
 
 def validate_presets(normal: Dict[str, Any]) -> None:
@@ -676,6 +684,22 @@ def validate_identifiers_resolved(normal: Dict[str, Any]) -> None:
                 continue  # other validators handle this
             _, rhs = [p.strip() for p in line.split("=", 1)]
             _check_expr(rhs, "[equations].expr")
+
+    # equations.inverse
+    inv_tbl = equations.get("inverse") or {}
+    if isinstance(inv_tbl, dict):
+        for sname, expr in (inv_tbl.get("rhs") or {}).items():
+            _check_expr(expr, f"[equations.inverse.rhs.{sname}]")
+        inv_block_expr = inv_tbl.get("expr")
+        if isinstance(inv_block_expr, str):
+            for line in inv_block_expr.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                if "=" not in line:
+                    continue
+                _, rhs = [p.strip() for p in line.split("=", 1)]
+                _check_expr(rhs, "[equations.inverse].expr")
 
     # events cond + actions
     for ev in (normal.get("events") or []):

@@ -24,6 +24,8 @@ class CompiledCallables:
     events_pre_source: str
     events_post_source: str
     update_aux_source: str
+    inv_rhs: Callable | None = None
+    inv_rhs_source: str | None = None
 
 
 @dataclass(frozen=True)
@@ -68,17 +70,23 @@ def _rhs_items(spec: ModelSpec) -> List[Tuple[int, str]]:
     # Block form can be added in Slice 3+; for now we honor rhs only in tests.
     return [(list(_build_name_maps(spec).state_to_ix.keys()).index(nm), ex) for nm, ex in items]
 
-def _compile_rhs(spec: ModelSpec, nmap: NameMaps):
+def _compile_equations(
+    spec: ModelSpec,
+    nmap: NameMaps,
+    rhs_tbl: Dict[str, str] | None,
+    block_expr: str | None,
+    func_name: str,
+):
     """
     Emit a single function:
-        def rhs(t, y_vec, dy_out, params, runtime_ws): dy_out[i] = <lowered_expr>; ...
+        def <func_name>(t, y_vec, dy_out, params, runtime_ws): dy_out[i] = <lowered_expr>; ...
     """
     import ast
     body: List[ast.stmt] = []
     
     # Case 1: Per-state RHS form
-    if spec.equations_rhs:
-        for sname, expr in spec.equations_rhs.items():
+    if rhs_tbl:
+        for sname, expr in rhs_tbl.items():
             idx = nmap.state_to_ix[sname]
             preamble, node = lower_expr_with_preamble(expr, nmap, aux_defs=_aux_defs(spec), fn_defs=nmap.functions)
             assign = ast.Assign(
@@ -89,8 +97,8 @@ def _compile_rhs(spec: ModelSpec, nmap: NameMaps):
             body.append(assign)
     
     # Case 2: Block form
-    if spec.equations_block:
-        for line in sanitize_expr(spec.equations_block).splitlines():
+    if block_expr:
+        for line in sanitize_expr(block_expr).splitlines():
             line = line.strip()
             if not line:
                 continue
@@ -151,7 +159,7 @@ def _compile_rhs(spec: ModelSpec, nmap: NameMaps):
         body=[
             ast.Import(names=[ast.alias(name="math", asname=None)]),
             ast.FunctionDef(
-                name="rhs",
+                name=func_name,
                 args=ast.arguments(posonlyargs=[], args=[
                     ast.arg(arg="t"),
                     ast.arg(arg="y_vec"),
@@ -169,7 +177,29 @@ def _compile_rhs(spec: ModelSpec, nmap: NameMaps):
     module_source = ast.unparse(mod)
     ns: Dict[str, object] = {}
     exec(compile(mod, "<dsl-rhs>", "exec"), ns, ns)
-    return ns["rhs"], module_source
+    return ns[func_name], module_source
+
+
+def _compile_rhs(spec: ModelSpec, nmap: NameMaps):
+    return _compile_equations(
+        spec,
+        nmap,
+        spec.equations_rhs,
+        spec.equations_block,
+        "rhs",
+    )
+
+
+def _compile_inv_rhs(spec: ModelSpec, nmap: NameMaps):
+    if not spec.inverse_rhs and not spec.inverse_block:
+        return None, None
+    return _compile_equations(
+        spec,
+        nmap,
+        spec.inverse_rhs,
+        spec.inverse_block,
+        "inv_rhs",
+    )
 
 
 def _compile_jvp(spec: ModelSpec, nmap: NameMaps):
@@ -674,16 +704,19 @@ def _compile_update_aux(spec: ModelSpec, nmap: NameMaps):
 def emit_rhs_and_events(spec: ModelSpec) -> CompiledCallables:
     nmap = _build_name_maps(spec)
     rhs_fn, rhs_src = _compile_rhs(spec, nmap)
+    inv_rhs_fn, inv_rhs_src = _compile_inv_rhs(spec, nmap)
     events_pre_fn, events_pre_src = _emit_events_function(spec, "pre", nmap)
     events_post_fn, events_post_src = _emit_events_function(spec, "post", nmap)
     update_aux_fn, update_aux_src = _compile_update_aux(spec, nmap)
 
     return CompiledCallables(
         rhs=rhs_fn,
+        inv_rhs=inv_rhs_fn,
         events_pre=events_pre_fn,
         events_post=events_post_fn,
         update_aux=update_aux_fn,
         rhs_source=rhs_src,
+        inv_rhs_source=inv_rhs_src,
         events_pre_source=events_pre_src,
         events_post_source=events_post_src,
         update_aux_source=update_aux_src,

@@ -61,7 +61,7 @@ def validate_tables(doc: Dict[str, Any]) -> None:
     """Presence and shape checks for top-level tables.
 
     Required: [model], [states]
-    Optional: [params], [constants], [equations], [equations.rhs], [equations.jacobian], [aux], [functions], [events.*], [sim]
+    Optional: [params], [constants], [equations], [equations.rhs], [equations.inverse], [equations.jacobian], [aux], [functions], [events.*], [sim]
     """
     validate_model_header(doc)
 
@@ -85,7 +85,7 @@ def validate_tables(doc: Dict[str, Any]) -> None:
     if isinstance(eq, dict):
         # Fail loudly on unknown [equations] keys.
         # This prevents silent no-op dynamics when users typo 'expr' as 'exprs', etc.
-        allowed_eq_keys = {"rhs", "expr", "jacobian"}
+        allowed_eq_keys = {"rhs", "expr", "jacobian", "inverse"}
         unknown_eq_keys = sorted(k for k in eq.keys() if k not in allowed_eq_keys)
         if unknown_eq_keys:
             hints = []
@@ -106,6 +106,32 @@ def validate_tables(doc: Dict[str, Any]) -> None:
         expr = eq.get("expr")
         if expr is not None and not isinstance(expr, str):
             raise ModelLoadError("[equations].expr must be a string block if present")
+        inv = eq.get("inverse")
+        if inv is not None:
+            if doc.get("model", {}).get("type") != "map":
+                raise ModelLoadError("[equations.inverse] is only supported for map models")
+            if not isinstance(inv, dict):
+                raise ModelLoadError("[equations.inverse] must be a table if present")
+            allowed_inv_keys = {"rhs", "expr"}
+            unknown_inv_keys = sorted(k for k in inv.keys() if k not in allowed_inv_keys)
+            if unknown_inv_keys:
+                hints = []
+                for bad in unknown_inv_keys:
+                    close = difflib.get_close_matches(bad, list(allowed_inv_keys), n=1, cutoff=0.6)
+                    if close:
+                        hints.append(f"'{bad}' (did you mean '{close[0]}'?)")
+                    else:
+                        hints.append(f"'{bad}'")
+                raise ModelLoadError(
+                    f"Unknown key(s) in [equations.inverse]: {', '.join(hints)}. "
+                    "Valid keys: rhs, expr"
+                )
+            inv_rhs = inv.get("rhs")
+            if inv_rhs is not None and not isinstance(inv_rhs, dict):
+                raise ModelLoadError("[equations.inverse.rhs] must be a table of name = expr")
+            inv_expr = inv.get("expr")
+            if inv_expr is not None and not isinstance(inv_expr, str):
+                raise ModelLoadError("[equations.inverse].expr must be a string block if present")
         jac = eq.get("jacobian")
         if jac is not None and not isinstance(jac, dict):
             raise ModelLoadError("[equations.jacobian] must be a table if present")
@@ -227,3 +253,24 @@ def validate_name_collisions(doc: Dict[str, Any]) -> None:
     unknown = (rhs_targets | block_targets) - set(states.keys())
     if unknown:
         raise ModelLoadError(f"Equation targets must be declared in [states], unknown: {sorted(unknown)}")
+
+    inv_tbl = eq.get("inverse") if isinstance(eq.get("inverse"), dict) else None
+    if inv_tbl:
+        inv_rhs = inv_tbl.get("rhs") if isinstance(inv_tbl.get("rhs"), dict) else None
+        inv_expr = inv_tbl.get("expr") if isinstance(inv_tbl.get("expr"), str) else None
+        inv_rhs_targets = set(inv_rhs.keys()) if inv_rhs else set()
+        inv_block_targets = set(
+            _targets_from_block(inv_expr, model_type=model_type, states=states.keys())
+        ) if inv_expr else set()
+
+        inv_dup = inv_rhs_targets.intersection(inv_block_targets)
+        if inv_dup:
+            raise ModelLoadError(
+                f"Duplicate inverse equation targets across rhs and block: {sorted(inv_dup)}"
+            )
+
+        inv_unknown = (inv_rhs_targets | inv_block_targets) - set(states.keys())
+        if inv_unknown:
+            raise ModelLoadError(
+                f"Inverse equation targets must be declared in [states], unknown: {sorted(inv_unknown)}"
+            )

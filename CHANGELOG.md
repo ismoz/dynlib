@@ -2,6 +2,16 @@
 
 ---
 
+## [0.36.4] – 2026-01-12
+### Added
+- Inverse RHS equations support for map DSL definitions. [equations.inverse] (with `expr` keyword) or 
+  [equations.inverse.rhs] can be used to define inverse map equations. Numba compatibility and caching is provided. 
+
+### Tests
+- Added `test_inverse_equations.py` to test new inverse map behavior and updated old DSL related tests.
+
+---
+
 ## [0.36.3] – 2026-01-08
 ### Added
 - Added basin of attraction calculation analysis tool `basin_known`. It can calculate basin of attraction of known

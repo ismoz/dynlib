@@ -95,6 +95,8 @@ class ModelSpec:
     param_vals: Tuple[float | int, ...]
     equations_rhs: Dict[str, str] | None
     equations_block: str | None
+    inverse_rhs: Dict[str, str] | None
+    inverse_block: str | None
     jacobian_exprs: Tuple[Tuple[str, ...], ...] | None
     aux: Dict[str, str]
     functions: Dict[str, tuple[list[str], str]]
@@ -201,6 +203,9 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
     eq = normal["equations"]
     eq_rhs = dict(eq["rhs"]) if eq.get("rhs") else None
     eq_block = eq.get("expr") if isinstance(eq.get("expr"), str) else None
+    inv_tbl = eq.get("inverse") if isinstance(eq.get("inverse"), dict) else None
+    inv_rhs = dict(inv_tbl.get("rhs")) if inv_tbl and inv_tbl.get("rhs") else None
+    inv_block = inv_tbl.get("expr") if inv_tbl and isinstance(inv_tbl.get("expr"), str) else None
     jacobian_exprs = None
     if isinstance(eq.get("jacobian"), dict):
         expr_rows = eq["jacobian"].get("expr") or []
@@ -299,6 +304,8 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
         param_vals=param_vals,
         equations_rhs=eq_rhs,
         equations_block=eq_block,
+        inverse_rhs=inv_rhs,
+        inverse_block=inv_block,
         jacobian_exprs=jacobian_exprs,
         aux=aux,
         functions=functions,
@@ -330,6 +337,8 @@ def _json_canon(obj: Any) -> str:
                 "param_vals": list(o.param_vals),
                 "equations_rhs": o.equations_rhs,
                 "equations_block": o.equations_block,
+                "inverse_rhs": o.inverse_rhs,
+                "inverse_block": o.inverse_block,
                 "jacobian_exprs": [list(row) for row in o.jacobian_exprs] if o.jacobian_exprs else None,
                 "aux": o.aux,
                 "functions": o.functions,

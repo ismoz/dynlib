@@ -35,6 +35,8 @@ def test_build_spec_and_hash_determinism_and_dtype_alias():
     assert spec.constant_vals == ()
     assert spec.equations_rhs == {"x": "-a*x", "u": "x - u"}
     assert spec.equations_block is None
+    assert spec.inverse_rhs is None
+    assert spec.inverse_block is None
     assert spec.aux == {"z": "x+u"}
     assert "f" in spec.functions and spec.functions["f"] == (["q"], "q+1")
     assert len(spec.events) == 1 and spec.events[0].name == "tick"

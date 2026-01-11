@@ -318,13 +318,25 @@ def parse_model_v2(doc: Dict[str, Any]) -> Dict[str, Any]:
     rhs_tbl = eq_tbl.get("rhs") or None
     block_expr = eq_tbl.get("expr") or None
     jac_tbl = eq_tbl.get("jacobian") or None
+    inv_tbl = eq_tbl.get("inverse") or None
     if rhs_tbl is not None and not isinstance(rhs_tbl, dict):
         raise ModelLoadError("[equations.rhs] must be a table")
     if block_expr is not None and not isinstance(block_expr, str):
         raise ModelLoadError("[equations].expr must be a string")
     if jac_tbl is not None and not isinstance(jac_tbl, dict):
         raise ModelLoadError("[equations.jacobian] must be a table if present")
+    if inv_tbl is not None and not isinstance(inv_tbl, dict):
+        raise ModelLoadError("[equations.inverse] must be a table if present")
     jacobian = _coerce_jacobian_exprs(jac_tbl) if jac_tbl else None
+    inv_rhs_tbl = None
+    inv_block_expr = None
+    if isinstance(inv_tbl, dict):
+        inv_rhs_tbl = inv_tbl.get("rhs") or None
+        inv_block_expr = inv_tbl.get("expr") or None
+        if inv_rhs_tbl is not None and not isinstance(inv_rhs_tbl, dict):
+            raise ModelLoadError("[equations.inverse.rhs] must be a table")
+        if inv_block_expr is not None and not isinstance(inv_block_expr, str):
+            raise ModelLoadError("[equations.inverse].expr must be a string")
 
     # Aux
     aux_tbl = doc.get("aux") or {}
@@ -356,7 +368,12 @@ def parse_model_v2(doc: Dict[str, Any]) -> Dict[str, Any]:
         "states": states,
         "params": params,
         "constants": constants,
-        "equations": {"rhs": rhs_tbl, "expr": block_expr, "jacobian": jacobian},
+        "equations": {
+            "rhs": rhs_tbl,
+            "expr": block_expr,
+            "jacobian": jacobian,
+            "inverse": {"rhs": inv_rhs_tbl, "expr": inv_block_expr} if inv_tbl is not None else None,
+        },
         "aux": aux_tbl,
         "functions": functions,
         "events": events,
