@@ -1562,7 +1562,7 @@ class _PhasePlot:
             
         Examples:
             >>> # With sweep results
-            >>> sweep_res = sweep.traj(sim, param="r", values=[...], record_vars=["x", "y"])
+            >>> sweep_res = sweep.traj_sweep(sim, param="r", values=[...], record_vars=["x", "y"])
             >>> phase.multi(x=sweep_res["x"], y=sweep_res["y"], 
             ...             labels=[f"r={v:.2f}" for v in sweep_res.values])
             

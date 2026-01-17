@@ -21,7 +21,7 @@ print("Computing full bifurcation diagram (r ∈ [2.5, 4])...")
 
 # Full diagram
 r_full = np.linspace(2.5, 4.0, 2500)
-sweep_full = sweep.traj(
+sweep_full = sweep.traj_sweep(
     sim,
     param="r",
     values=r_full,
@@ -35,7 +35,7 @@ print("Computing zoomed diagram (period-doubling cascade region)...")
 
 # Zoomed region: period-doubling cascade
 r_zoom = np.linspace(3.4, 3.57, 2000)
-sweep_zoom = sweep.traj(
+sweep_zoom = sweep.traj_sweep(
     sim,
     param="r",
     values=r_zoom,

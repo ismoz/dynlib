@@ -15,41 +15,43 @@ For the logistic map at r=4: λ = ln(2) ≈ 0.6931
 from __future__ import annotations
 import numpy as np
 from dynlib import setup
-from dynlib.analysis.runtime import lyapunov_mle, lyapunov_spectrum
+from dynlib.runtime.observers import lyapunov_mle_observer, lyapunov_spectrum_observer
 from dynlib.plot import series, export, theme, fig
 
 
-# Single run with multiple analyses
+# Single run with multiple observers
 sim = setup("builtin://map/logistic", jit=True, disk_cache=True)
 model = sim.model
 
 record_every = 1
 
-# Run simulation using the high-level Sim API with multiple analyses
+# Run simulation using the high-level Sim API with multiple observers
 print("\nComputing Lyapunov exponents with Sim.run()...")
 print(f"  Parameter: r = 4.0")
 print(f"  Iterations: 5000")
 print(f"  Initial condition: x = 0.4")
-print(f"  Analyses: MLE and Spectrum")
+print(f"  Observers: MLE and Spectrum")
 
 sim.assign(x=0.4, r=4.0)
 sim.run(
     N=5000,
     dt=1.0,
     record_interval=record_every,
-    analysis=[lyapunov_mle(record_interval=record_every), 
-              lyapunov_spectrum(k=1, record_interval=record_every)],
+    observers=[
+        lyapunov_mle_observer(model=sim.model, record_interval=record_every),
+        lyapunov_spectrum_observer(model=sim.model, k=1, record_interval=record_every),
+    ],
 )
 result = sim.results()
 
-# Extract runtime analysis results
+# Extract runtime observer results
 print("\n" + "="*60)
 print("RESULTS")
 print("="*60)
 
-# Get analysis result with ergonomic named access
-lyap = result.analysis["lyapunov_mle"]
-spectrum = result.analysis["lyapunov_spectrum"]
+# Get observer result with ergonomic named access
+lyap = result.observers["lyapunov_mle"]
+spectrum = result.observers["lyapunov_spectrum"]
 
 # Direct access to final MLE (auto-computed from trace)
 mle = lyap.mle  # Final converged value from trace
@@ -180,10 +182,10 @@ for r_test in test_r_values:
         cap_evt=1,
         ic=np.array([0.4], dtype=model.dtype),
         params=params_test,
-        analysis=lyapunov_mle,  # Factory mode: Sim injects model
+        observers=lyapunov_mle_observer,  # Factory mode: Sim injects model
     )
 
-    lyap_result = scan_sim.results().analysis["lyapunov_mle"]
+    lyap_result = scan_sim.results().observers["lyapunov_mle"]
     mle_test = lyap_result.mle  # Direct final value access
     
     if mle_test < -0.01:

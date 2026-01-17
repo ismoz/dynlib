@@ -319,7 +319,7 @@ def build_known_attractors_psc(
         dt=dt_use,
         transient=0.0,
         adaptive=adaptive,
-        analysis=None,
+        observers=None,
     )
     use_fastpath = support.ok
     
@@ -393,7 +393,7 @@ def build_known_attractors_psc(
                     params=params_arr,
                     parallel_mode="none",
                     max_workers=None,
-                    analysis=None,
+                    observers=None,
                 )
                 if views is None:
                     use_fastpath = False
@@ -423,7 +423,7 @@ def build_known_attractors_psc(
                     aux_rec_indices=aux_rec_indices,
                     state_names=state_rec_names,
                     aux_names=aux_names,
-                    analysis=None,
+                    observers=None,
                 )
                 views = [ResultsView(result, sim.model.spec)]
 
@@ -494,6 +494,5 @@ def build_known_attractors_psc(
         attractor_radii=attractor_radii,
         meta=meta,
     )
-
 
 

@@ -1,5 +1,5 @@
-# src/dynlib/analysis/runtime/core.py
-"""Runtime analysis infrastructure."""
+# src/dynlib/runtime/observers/core.py
+"""Runtime observer infrastructure."""
 
 from __future__ import annotations
 
@@ -13,19 +13,19 @@ from dynlib.runtime.fastpath.plans import TracePlan
 from dynlib.runtime.runner_api import OK
 
 __all__ = [
-    "AnalysisRequirements",
-    "AnalysisHooks",
+    "ObserverRequirements",
+    "ObserverHooks",
     "TraceSpec",
-    "AnalysisModule",
-    "CombinedAnalysis",
-    "analysis_noop_hook",
-    "analysis_noop_variational_step",
+    "ObserverModule",
+    "CombinedObserver",
+    "observer_noop_hook",
+    "observer_noop_variational_step",
 ]
 
 
 @dataclass(frozen=True)
-class AnalysisRequirements:
-    """Declarative requirements for a runtime analysis module."""
+class ObserverRequirements:
+    """Declarative requirements for a runtime observer module."""
 
     fixed_step: bool = False
     need_jvp: bool = False
@@ -38,7 +38,7 @@ class AnalysisRequirements:
 
 
 @dataclass(frozen=True)
-class AnalysisHooks:
+class ObserverHooks:
     """
     Pre/post hooks invoked by the runner or wrapper.
 
@@ -66,7 +66,7 @@ class AnalysisHooks:
 
 @dataclass(frozen=True)
 class TraceSpec:
-    """Trace layout for an analysis module."""
+    """Trace layout for an observer module."""
 
     width: int
     plan: Optional[TracePlan] = None
@@ -97,20 +97,21 @@ class TraceSpec:
 
 
 @dataclass(frozen=True)
-class AnalysisModule:
-    """Single runtime analysis with optional JIT dispatch."""
+class ObserverModule:
+    """Single runtime observer with optional JIT dispatch."""
 
+    key: str
     name: str
-    requirements: AnalysisRequirements
+    requirements: ObserverRequirements
     workspace_size: int
     output_size: int
     output_names: Tuple[str, ...] | None = None
     trace: Optional[TraceSpec] = None
     trace_names: Tuple[str, ...] | None = None
-    hooks: AnalysisHooks = AnalysisHooks()
+    hooks: ObserverHooks = ObserverHooks()
     analysis_kind: int = 1
     stop_phase_mask: int = 0
-    _jit_cache: dict[tuple[int, str, int, int], AnalysisHooks] = field(
+    _jit_cache: dict[tuple[int, str, int, int], ObserverHooks] = field(
         init=False, repr=False, compare=False, default_factory=dict
     )
 
@@ -128,12 +129,12 @@ class AnalysisModule:
         
         The signature must include all parameters that affect the compiled hook
         machine code or semantics. Subclasses should override to include
-        analysis-specific compile-time constants.
+        observer-specific compile-time constants.
         """
         trace_width = self.trace.width if self.trace else 0
         trace_stride = self.trace_stride
         return (
-            self.name,
+            self.key,
             self.workspace_size,
             self.output_size,
             trace_width,
@@ -162,21 +163,21 @@ class AnalysisModule:
         Lightweight capability gate used by fast-path assess_capability().
         """
         if self.requirements.fixed_step and adaptive:
-            return False, "analysis requires fixed-step"
+            return False, "observer requires fixed-step"
         if self.requirements.requires_event_log:
-            return False, "analysis requires event logs"
+            return False, "observer requires event logs"
         if self.requirements.need_jvp and not has_jvp:
-            return False, "analysis requires a model Jacobian-vector product"
+            return False, "observer requires a model Jacobian-vector product"
         if self.requirements.need_dense_jacobian and not has_dense_jacobian:
-            return False, "analysis requires a model Jacobian"
+            return False, "observer requires a model Jacobian"
         if self.requirements.need_jacobian and not (has_dense_jacobian or has_jvp):
-            return False, "analysis requires a model Jacobian"
+            return False, "observer requires a model Jacobian"
         if self.requirements.accept_reject:
-            return False, "analysis with accept/reject hooks not supported on fast path"
+            return False, "observer with accept/reject hooks not supported on fast path"
         if self.needs_trace and self.trace is None:
-            return False, "analysis trace missing plan"
+            return False, "observer trace missing plan"
         if self.requirements.mutates_state:
-            return False, "analysis mutates state"
+            return False, "observer mutates state"
         return True, None
     
     def validate_stepper(self, stepper_spec) -> None:
@@ -188,12 +189,12 @@ class AnalysisModule:
         trace_stride = self.trace_stride
         return (id(self), str(np.dtype(dtype)), trace_width, trace_stride)
 
-    def _compile_hooks(self, hooks: AnalysisHooks, dtype: np.dtype) -> AnalysisHooks:
+    def _compile_hooks(self, hooks: ObserverHooks, dtype: np.dtype) -> ObserverHooks:
         try:  # pragma: no cover - numba may be missing
             from numba import njit  # type: ignore
         except Exception as exc:  # pragma: no cover - import guard
             raise RuntimeError(
-                f"Analysis '{self.name}' requested jit hooks but numba is not installed"
+                f"Observer '{self.name}' requested jit hooks but numba is not installed"
             ) from exc
 
         def _jit(fn: Optional[Callable[..., None]]) -> Optional[Callable[..., None]]:
@@ -203,11 +204,11 @@ class AnalysisModule:
                 return njit(cache=True)(fn)
             except Exception as exc:
                 raise RuntimeError(
-                    f"Failed to njit analysis hook '{self.name}.{getattr(fn, '__name__', 'hook')}' "
+                    f"Failed to njit observer hook '{self.name}.{getattr(fn, '__name__', 'hook')}' "
                     f"in nopython mode"
                 ) from exc
 
-        compiled = AnalysisHooks(
+        compiled = ObserverHooks(
             pre_step=_jit(hooks.pre_step),
             post_step=_jit(hooks.post_step),
         )
@@ -215,7 +216,7 @@ class AnalysisModule:
         self._jit_cache[key] = compiled
         return compiled
 
-    def resolve_hooks(self, *, jit: bool, dtype: np.dtype) -> AnalysisHooks:
+    def resolve_hooks(self, *, jit: bool, dtype: np.dtype) -> ObserverHooks:
         """
         Return dispatch hooks for the requested execution mode.
 
@@ -231,18 +232,33 @@ class AnalysisModule:
         return self._compile_hooks(self.hooks, dtype)
 
 
-class CombinedAnalysis(AnalysisModule):
-    """Pack multiple analyses into a single analysis_kind with merged buffers."""
+def _duplicate_keys(modules: Sequence[ObserverModule]) -> set[str]:
+    seen: set[str] = set()
+    dupes: set[str] = set()
+    for mod in modules:
+        if mod.key in seen:
+            dupes.add(mod.key)
+        seen.add(mod.key)
+    return dupes
 
-    def __init__(self, modules: Sequence[AnalysisModule], *, analysis_kind: int = 1):
+
+class CombinedObserver(ObserverModule):
+    """Pack multiple observers into a single analysis_kind with merged buffers."""
+
+    def __init__(self, modules: Sequence[ObserverModule], *, analysis_kind: int = 1):
         if not modules:
-            raise ValueError("CombinedAnalysis requires at least one module")
-        self.modules: tuple[AnalysisModule, ...] = tuple(modules)
+            raise ValueError("CombinedObserver requires at least one module")
+        self.modules: tuple[ObserverModule, ...] = tuple(modules)
+
+        dupes = _duplicate_keys(self.modules)
+        if dupes:
+            dupes_str = ", ".join(sorted(dupes))
+            raise ValueError(f"CombinedObserver requires unique observer keys; duplicates: {dupes_str}")
 
         if any(mod.requirements.mutates_state for mod in self.modules):
-            raise ValueError("CombinedAnalysis does not support analyses that mutate state")
+            raise ValueError("CombinedObserver does not support observers that mutate state")
 
-        def _wants_runner_variational(mod: AnalysisModule) -> bool:
+        def _wants_runner_variational(mod: ObserverModule) -> bool:
             if getattr(mod.requirements, "variational_in_step", False):
                 return True
             runner_var = getattr(mod, "runner_variational_step", None)
@@ -256,8 +272,8 @@ class CombinedAnalysis(AnalysisModule):
         variational_children = sum(1 for mod in self.modules if _wants_runner_variational(mod))
         if variational_children > 1:
             raise ValueError(
-                "Multiple analyses require runner-level variational stepping (state+tangent integration). "
-                "The runner can accept only one variational integrator per step. Run these analyses separately."
+                "Multiple observers require runner-level variational stepping (state+tangent integration). "
+                "The runner can accept only one variational integrator per step. Run these observers separately."
             )
 
         req = self._merge_requirements(modules)
@@ -270,12 +286,13 @@ class CombinedAnalysis(AnalysisModule):
         for mod in modules:
             stop_phase_mask |= int(getattr(mod, "stop_phase_mask", 0))
 
-        python_hooks = AnalysisHooks(
+        python_hooks = ObserverHooks(
             pre_step=self._compose_hook(modules, hooks=[m.hooks for m in modules], phase="pre"),
             post_step=self._compose_hook(modules, hooks=[m.hooks for m in modules], phase="post"),
         )
 
         super().__init__(
+            key="combined",
             name="combined",
             requirements=req,
             workspace_size=workspace,
@@ -300,7 +317,7 @@ class CombinedAnalysis(AnalysisModule):
             mod.validate_stepper(stepper_spec)
 
     @staticmethod
-    def _merge_requirements(modules: Sequence[AnalysisModule]) -> AnalysisRequirements:
+    def _merge_requirements(modules: Sequence[ObserverModule]) -> ObserverRequirements:
         fixed_step = any(mod.requirements.fixed_step for mod in modules)
         need_jvp = any(mod.requirements.need_jvp for mod in modules)
         need_dense_jacobian = any(mod.requirements.need_dense_jacobian for mod in modules)
@@ -309,7 +326,7 @@ class CombinedAnalysis(AnalysisModule):
         accept_reject = any(mod.requirements.accept_reject for mod in modules)
         mutates_state = any(mod.requirements.mutates_state for mod in modules)
         variational_in_step = any(mod.requirements.variational_in_step for mod in modules)
-        return AnalysisRequirements(
+        return ObserverRequirements(
             fixed_step=fixed_step,
             need_jvp=need_jvp,
             need_dense_jacobian=need_dense_jacobian,
@@ -321,13 +338,13 @@ class CombinedAnalysis(AnalysisModule):
         )
 
     @staticmethod
-    def _merge_trace_specs(modules: Sequence[AnalysisModule]) -> Optional[TraceSpec]:
+    def _merge_trace_specs(modules: Sequence[ObserverModule]) -> Optional[TraceSpec]:
         specs = [mod.trace for mod in modules if mod.trace is not None]
         if not specs:
             return None
         plan = specs[0].plan
         if any(spec.plan != plan for spec in specs):
-            raise ValueError("CombinedAnalysis requires all trace plans to match")
+            raise ValueError("CombinedObserver requires all trace plans to match")
         width = sum(spec.width for spec in specs)
         return TraceSpec(width=width, plan=plan)
 
@@ -339,7 +356,7 @@ class CombinedAnalysis(AnalysisModule):
         return flat if flat else None
 
     @staticmethod
-    def _compute_offsets(modules: Sequence[AnalysisModule]) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_offsets(modules: Sequence[ObserverModule]) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Precompute workspace/output/trace offsets per module for jit-safe composition.
         """
@@ -362,9 +379,9 @@ class CombinedAnalysis(AnalysisModule):
 
     @staticmethod
     def _compose_hook(
-        modules: Sequence[AnalysisModule],
+        modules: Sequence[ObserverModule],
         *,
-        hooks: Sequence[AnalysisHooks],
+        hooks: Sequence[ObserverHooks],
         phase: str,
     ):
         hook_name = "pre_step" if phase == "pre" else "post_step"
@@ -539,7 +556,7 @@ class CombinedAnalysis(AnalysisModule):
         
         return fn
 
-    def resolve_hooks(self, *, jit: bool, dtype: np.dtype) -> AnalysisHooks:
+    def resolve_hooks(self, *, jit: bool, dtype: np.dtype) -> ObserverHooks:
         if not jit:
             return self.hooks
         
@@ -556,7 +573,7 @@ class CombinedAnalysis(AnalysisModule):
         compiled_children = [mod.resolve_hooks(jit=True, dtype=dtype) for mod in self.modules]
         
         # Get the noop hook for modules without hooks
-        noop = analysis_noop_hook()
+        noop = observer_noop_hook()
         
         # Extract pre and post hooks from children
         pre_hooks = [h.pre_step or noop for h in compiled_children]
@@ -593,13 +610,13 @@ class CombinedAnalysis(AnalysisModule):
             jit=True,
         )
         
-        composed = AnalysisHooks(pre_step=compiled_pre, post_step=compiled_post)
+        composed = ObserverHooks(pre_step=compiled_pre, post_step=compiled_post)
         self._jit_cache[key] = composed
         return composed
 
 
 @lru_cache(maxsize=1)
-def analysis_noop_hook():
+def observer_noop_hook():
     """
     Return a no-op hook compatible with JIT runners.
 
@@ -649,7 +666,7 @@ def analysis_noop_hook():
 
 
 @lru_cache(maxsize=1)
-def analysis_noop_variational_step():
+def observer_noop_variational_step():
     """
     No-op variational stepper matching runner ABI.
     """
@@ -692,25 +709,5 @@ def analysis_noop_variational_step():
             analysis_ws,
         ):
             return OK
-
-        return _noop
-
-    except Exception:  # pragma: no cover - fallback when numba absent
-        def _noop(
-            t: float,
-            dt: float,
-            step: int,
-            y_curr,
-            y_prev,
-            params,
-            runtime_ws,
-            analysis_ws,
-            analysis_out,
-            trace_buf,
-            trace_count,
-            trace_cap: int,
-            trace_stride: int,
-        ) -> None:
-            return None
 
         return _noop

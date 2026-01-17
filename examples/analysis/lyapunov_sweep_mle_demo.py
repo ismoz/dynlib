@@ -1,7 +1,7 @@
 """
 Lyapunov exponent parameter sweep for the logistic map.
 
-Demonstrates sweep.lyapunov_mle for computing maximum Lyapunov exponents (MLE)
+Demonstrates sweep.lyapunov_mle_sweep for computing maximum Lyapunov exponents (MLE)
 across a range of parameter values. This reveals the transition from order to chaos
 as a continuous function of the control parameter.
 
@@ -34,7 +34,7 @@ print(f"  Trace recording interval: {record_every}")
 
 # First, compute bifurcation diagram
 print("\nComputing bifurcation diagram...")
-sweep_bif = sweep.traj(
+sweep_bif = sweep.traj_sweep(
     sim,
     param="r",
     values=r_values,
@@ -47,7 +47,7 @@ result_bif = sweep_bif.bifurcation("x")
 # Then, run parameter sweep with MLE analysis
 print("\nComputing Lyapunov exponents...")
 sim.assign(x=0.4)  # Initial condition
-res = sweep.lyapunov_mle(
+res = sweep.lyapunov_mle_sweep(
     sim,
     param="r",
     values=r_values,

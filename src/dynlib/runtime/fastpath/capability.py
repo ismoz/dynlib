@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from dynlib.runtime.fastpath.plans import RecordingPlan
 
 if TYPE_CHECKING:
-    from dynlib.analysis.runtime import AnalysisModule
+    from dynlib.runtime.observers import ObserverModule
     from dynlib.runtime.sim import Sim
 
 __all__ = ["FastpathSupport", "assess_capability"]
@@ -42,19 +42,19 @@ def assess_capability(
     dt: Optional[float],
     transient: float,
     adaptive: bool,
-    analysis: "AnalysisModule" | None = None,
+    observers: "ObserverModule" | None = None,
 ) -> FastpathSupport:
     """
     Static gate to decide if the fastpath runner can be used.
 
     Constraints:
       - No event logging (apply-only actions are fine)
-      - Analyses may not mutate state on fast path
+      - Observers may not mutate state on fast path
       - Fixed-step time control (adaptive steppers fall back)
       - Record interval must be positive and fixed
       - No resume / stitching / snapshots
       - Dtype and stepper config are known
-      - Optional analysis modules must provide fixed trace plan
+      - Optional observers must provide fixed trace plan
     """
     spec = sim.model.spec
     if _has_event_logs(spec):
@@ -84,14 +84,14 @@ def assess_capability(
     if getattr(spec, "uses_lag", False):
         return FastpathSupport(False, "lagged systems are not fast-path ready yet")
 
-    if analysis is not None:
+    if observers is not None:
         has_jvp = getattr(sim.model, "jvp", None) is not None
         has_jacobian = getattr(sim.model, "jacobian", None) is not None
-        if analysis.requirements.requires_event_log:
-            return FastpathSupport(False, "analysis requires event logging")
-        if analysis.requirements.mutates_state:
-            return FastpathSupport(False, "analysis mutates state")
-        ok, reason = analysis.supports_fastpath(
+        if observers.requirements.requires_event_log:
+            return FastpathSupport(False, "observer requires event logging")
+        if observers.requirements.mutates_state:
+            return FastpathSupport(False, "observer mutates state")
+        ok, reason = observers.supports_fastpath(
             adaptive=adaptive,
             has_event_logs=_has_event_logs(spec),
             has_jvp=has_jvp,
@@ -99,14 +99,14 @@ def assess_capability(
         )
         if not ok:
             return FastpathSupport(False, reason)
-        if analysis.needs_trace and (analysis.trace is None or analysis.trace.plan is None):
-            return FastpathSupport(False, "analysis trace requires a TracePlan")
-        if analysis.trace is not None and analysis.trace.record_interval() <= 0:
-            return FastpathSupport(False, "analysis trace stride must be positive")
+        if observers.needs_trace and (observers.trace is None or observers.trace.plan is None):
+            return FastpathSupport(False, "observer trace requires a TracePlan")
+        if observers.trace is not None and observers.trace.record_interval() <= 0:
+            return FastpathSupport(False, "observer trace stride must be positive")
         if _is_jitted_runner(sim.model.runner):
             try:
-                analysis.resolve_hooks(jit=True, dtype=sim.model.dtype)
+                observers.resolve_hooks(jit=True, dtype=sim.model.dtype)
             except Exception as exc:
-                return FastpathSupport(False, f"analysis hooks failed to jit-compile: {exc}")
+                return FastpathSupport(False, f"observer hooks failed to jit-compile: {exc}")
 
     return FastpathSupport(True, None)

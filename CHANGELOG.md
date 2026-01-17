@@ -2,6 +2,17 @@
 
 ---
 
+## [0.36.5] – 2026-01-17
+### Changed
+- Moved all of the runtime analysis utilities from `./analysis/runtime` folder to `./runtime/observers` folder.
+- Renamed all runtime analyses as `observers`. `Sim.run()` now accepts `observers` argument instead of `analysis`.
+  Added _observer suffix to the names of these utilities to prevent import name clashes. These changes should provide 
+  a clear separation between runtime and offline standalone analysis utilities.
+- Added _sweep suffix to the names of sweep utilities to prevent import name clashes.
+- Updated all analysis related examples and tests.
+
+---
+
 ## [0.36.4] – 2026-01-12
 ### Added
 - Inverse RHS equations support for map DSL definitions. [equations.inverse] (with `expr` keyword) or 

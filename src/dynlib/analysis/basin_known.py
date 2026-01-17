@@ -23,7 +23,7 @@ from dynlib.analysis.basin import (
     _resolve_mode,
     njit,
 )
-from dynlib.analysis.runtime import AnalysisHooks, AnalysisModule, AnalysisRequirements
+from dynlib.runtime.observers import ObserverHooks, ObserverModule, ObserverRequirements
 from dynlib.runtime.fastpath.plans import FixedStridePlan
 from dynlib.runtime.fastpath.capability import assess_capability
 from dynlib.runtime.results_api import ResultsView
@@ -343,7 +343,7 @@ def _make_known_hybrid_psc_analysis(
     fp_locs: np.ndarray,           # (n_fp, obs_dim)
     fp_radii_sq: np.ndarray,       # (n_fp,)
     fixed_point_settle_steps: int,
-) -> AnalysisModule:
+) -> ObserverModule:
     """
     Unified Numba-compatible online classifier:
       - FixedPoint settle-in-radius (fast-path, early exit)
@@ -593,11 +593,11 @@ def _make_known_hybrid_psc_analysis(
             if runtime_ws.stop_flag.shape[0] > 0:
                 runtime_ws.stop_flag[0] = 1
 
-    class _KnownHybridPSCModule(AnalysisModule):
-        def _compile_hooks(self, hooks: AnalysisHooks, dtype: np.dtype) -> AnalysisHooks:
+    class _KnownHybridPSCModule(ObserverModule):
+        def _compile_hooks(self, hooks: ObserverHooks, dtype: np.dtype) -> ObserverHooks:
             if njit is None:  # pragma: no cover
                 raise RuntimeError(
-                    f"Analysis '{self.name}' requested jit hooks but numba is not installed"
+                    f"Observer '{self.name}' requested jit hooks but numba is not installed"
                 )
 
             def _jit(fn):
@@ -607,11 +607,11 @@ def _make_known_hybrid_psc_analysis(
                     return njit(cache=False)(fn)
                 except Exception as exc:
                     raise RuntimeError(
-                        f"Failed to njit analysis hook '{self.name}.{getattr(fn, '__name__', 'hook')}' "
+                        f"Failed to njit observer hook '{self.name}.{getattr(fn, '__name__', 'hook')}' "
                         f"in nopython mode"
                     ) from exc
 
-            compiled = AnalysisHooks(
+            compiled = ObserverHooks(
                 pre_step=_jit(hooks.pre_step),
                 post_step=_jit(hooks.post_step),
             )
@@ -620,12 +620,13 @@ def _make_known_hybrid_psc_analysis(
             return compiled
 
     return _KnownHybridPSCModule(
+        key=name,
         name=name,
-        requirements=AnalysisRequirements(fixed_step=True),
+        requirements=ObserverRequirements(fixed_step=True),
         workspace_size=ws_size,
         output_size=2,
         output_names=("status", "matched_id"),
-        hooks=AnalysisHooks(pre_step=_pre_step, post_step=_post_step),
+        hooks=ObserverHooks(pre_step=_pre_step, post_step=_post_step),
         stop_phase_mask=2,
     )
 
@@ -644,7 +645,7 @@ def _make_fixed_point_only_analysis(
     fp_locs: np.ndarray,
     fp_radii_sq: np.ndarray,
     fixed_point_settle_steps: int,
-) -> AnalysisModule:
+) -> ObserverModule:
     """Fixed-point-only fast path: settle-in-radius + escape/blowup, no PSC scoring."""
     obs_idx = np.asarray(obs_idx, dtype=np.int64)
     blowup_idx = np.asarray(blowup_idx, dtype=np.int64)
@@ -777,11 +778,11 @@ def _make_fixed_point_only_analysis(
             analysis_ws[ws_fp_cand] = -1.0
             analysis_ws[ws_fp_run] = 0.0
 
-    class _FPOnlyModule(AnalysisModule):
-        def _compile_hooks(self, hooks: AnalysisHooks, dtype: np.dtype) -> AnalysisHooks:
+    class _FPOnlyModule(ObserverModule):
+        def _compile_hooks(self, hooks: ObserverHooks, dtype: np.dtype) -> ObserverHooks:
             if njit is None:  # pragma: no cover
                 raise RuntimeError(
-                    f"Analysis '{self.name}' requested jit hooks but numba is not installed"
+                    f"Observer '{self.name}' requested jit hooks but numba is not installed"
                 )
 
             def _jit(fn):
@@ -791,11 +792,11 @@ def _make_fixed_point_only_analysis(
                     return njit(cache=False)(fn)
                 except Exception as exc:
                     raise RuntimeError(
-                        f"Failed to njit analysis hook '{self.name}.{getattr(fn, '__name__', 'hook')}' "
+                        f"Failed to njit observer hook '{self.name}.{getattr(fn, '__name__', 'hook')}' "
                         f"in nopython mode"
                     ) from exc
 
-            compiled = AnalysisHooks(
+            compiled = ObserverHooks(
                 pre_step=_jit(hooks.pre_step),
                 post_step=_jit(hooks.post_step),
             )
@@ -804,12 +805,13 @@ def _make_fixed_point_only_analysis(
             return compiled
 
     return _FPOnlyModule(
+        key=name,
         name=name,
-        requirements=AnalysisRequirements(fixed_step=True),
+        requirements=ObserverRequirements(fixed_step=True),
         workspace_size=ws_size,
         output_size=2,
         output_names=("status", "matched_id"),
-        hooks=AnalysisHooks(pre_step=_pre_step, post_step=_post_step),
+        hooks=ObserverHooks(pre_step=_pre_step, post_step=_post_step),
         stop_phase_mask=2,
     )
 
@@ -1437,7 +1439,7 @@ def _prepare_classifier(
         dt=dt_use,
         transient=0.0,
         adaptive=adaptive,
-        analysis=analysis_mod,
+        observers=analysis_mod,
     )
     use_fastpath = support.ok
 
@@ -1546,7 +1548,7 @@ def _classify_batch_core_inner(
                 stepper_config=stepper_config,
                 parallel_mode="none",  # Sequential within chunk
                 max_workers=1,
-                analysis=analysis_mod,
+                observers=analysis_mod,
                 analysis_only=True,
             )
             for j, result in enumerate(results):
@@ -1591,7 +1593,7 @@ def _classify_batch_core_inner(
                 aux_rec_indices=aux_rec_indices,
                 state_names=state_rec_names,
                 aux_names=aux_names,
-                analysis=analysis_mod,
+                observers=analysis_mod,
             )
             view = ResultsView(result, sim.model.spec)
             
@@ -1599,14 +1601,14 @@ def _classify_batch_core_inner(
                 labels[i] = BLOWUP
                 continue
 
-            res = view.analysis.get(analysis_name)
-            if res is None or res.out is None or res.out.size < 2:
+            res = view.observers.get(analysis_name)
+            out = None if res is None else res["out"]
+            if out is None or out.size < 2:
                 labels[i] = UNRESOLVED
                 continue
-
-            status = int(res.out[0])
+            status = int(out[0])
             if status == 1:
-                labels[i] = int(res.out[1])
+                labels[i] = int(out[1])
             elif status == 2:
                 labels[i] = BLOWUP
             elif status == 3:

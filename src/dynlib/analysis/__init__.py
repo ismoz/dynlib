@@ -1,18 +1,7 @@
-"""Unified analysis namespace for dynlib (online + post-run)."""
+"""Offline analysis namespace for dynlib."""
 
 import importlib
 from typing import TYPE_CHECKING
-
-from dynlib.analysis.runtime import (
-    AnalysisHooks,
-    AnalysisModule,
-    AnalysisRequirements,
-    CombinedAnalysis,
-    TraceSpec,
-    analysis_noop_hook,
-    lyapunov_mle,
-)
-
 
 if TYPE_CHECKING:
     from dynlib.analysis.basin import (
@@ -38,9 +27,10 @@ if TYPE_CHECKING:
     from dynlib.analysis.sweep import (
         SweepResult,
         TrajectoryPayload,
-        scalar,
-        traj,
-        lyapunov_spectrum,
+        scalar_sweep,
+        traj_sweep,
+        lyapunov_mle_sweep,
+        lyapunov_spectrum_sweep,
     )
     from dynlib.analysis.post import (
         BifurcationResult,
@@ -52,10 +42,10 @@ if TYPE_CHECKING:
 _SWEEP_EXPORTS = {
     "SweepResult",
     "TrajectoryPayload",
-    "scalar",
-    "traj",
-    "lyapunov_mle",
-    "lyapunov_spectrum",
+    "scalar_sweep",
+    "traj_sweep",
+    "lyapunov_mle_sweep",
+    "lyapunov_spectrum_sweep",
 }
 
 _POST_EXPORTS = {
@@ -88,14 +78,6 @@ _BASIN_STATS_EXPORTS = {
 }
 
 __all__ = [
-    # Runtime analysis
-    "AnalysisHooks",
-    "AnalysisModule",
-    "AnalysisRequirements",
-    "CombinedAnalysis",
-    "TraceSpec",
-    "analysis_noop_hook",
-    "lyapunov_mle",
     # Sweep orchestration
     *_SWEEP_EXPORTS,
     # Post-run analysis

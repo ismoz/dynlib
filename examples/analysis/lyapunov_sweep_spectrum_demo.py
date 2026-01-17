@@ -1,7 +1,7 @@
 """
 Lyapunov spectrum parameter sweep for the Lorenz system.
 
-Demonstrates sweep.lyapunov_spectrum for computing the full Lyapunov spectrum
+Demonstrates sweep.lyapunov_spectrum_sweep for computing the full Lyapunov spectrum
 across a range of parameters, and overlays the results with a Lorenz
 bifurcation diagram.
 
@@ -38,7 +38,7 @@ print(f"  T={total_time}, dt={dt}, transient={transient}")
 # Bifurcation diagram (z vs rho)
 print("\nComputing bifurcation diagram...")
 sim.assign(**initial_state, sigma=sigma, rho=rho_values[0], beta=beta)
-bif_sweep = sweep.traj(
+bif_sweep = sweep.traj_sweep(
     sim,
     param="rho",
     values=rho_values,
@@ -58,7 +58,7 @@ bif_result = bif_sweep.bifurcation("z").extrema(
 print("\nComputing Lyapunov spectrum...")
 sim.reset()
 sim.assign(**initial_state, sigma=sigma, rho=rho_values[0], beta=beta)
-res = sweep.lyapunov_spectrum(
+res = sweep.lyapunov_spectrum_sweep(
     sim,
     param="rho",
     values=rho_values,

@@ -1,5 +1,5 @@
-# src/dynlib/analysis/runtime/lyapunov.py
-"""Reference Lyapunov runtime analysis."""
+# src/dynlib/runtime/observers/lyapunov.py
+"""Reference Lyapunov runtime observers."""
 from __future__ import annotations
 
 import math
@@ -9,13 +9,13 @@ import numpy as np
 from dynlib.runtime.fastpath.plans import FixedTracePlan
 from dynlib.runtime.runner_api import OK
 from dynlib.steppers.registry import list_steppers
-from .core import AnalysisHooks, AnalysisModule, AnalysisRequirements, TraceSpec
+from .core import ObserverHooks, ObserverModule, ObserverRequirements, TraceSpec
 from dynlib.errors import JITUnavailableError
 
 if TYPE_CHECKING:  # pragma: no cover - type checking only
     from dynlib.compiler.build import FullModel
 
-__all__ = ["lyapunov_mle", "lyapunov_spectrum"]
+__all__ = ["lyapunov_mle_observer", "lyapunov_spectrum_observer"]
 
 
 def _default_tangent(n_state: int) -> np.ndarray:
@@ -102,7 +102,7 @@ def _make_hooks(
     variational_ws_size: int = 0,
     variational_ws_factory: Optional[Callable] = None,
     variational_ws_slices: Optional[tuple[int, ...]] = None,
-) -> AnalysisHooks:
+) -> ObserverHooks:
     """
     Create analysis hooks for Lyapunov MLE computation.
     """
@@ -238,7 +238,7 @@ def _make_hooks(
             else:
                 trace_count[0] = trace_cap + 1
 
-    return AnalysisHooks(pre_step=_pre_step, post_step=_post_step)
+    return ObserverHooks(pre_step=_pre_step, post_step=_post_step)
 
 
 def _coerce_model(model_like) -> "FullModel" | None:
@@ -268,7 +268,7 @@ def _resolve_trace_plan(
     return FixedTracePlan(stride=1)
 
 
-class _LyapunovModule(AnalysisModule):
+class _LyapunovModule(ObserverModule):
     def __init__(
         self,
         *,
@@ -351,7 +351,7 @@ class _LyapunovModule(AnalysisModule):
         else:
             workspace_size = 2 * n_state
         
-        reqs = AnalysisRequirements(
+        reqs = ObserverRequirements(
             fixed_step=True,
             need_jvp=True,
             mutates_state=False,
@@ -359,6 +359,7 @@ class _LyapunovModule(AnalysisModule):
         )
         
         super().__init__(
+            key="lyapunov_mle",
             name="lyapunov_mle",
             requirements=reqs,
             workspace_size=workspace_size,
@@ -561,7 +562,7 @@ class _LyapunovModule(AnalysisModule):
             self._runner_variational_step_py = self._make_runner_variational_step(combined)
         return self._runner_variational_step_py
 
-    def resolve_hooks(self, *, jit: bool, dtype: np.dtype) -> AnalysisHooks:
+    def resolve_hooks(self, *, jit: bool, dtype: np.dtype) -> ObserverHooks:
         if not jit:
             return self.hooks
 
@@ -597,15 +598,16 @@ class _LyapunovModule(AnalysisModule):
         return self._compile_hooks(jit_hooks, dtype)
 
 
-def lyapunov_mle(
-    *,
+def lyapunov_mle_observer(
     model=None,
+    sim=None,
+    record_interval: Optional[int] = None,
+    *,
     jvp: Optional[
         Callable[[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, object], None]
     ] = None,
     n_state: Optional[int] = None,
     trace_plan: Optional[FixedTracePlan] = None,
-    record_interval: Optional[int] = None,
     analysis_kind: int = 1,
     mode: Literal["flow", "map", "auto"] = "auto",
     prefer_variational_combined: bool = True,
@@ -613,13 +615,15 @@ def lyapunov_mle(
     """
     Factory for Lyapunov maximum exponent analysis.
     
-    Returns a factory function for dependency injection, or an AnalysisModule if model is provided.
+    Returns a factory function for dependency injection, or an ObserverModule if model is provided.
     The factory extracts ``jvp`` and ``n_state`` from the model if not explicitly provided.
     
     Parameters
     ----------
     model : FullModel or Sim, optional
-        Compiled model. If provided, returns AnalysisModule directly. If None, returns factory.
+        Compiled model. If provided, returns ObserverModule directly. If None, returns factory.
+    sim : Sim, optional
+        Sim instance providing the compiled model when model is not provided.
     jvp : callable, optional
         Jacobian-vector product function. If None, extracted from model.
     n_state : int, optional
@@ -646,13 +650,17 @@ def lyapunov_mle(
     Examples
     --------
     >>> # Factory mode - Sim injects model
-    >>> sim.run(analysis=lyapunov_mle())
-    >>> sim.run(analysis=lyapunov_mle(record_interval=2))
+    >>> sim.run(observers=lyapunov_mle_observer())
+    >>> sim.run(observers=lyapunov_mle_observer(record_interval=2))
     
     >>> # Direct mode - model provided explicitly
-    >>> module = lyapunov_mle(model=sim.model, record_interval=1)
-    >>> sim.run(analysis=module)
+    >>> module = lyapunov_mle_observer(model=sim.model, record_interval=1)
+    >>> sim.run(observers=module)
     """
+
+    if model is None and sim is not None:
+        model = getattr(sim, "model", sim)
+    record_interval_override = record_interval
     
     def _infer_n_state(target) -> int | None:
         """Extract state count from model spec."""
@@ -662,11 +670,11 @@ def lyapunov_mle(
         return len(spec.states)
 
     def _build_with_model(model_obj: object) -> _LyapunovModule:
-        """Build AnalysisModule using a provided model-like object."""
+        """Build ObserverModule using a provided model-like object."""
         model_coerced = _coerce_model(model_obj)
         if model_coerced is None:
             raise ValueError("lyapunov_mle factory requires a model")
-        mode_use = _resolve_mode(mode=mode, model_like=model_coerced, who="lyapunov_mle")
+        mode_use = _resolve_mode(mode=mode, model_like=model_coerced, who="lyapunov_mle_observer")
 
         jvp_use = jvp if jvp is not None else getattr(model_coerced, "jvp", None)
         n_state_use = n_state if n_state is not None else _infer_n_state(model_coerced)
@@ -683,7 +691,7 @@ def lyapunov_mle(
         plan_use = _resolve_trace_plan(
             trace_plan=trace_plan,
             record_interval=record_interval,
-            who="lyapunov_mle",
+            who="lyapunov_mle_observer",
         )
         
         # Check if stepper supports variational stepping (for flow mode only)
@@ -750,7 +758,7 @@ def lyapunov_mle(
         if mode == "flow":
              raise ValueError("lyapunov_mle mode='flow' requires a model to provide stepper support")
         plan_use = _resolve_trace_plan(
-            trace_plan=trace_plan, record_interval=record_interval, who="lyapunov_mle"
+            trace_plan=trace_plan, record_interval=record_interval, who="lyapunov_mle_observer"
         )
         return _LyapunovModule(
             jvp=jvp,
@@ -760,12 +768,25 @@ def lyapunov_mle(
             n_state=int(n_state),
             trace_plan=plan_use,
             analysis_kind=analysis_kind,
-            mode=_resolve_mode(mode=mode, model_like=None, who="lyapunov_mle"),
+            mode=_resolve_mode(mode=mode, model_like=None, who="lyapunov_mle_observer"),
         )
 
-    def _factory(model: object) -> AnalysisModule:
+    def _factory(model: object, sim: object | None = None, record_interval: int | None = None) -> ObserverModule:
         """Factory function invoked by Sim with model injected."""
-        return _build_with_model(model)
+        ri = record_interval_override if record_interval_override is not None else record_interval
+        model_obj = getattr(sim, "model", model) if sim is not None else model
+        return lyapunov_mle_observer(
+            model=model_obj,
+            record_interval=ri,
+            jvp=jvp,
+            n_state=n_state,
+            trace_plan=trace_plan,
+            analysis_kind=analysis_kind,
+            mode=mode,
+            prefer_variational_combined=prefer_variational_combined,
+        )
+
+    _factory.__observer_factory__ = True
 
     # Otherwise return factory for Sim to call
     return _factory
@@ -786,7 +807,7 @@ def _make_hooks_spectrum(
     variational_ws_size_per_vec: int = 0,
     variational_ws_factory: Optional[Callable] = None,
     variational_ws_slices: Optional[tuple[int, ...]] = None,
-) -> AnalysisHooks:
+) -> ObserverHooks:
     """
     Workspace layout:
         analysis_ws[0 : n_state*k]               -> V (current orthonormal basis), shape (n_state, k)
@@ -980,12 +1001,12 @@ def _make_hooks_spectrum(
             else:
                 trace_count[0] = trace_cap + 1
 
-    return AnalysisHooks(pre_step=_pre_step, post_step=_post_step)
+    return ObserverHooks(pre_step=_pre_step, post_step=_post_step)
 
 
 # --------------------------- spectrum module ---------------------------------
 
-class _LyapunovSpectrumModule(AnalysisModule):
+class _LyapunovSpectrumModule(ObserverModule):
     def __init__(
         self,
         *,
@@ -1074,7 +1095,7 @@ class _LyapunovSpectrumModule(AnalysisModule):
             variational_ws_factory=self._var_ws_factory,
         )
 
-        reqs = AnalysisRequirements(
+        reqs = ObserverRequirements(
             fixed_step=True,
             need_jvp=True,
             mutates_state=False,
@@ -1086,6 +1107,7 @@ class _LyapunovSpectrumModule(AnalysisModule):
         trace_names = tuple([f"lyap{i}" for i in range(k)])
 
         super().__init__(
+            key="lyapunov_spectrum",
             name="lyapunov_spectrum",
             requirements=reqs,
             workspace_size=(2 * n_state * k) + (self._var_ws_size_per_vec * k if self._use_variational else 0),
@@ -1284,7 +1306,7 @@ class _LyapunovSpectrumModule(AnalysisModule):
             raise RuntimeError("Failed to JIT compile variational step function") from exc
         return self._variational_step_jit
 
-    def resolve_hooks(self, *, jit: bool, dtype: np.dtype) -> AnalysisHooks:
+    def resolve_hooks(self, *, jit: bool, dtype: np.dtype) -> ObserverHooks:
         if not jit:
             return self.hooks
         key = self._jit_key(dtype)
@@ -1321,9 +1343,11 @@ class _LyapunovSpectrumModule(AnalysisModule):
 
 # ---------------------------- spectrum factory -------------------------------
 
-def lyapunov_spectrum(
-    *,
+def lyapunov_spectrum_observer(
     model=None,
+    sim=None,
+    record_interval: Optional[int] = None,
+    *,
     jvp: Optional[
         Callable[[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, object], None]
     ] = None,
@@ -1332,7 +1356,6 @@ def lyapunov_spectrum(
     mode: Literal["flow", "map", "auto"] = "auto",
     init_basis: Optional[np.ndarray] = None,
     trace_plan: Optional[FixedTracePlan] = None,
-    record_interval: Optional[int] = None,
     analysis_kind: int = 1,
     prefer_variational_combined: bool = True,
 ):
@@ -1355,6 +1378,10 @@ def lyapunov_spectrum(
         the current architecture.
     """
 
+    if model is None and sim is not None:
+        model = getattr(sim, "model", sim)
+    record_interval_override = record_interval
+
     def _infer_n_state(target) -> int | None:
         spec = getattr(target, "spec", None)
         if spec is None or getattr(spec, "states", None) is None:
@@ -1365,7 +1392,7 @@ def lyapunov_spectrum(
         model_coerced = _coerce_model(model_obj)
         if model_coerced is None:
             raise ValueError("lyapunov_spectrum factory requires a model")
-        mode_use = _resolve_mode(mode=mode, model_like=model_coerced, who="lyapunov_spectrum")
+        mode_use = _resolve_mode(mode=mode, model_like=model_coerced, who="lyapunov_spectrum_observer")
 
         jvp_use = jvp if jvp is not None else getattr(model_coerced, "jvp", None)
         n_state_use = n_state if n_state is not None else _infer_n_state(model_coerced)
@@ -1380,7 +1407,7 @@ def lyapunov_spectrum(
         plan_use = _resolve_trace_plan(
             trace_plan=trace_plan,
             record_interval=record_interval,
-            who="lyapunov_spectrum",
+            who="lyapunov_spectrum_observer",
         )
 
         # Optional variational stepping (flow only)
@@ -1442,7 +1469,7 @@ def lyapunov_spectrum(
         plan_use = _resolve_trace_plan(
             trace_plan=trace_plan,
             record_interval=record_interval,
-            who="lyapunov_spectrum",
+            who="lyapunov_spectrum_observer",
         )
         return _LyapunovSpectrumModule(
             jvp=jvp,
@@ -1451,14 +1478,33 @@ def lyapunov_spectrum(
             rhs_fn=None,
             n_state=int(n_state),
             k=int(k),
-            mode=_resolve_mode(mode=mode, model_like=None, who="lyapunov_spectrum"),
+            mode=_resolve_mode(mode=mode, model_like=None, who="lyapunov_spectrum_observer"),
             trace_plan=plan_use,
             analysis_kind=analysis_kind,
             init_basis=init_basis,
         )
 
     # Factory path (model injected by Sim)
-    def _factory(model: object) -> AnalysisModule:
-        return _build_with_model(model)
+    def _factory(model: object, sim: object | None = None, record_interval: int | None = None) -> ObserverModule:
+        ri = record_interval_override if record_interval_override is not None else record_interval
+        model_obj = getattr(sim, "model", model) if sim is not None else model
+        return lyapunov_spectrum_observer(
+            model=model_obj,
+            record_interval=ri,
+            jvp=jvp,
+            n_state=n_state,
+            k=k,
+            mode=mode,
+            init_basis=init_basis,
+            trace_plan=trace_plan,
+            analysis_kind=analysis_kind,
+            prefer_variational_combined=prefer_variational_combined,
+        )
+
+    _factory.__observer_factory__ = True
 
     return _factory
+
+
+lyapunov_mle_observer.__observer_factory__ = True
+lyapunov_spectrum_observer.__observer_factory__ = True

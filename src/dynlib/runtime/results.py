@@ -54,7 +54,7 @@ class Results:
     # metadata for recorded variables
     state_names: list[str] # names of recorded states (ordered)
     aux_names: list[str]   # names of recorded aux (ordered, without "aux." prefix)
-    # optional analysis artifacts
+    # optional observer artifacts
     analysis_out: np.ndarray | None = None
     analysis_trace: np.ndarray | None = None
     analysis_trace_filled: int | None = None
@@ -120,20 +120,20 @@ class Results:
 
     @property
     def analysis_out_view(self) -> np.ndarray | None:
-        """View of online analysis outputs, if provided."""
+        """View of online observer outputs, if provided."""
         return self.analysis_out
 
     @property
     def analysis_trace_view(self) -> np.ndarray | None:
-        """View of filled analysis trace rows, if provided."""
+        """View of filled observer trace rows, if provided."""
         if self.analysis_trace is None or self.analysis_trace_filled is None:
             return None
         filled = int(self.analysis_trace_filled)
         return self.analysis_trace[:filled, :]
 
     @property
-    def analysis(self) -> Mapping[str, Mapping[str, object]]:
-        """Runtime analysis outputs keyed by name."""
+    def observers(self) -> Mapping[str, Mapping[str, object]]:
+        """Runtime observer outputs keyed by observer key."""
         modules = self.analysis_modules
         if not modules:
             return {}
@@ -150,7 +150,7 @@ class Results:
             trace_slice = None
             if trace is not None and mod.trace is not None and trace.size > 0:
                 trace_slice = trace[:, trace_offset : trace_offset + mod.trace.width]
-            result[mod.name] = {
+            result[mod.key] = {
                 "out": out_slice,
                 "trace": trace_slice,
                 "stride": int(stride) if stride is not None and mod.trace is not None else None,
@@ -163,8 +163,8 @@ class Results:
         return result
 
     @property
-    def analysis_metadata(self) -> Mapping[str, object] | None:
-        """Metadata describing attached analysis modules."""
+    def observer_metadata(self) -> Mapping[str, object] | None:
+        """Metadata describing attached observer modules."""
         return self.analysis_meta
 
     # --------------- helpers (out of hot path) ---------------

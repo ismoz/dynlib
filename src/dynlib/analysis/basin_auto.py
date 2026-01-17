@@ -25,7 +25,7 @@ from dynlib.analysis.basin import (
     njit,
     prange,
 )
-from dynlib.analysis.runtime import AnalysisHooks, AnalysisModule, AnalysisRequirements, TraceSpec
+from dynlib.runtime.observers import ObserverHooks, ObserverModule, ObserverRequirements, TraceSpec
 from dynlib.errors import JITUnavailableError
 from dynlib.runtime.fastpath.plans import FixedStridePlan, HitTracePlan
 from dynlib.runtime.fastpath.capability import assess_capability, FastpathSupport
@@ -529,7 +529,7 @@ def _make_pcr_online_analysis(
     cell_sets: np.ndarray,
     cell_counts: np.ndarray,
     capture_evidence: bool,
-) -> AnalysisModule:
+) -> ObserverModule:
     obs_idx = np.asarray(obs_idx, dtype=np.int64)
     blowup_idx = np.asarray(blowup_idx, dtype=np.int64)
     z_min = np.asarray(z_min, dtype=np.float64)
@@ -804,11 +804,11 @@ def _make_pcr_online_analysis(
         trace = TraceSpec(width=1, plan=HitTracePlan(stride=1, max_hits=window_val + post_detect_val))
         trace_names = ("evidence_cell",)
 
-    class _PCROnlineModule(AnalysisModule):
-        def _compile_hooks(self, hooks: AnalysisHooks, dtype: np.dtype) -> AnalysisHooks:
+    class _PCROnlineModule(ObserverModule):
+        def _compile_hooks(self, hooks: ObserverHooks, dtype: np.dtype) -> ObserverHooks:
             if njit is None:  # pragma: no cover - numba may be missing
                 raise RuntimeError(
-                    f"Analysis '{self.name}' requested jit hooks but numba is not installed"
+                    f"Observer '{self.name}' requested jit hooks but numba is not installed"
                 )
 
             def _jit(fn):
@@ -818,11 +818,11 @@ def _make_pcr_online_analysis(
                     return njit(cache=False)(fn)
                 except Exception as exc:
                     raise RuntimeError(
-                        f"Failed to njit analysis hook '{self.name}.{getattr(fn, '__name__', 'hook')}' "
+                        f"Failed to njit observer hook '{self.name}.{getattr(fn, '__name__', 'hook')}' "
                         f"in nopython mode"
                     ) from exc
 
-            compiled = AnalysisHooks(
+            compiled = ObserverHooks(
                 pre_step=_jit(hooks.pre_step),
                 post_step=_jit(hooks.post_step),
             )
@@ -831,8 +831,9 @@ def _make_pcr_online_analysis(
             return compiled
 
     return _PCROnlineModule(
+        key=name,
         name=name,
-        requirements=AnalysisRequirements(fixed_step=True),
+        requirements=ObserverRequirements(fixed_step=True),
         workspace_size=ws_size,
         output_size=5,
         output_names=(
@@ -844,7 +845,7 @@ def _make_pcr_online_analysis(
         ),
         trace=trace,
         trace_names=trace_names,
-        hooks=AnalysisHooks(pre_step=_pre_step, post_step=_post_step),
+        hooks=ObserverHooks(pre_step=_pre_step, post_step=_post_step),
         stop_phase_mask=2,
     )
 
@@ -945,11 +946,11 @@ def _pcr_outcome_from_view(
 ) -> tuple[int, int, int, np.ndarray]:
     if view.status == NAN_DETECTED:
         return NAN_DETECTED, _PCR_ONLINE_NONE, -1, np.empty((0,), dtype=np.int64)
-    res = view.analysis.get(analysis_name)
-    if res is None or res.out is None:
+    res = view.observers.get(analysis_name)
+    if res is None or res["out"] is None:
         return view.status, _PCR_ONLINE_NONE, -1, np.empty((0,), dtype=np.int64)
 
-    out = res.out
+    out = res["out"]
     status = int(out[_PCR_OUT_STATUS]) if out.size > 0 else _PCR_ONLINE_NONE
     assigned_id = int(out[_PCR_OUT_ASSIGNED_ID]) if status == _PCR_ONLINE_ASSIGNED else -1
     detected = int(out[_PCR_OUT_DETECTED]) != 0 if out.size > _PCR_OUT_DETECTED else False
@@ -957,7 +958,7 @@ def _pcr_outcome_from_view(
     if not detected:
         return view.status, status, assigned_id, np.empty((0,), dtype=np.int64)
 
-    trace = res.trace
+    trace = res["trace"]
     if trace is None or trace.size == 0:
         return view.status, status, assigned_id, np.empty((0,), dtype=np.int64)
 
@@ -1146,7 +1147,7 @@ def _basin_auto_chunk_worker(args: tuple[np.ndarray, np.ndarray, dict]) -> list[
             params=params_chunk,
             parallel_mode="none",
             max_workers=1,
-            analysis=analysis_mod,
+            observers=analysis_mod,
         )
         if views is None:
             use_fastpath = False
@@ -1177,7 +1178,7 @@ def _basin_auto_chunk_worker(args: tuple[np.ndarray, np.ndarray, dict]) -> list[
                 aux_rec_indices=cfg["aux_rec_indices"],
                 state_names=cfg["state_rec_names"],
                 aux_names=cfg["aux_names"],
-                analysis=analysis_mod,
+                observers=analysis_mod,
             )
             views.append(ResultsView(result, sim.model.spec))
 
@@ -1717,7 +1718,7 @@ def basin_auto(
             dt=dt_use,
             transient=0.0,
             adaptive=adaptive,
-            analysis=analysis_mod,
+            observers=analysis_mod,
         )
         use_fastpath = support.ok
         fastpath_used = False
@@ -1835,7 +1836,7 @@ def basin_auto(
                         params=params_arr[start:stop],
                         parallel_mode=effective_parallel_mode,
                         max_workers=max_workers,
-                        analysis=analysis_mod,
+                        observers=analysis_mod,
                     )
                     fastpath_used = True
                 else:
@@ -1864,7 +1865,7 @@ def basin_auto(
                             aux_rec_indices=aux_rec_indices,
                             state_names=state_rec_names,
                             aux_names=aux_names,
-                            analysis=analysis_mod,
+                            observers=analysis_mod,
                         )
                         views.append(ResultsView(result, sim.model.spec))
 
@@ -1923,7 +1924,7 @@ def basin_auto(
                         dt=dt_use,
                         transient=0.0,
                         adaptive=adaptive,
-                        analysis=analysis_refine,
+                        observers=analysis_refine,
                     )
                     use_fastpath = support.ok
 
@@ -1969,7 +1970,7 @@ def basin_auto(
                                 params=params_arr[idx_chunk],
                                 parallel_mode=effective_parallel_mode,
                                 max_workers=max_workers,
-                                analysis=analysis_refine,
+                                observers=analysis_refine,
                             )
                             fastpath_used = True
                         else:
@@ -1998,7 +1999,7 @@ def basin_auto(
                                     aux_rec_indices=aux_rec_indices,
                                     state_names=state_rec_names,
                                     aux_names=aux_names,
-                                    analysis=analysis_refine,
+                                    observers=analysis_refine,
                                 )
                                 views.append(ResultsView(result, sim.model.spec))
 
@@ -2115,7 +2116,7 @@ def basin_auto(
                 aux_rec_indices=aux_rec_indices,
                 state_names=state_names,
                 aux_names=aux_names,
-                analysis=None,
+                observers=None,
             )
             views.append(ResultsView(result, sim.model.spec))
 

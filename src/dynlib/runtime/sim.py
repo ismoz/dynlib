@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import fnmatch
 import hashlib
-import inspect
 import json
 import logging
 from pathlib import Path
@@ -22,7 +21,7 @@ from .results_api import ResultsView
 from .runner_api import Status
 from .initial_step import WRMSConfig, make_wrms_config_from_stepper
 from dynlib.steppers.registry import get_stepper
-from dynlib.analysis.runtime import AnalysisModule, CombinedAnalysis
+from dynlib.runtime.observers import ObserverModule, CombinedObserver
 from dynlib.compiler.build import FullModel
 import tomllib
 
@@ -381,7 +380,7 @@ class Sim:
         record: Optional[bool] = None,
         record_interval: Optional[int] = None,
         record_vars: list[str] | None = None,  # NEW: selective recording
-        analysis=None,
+        observers=None,
         ic: Optional[np.ndarray] = None,
         params: Optional[np.ndarray] = None,
         cap_rec: Optional[int] = None,
@@ -411,7 +410,7 @@ class Sim:
                 - Aux names with explicit prefix: "aux.energy", "aux.power"
                 - Can mix: ["x", "energy", "z"] or ["x", "aux.energy", "z"]
                 - Variables are auto-detected: states first, then aux
-            analysis: Optional runtime analysis module to run alongside integration
+            observers: Optional runtime observers to run alongside integration
             ic: Initial conditions (default from model spec)
             params: Parameters (default from model spec)
             cap_rec: Initial recording buffer capacity
@@ -451,7 +450,7 @@ class Sim:
             else:
                 record_interval = 1
 
-        analysis_mod = self._resolve_analysis(analysis, record_interval=record_interval)
+        observer_mod = self._resolve_observers(observers, record_interval=record_interval)
 
         # max_steps
         if max_steps is None:
@@ -617,9 +616,9 @@ class Sim:
                 config_source,
                 max_dt=max_dt_hint,
             )
-        if analysis_mod is not None:
-            self._validate_analysis_requirements(
-                analysis_mod,
+        if observer_mod is not None:
+            self._validate_observer_requirements(
+                observer_mod,
                 adaptive=adaptive,
                 has_event_logs=has_event_logs,
             )
@@ -656,7 +655,7 @@ class Sim:
                 transient_N = max_steps  # Use max_steps as guard
             
             # For transient, we don't care about recording selection - use empty arrays
-            # Analyses are disabled during warm-up; they should only run during the recorded segment.
+            # Observers are disabled during warm-up; they should only run during the recorded segment.
             warm_result = self._execute_run(
                 seed=run_seed,
                 t_end=transient_T,
@@ -673,7 +672,7 @@ class Sim:
                 aux_rec_indices=np.array([], dtype=np.int32),
                 state_names=[],
                 aux_names=[],
-                analysis=None,
+                observers=None,
             )
             self._ensure_runner_done(warm_result, phase="transient warm-up")
             self._session_state = self._state_from_results(
@@ -733,7 +732,7 @@ class Sim:
             aux_rec_indices=aux_rec_indices,
             state_names=state_names,
             aux_names=aux_names,
-            analysis=analysis_mod,
+            observers=observer_mod,
         )
         try:
             self._ensure_runner_done(recorded_result, phase="recorded run")
@@ -774,7 +773,7 @@ class Sim:
         max_steps: Optional[int] = None,
         ic: Optional[np.ndarray] = None,
         params: Optional[np.ndarray] = None,
-        analysis=None,
+        observers=None,
     ):
         """
         Run the model via the fastpath backend when supported.
@@ -818,7 +817,7 @@ class Sim:
 
         stepper_spec = self._stepper_spec
         adaptive = getattr(stepper_spec.meta, "time_control", "fixed") == "adaptive"
-        analysis_mod = self._resolve_analysis(analysis, record_interval=record_interval_use)
+        observer_mod = self._resolve_observers(observers, record_interval=record_interval_use)
         support = assess_capability(
             self,
             plan=plan_use,
@@ -826,7 +825,7 @@ class Sim:
             dt=dt_use,
             transient=transient_use,
             adaptive=adaptive,
-            analysis=analysis_mod,
+            observers=observer_mod,
         )
         if not support.ok:
             reason = support.reason or "unsupported configuration"
@@ -846,7 +845,7 @@ class Sim:
             ic=ic_vec,
             params=params_vec,
             support=support,
-            analysis=analysis_mod,
+            observers=observer_mod,
         )
         if res is None:
             raise RuntimeError("Fastpath unavailable")
@@ -1951,48 +1950,48 @@ class Sim:
             aux_names
         )
 
-    def _resolve_analysis(self, analysis, *, record_interval: Optional[int]):
+    def _resolve_observers(self, observers, *, record_interval: Optional[int]):
         """
-        Accept AnalysisModule instances directly, callable factories, or sequences of either.
+        Accept ObserverModule instances directly, ObserverFactory callables, or
+        sequences of ObserverModule.
 
-        When a callable is provided, invoke it with the compiled model and
-        the current record_interval to allow analyses to align trace stride
-        with recording cadence. Sequences are materialized and combined into
-        a CombinedAnalysis to run in a single pass.
+        ObserverFactory callables are invoked with (model, sim, record_interval)
+        and must return an ObserverModule. Sequences are wrapped into a
+        CombinedObserver to run in a single pass.
         """
+
+        def _is_observer_factory(target: object) -> bool:
+            return callable(target) and bool(getattr(target, "__observer_factory__", False))
 
         def _materialize(target):
-            if target is None or isinstance(target, AnalysisModule):
+            if target is None:
+                return None
+            if isinstance(target, ObserverModule):
                 return target
-            if not callable(target):
-                raise TypeError("analysis must be an AnalysisModule or callable factory")
-            sig = inspect.signature(target)
-            kwargs = {}
-            if "model" in sig.parameters:
-                kwargs["model"] = self.model
-            elif "sim" in sig.parameters:
-                kwargs["sim"] = self
-            if "record_interval" in sig.parameters:
-                kwargs["record_interval"] = record_interval
-            return target(**kwargs)
+            if _is_observer_factory(target):
+                module = target(self.model, self, record_interval)
+                if not isinstance(module, ObserverModule):
+                    raise TypeError("ObserverFactory must return an ObserverModule")
+                return module
+            raise TypeError("observers must be an ObserverModule or ObserverFactory")
 
-        if analysis is None:
+        if observers is None:
             return None
 
-        if isinstance(analysis, Sequence) and not isinstance(analysis, (str, bytes)):
-            if len(analysis) == 0:
-                raise ValueError("analysis sequence cannot be empty")
-            modules = tuple(_materialize(item) for item in analysis)
-            if any(mod is None for mod in modules):
-                raise ValueError("analysis sequence produced None entries")
+        if isinstance(observers, Sequence) and not isinstance(observers, (str, bytes)):
+            if len(observers) == 0:
+                raise ValueError("observers sequence cannot be empty")
+            if any(not isinstance(item, ObserverModule) for item in observers):
+                raise TypeError("observers sequence must contain ObserverModule instances")
+            modules = tuple(observers)
             if len(modules) == 1:
                 modules[0].validate_stepper(self._stepper_spec)
                 return modules[0]
-            combined = CombinedAnalysis(modules)
+            combined = CombinedObserver(modules)
             combined.validate_stepper(self._stepper_spec)
             return combined
 
-        module = _materialize(analysis)
+        module = _materialize(observers)
         if module is not None:
             module.validate_stepper(self._stepper_spec)
         return module
@@ -2355,7 +2354,7 @@ class Sim:
         aux_rec_indices: np.ndarray,
         state_names: list[str],
         aux_names: list[str],
-        analysis=None,
+        observers=None,
     ) -> Results:
         stop_phase_mask = 0
         stop_spec = getattr(self.model.spec.sim, "stop", None)
@@ -2398,7 +2397,7 @@ class Sim:
             lag_state_info=getattr(self.model, "lag_state_info", None),
             make_stepper_workspace=getattr(self.model, "make_stepper_workspace", None),
             wrms_cfg=wrms_cfg,
-            analysis=analysis,
+            observers=observers,
             adaptive=adaptive,
             model_hash=getattr(self.model, "spec_hash", None),
             stepper_name=getattr(self.model, "stepper_name", None),
@@ -2758,46 +2757,46 @@ class Sim:
             values[names[idx]] = float(cfg[idx])
         return values
 
-    def _validate_analysis_requirements(
+    def _validate_observer_requirements(
         self,
-        analysis,
+        observer,
         *,
         adaptive: bool | None = None,
         has_event_logs: bool | None = None,
     ) -> None:
-        """Ensure the provided analysis is compatible with this model."""
-        req = getattr(analysis, "requirements", None)
+        """Ensure the provided observer is compatible with this model."""
+        req = getattr(observer, "requirements", None)
         if req is None:
             return
 
         has_jvp = getattr(self.model, "jvp", None) is not None
         has_dense_jac = getattr(self.model, "jacobian", None) is not None
-        name = getattr(analysis, "name", "analysis")
+        name = getattr(observer, "name", "observer")
 
         if req.need_jvp and not has_jvp:
             raise ValueError(
-                f"Analysis '{name}' requires a model Jacobian-vector product, but none is available."
+                f"Observer '{name}' requires a model Jacobian-vector product, but none is available."
             )
         if req.need_dense_jacobian and not has_dense_jac:
             raise ValueError(
-                f"Analysis '{name}' requires a dense Jacobian fill callable, but the model does not provide one."
+                f"Observer '{name}' requires a dense Jacobian fill callable, but the model does not provide one."
             )
         if req.need_jacobian and not (has_jvp or has_dense_jac):
             raise ValueError(
-                f"Analysis '{name}' requires a model Jacobian, but the model does not provide one."
+                f"Observer '{name}' requires a model Jacobian, but the model does not provide one."
             )
         if adaptive is True and getattr(req, "fixed_step", False):
-            raise ValueError(f"Analysis '{name}' requires fixed-step execution")
+            raise ValueError(f"Observer '{name}' requires fixed-step execution")
         if req.requires_event_log:
             if has_event_logs is False:
-                raise ValueError(f"Analysis '{name}' requires event logging, but no event logs are configured.")
-        if getattr(analysis, "trace", None) is not None and analysis.needs_trace:
-            if analysis.trace.plan is None:
-                raise ValueError(f"Analysis '{name}' requires a TracePlan when trace width > 0.")
-            if analysis.trace.record_interval() <= 0:
-                raise ValueError(f"Analysis '{name}' trace stride must be positive.")
+                raise ValueError(f"Observer '{name}' requires event logging, but no event logs are configured.")
+        if getattr(observer, "trace", None) is not None and observer.needs_trace:
+            if observer.trace.plan is None:
+                raise ValueError(f"Observer '{name}' requires a TracePlan when trace width > 0.")
+            if observer.trace.record_interval() <= 0:
+                raise ValueError(f"Observer '{name}' trace stride must be positive.")
             if adaptive:
-                raise ValueError(f"Analysis '{name}' traces require fixed-step execution.")
+                raise ValueError(f"Observer '{name}' traces require fixed-step execution.")
 
 
 # ------------------------------- misc helpers ---------------------------------

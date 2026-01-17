@@ -5,7 +5,7 @@ Variational stepping tests for Lyapunov analyses.
 Coverage:
 - All steppers advertising variational_stepping run Lyapunov MLE and spectrum with consistent runtime metadata.
 - Steppers without variational_stepping raise with a clear, supported-stepper list (no silent fallback).
-- Runner helpers and CombinedAnalysis preserve variational_in_step requirements.
+- Runner helpers and CombinedObserver preserve variational_in_step requirements.
 - Deterministic linear system stays accurate under a variational-capable stepper.
 """
 
@@ -13,8 +13,11 @@ import pytest
 import numpy as np
 
 from dynlib import setup
-from dynlib.analysis.runtime import lyapunov_mle, lyapunov_spectrum
-from dynlib.analysis import CombinedAnalysis
+from dynlib.runtime.observers import (
+    CombinedObserver,
+    lyapunov_mle_observer,
+    lyapunov_spectrum_observer,
+)
 from dynlib.steppers.registry import list_steppers, get_stepper
 
 # Variational mode constants (matching lyapunov.py)
@@ -41,7 +44,7 @@ def test_unsupported_stepper_raises_and_lists_supported():
     sim = setup("builtin://ode/vanderpol", stepper=bad, jit=True, disk_cache=False)
 
     with pytest.raises(ValueError) as excinfo:
-        lyapunov_mle(model=sim.model, record_interval=10)
+        lyapunov_mle_observer(model=sim.model, record_interval=10)
 
     msg = str(excinfo.value).lower()
     assert "selected stepper does not support variational stepping" in msg
@@ -52,12 +55,12 @@ def test_unsupported_stepper_raises_and_lists_supported():
 @pytest.mark.parametrize("stepper", _partition_steppers_by_variational_capability()[0])
 def test_mle_variational_supported_stepper_runtime_verified(stepper):
     sim = setup("builtin://ode/vanderpol", stepper=stepper, jit=True, disk_cache=False)
-    mod = lyapunov_mle(model=sim.model, record_interval=10)
+    mod = lyapunov_mle_observer(model=sim.model, record_interval=10)
 
     sim.assign(x=2.0, y=0.0, mu=1.0)
-    sim.run(T=10.0, dt=0.01, record_interval=20, analysis=mod)
+    sim.run(T=10.0, dt=0.01, record_interval=20, observers=mod)
 
-    lyap = sim.results().analysis["lyapunov_mle"]
+    lyap = sim.results().observers["lyapunov_mle"]
     assert lyap.steps > 0
     assert np.isfinite(lyap.mle)
 
@@ -70,12 +73,12 @@ def test_mle_variational_supported_stepper_runtime_verified(stepper):
 @pytest.mark.parametrize("stepper", _partition_steppers_by_variational_capability()[0])
 def test_spectrum_variational_supported_stepper_runtime_verified(stepper):
     sim = setup("builtin://ode/vanderpol", stepper=stepper, jit=True, disk_cache=False)
-    mod = lyapunov_spectrum(model=sim.model, k=2, record_interval=10)
+    mod = lyapunov_spectrum_observer(model=sim.model, k=2, record_interval=10)
 
     sim.assign(x=2.0, y=0.0, mu=1.0)
-    sim.run(T=10.0, dt=0.01, record_interval=20, analysis=mod)
+    sim.run(T=10.0, dt=0.01, record_interval=20, observers=mod)
 
-    spectrum = sim.results().analysis["lyapunov_spectrum"]
+    spectrum = sim.results().observers["lyapunov_spectrum"]
     assert spectrum.steps > 0
     exponents = [spectrum.lyap0, spectrum.lyap1]
     assert all(np.isfinite(exponents))
@@ -93,7 +96,7 @@ def test_runner_variational_step_matches_requirement():
     stepper = supported[0]
 
     sim = setup("builtin://ode/vanderpol", stepper=stepper, jit=True, disk_cache=False)
-    mod = lyapunov_mle(model=sim.model)
+    mod = lyapunov_mle_observer(model=sim.model)
 
     runner_step = mod.runner_variational_step(jit=False)
     if mod.requirements.variational_in_step:
@@ -109,12 +112,12 @@ def test_jit_disabled_respects_strategy():
     stepper = supported[0]
 
     sim = setup("builtin://ode/vanderpol", stepper=stepper, jit=False, disk_cache=False)
-    mod = lyapunov_mle(model=sim.model, record_interval=5)
+    mod = lyapunov_mle_observer(model=sim.model, record_interval=5)
 
     sim.assign(x=1.5, y=0.5, mu=0.8)
-    sim.run(T=8.0, dt=0.01, record_interval=10, analysis=mod)
+    sim.run(T=8.0, dt=0.01, record_interval=10, observers=mod)
 
-    lyap = sim.results().analysis["lyapunov_mle"]
+    lyap = sim.results().observers["lyapunov_mle"]
     assert np.isfinite(lyap.mle)
     if mod.requirements.variational_in_step:
         assert int(lyap.variational_mode) == MODE_COMBINED
@@ -123,7 +126,7 @@ def test_jit_disabled_respects_strategy():
 
 
 def test_combined_analysis_preserves_variational_requirement():
-    from dynlib.analysis.runtime.core import AnalysisModule, AnalysisRequirements, AnalysisHooks
+    from dynlib.runtime.observers import ObserverModule, ObserverRequirements, ObserverHooks
 
     supported, _ = _partition_steppers_by_variational_capability()
     if not supported:
@@ -131,11 +134,12 @@ def test_combined_analysis_preserves_variational_requirement():
     stepper = supported[0]
 
     sim = setup("builtin://ode/vanderpol", stepper=stepper, jit=True, disk_cache=False)
-    lyap_module = lyapunov_mle(model=sim.model, record_interval=10)
+    lyap_module = lyapunov_mle_observer(model=sim.model, record_interval=10)
 
-    noop_module = AnalysisModule(
+    noop_module = ObserverModule(
+        key="noop",
         name="noop",
-        requirements=AnalysisRequirements(
+        requirements=ObserverRequirements(
             fixed_step=False,
             need_jvp=False,
             mutates_state=False,
@@ -144,18 +148,18 @@ def test_combined_analysis_preserves_variational_requirement():
         workspace_size=0,
         output_size=1,
         output_names=("dummy",),
-        hooks=AnalysisHooks(),
+        hooks=ObserverHooks(),
         analysis_kind=1,
     )
 
-    combined = CombinedAnalysis([lyap_module, noop_module])
+    combined = CombinedObserver([lyap_module, noop_module])
     assert combined.requirements.variational_in_step == lyap_module.requirements.variational_in_step
     assert combined.requirements.need_jvp
 
     sim.assign(x=2.0, y=0.0, mu=1.0)
-    sim.run(T=12.0, dt=0.01, record_interval=15, analysis=combined)
+    sim.run(T=12.0, dt=0.01, record_interval=15, observers=combined)
 
-    lyap = sim.results().analysis["lyapunov_mle"]
+    lyap = sim.results().observers["lyapunov_mle"]
     if lyap_module.requirements.variational_in_step:
         assert int(lyap.variational_mode) == MODE_COMBINED
     else:
@@ -190,12 +194,12 @@ expr = [
 """
 
     sim = setup(linear_model_spec, stepper=stepper, jit=True, disk_cache=False)
-    spectrum_module = lyapunov_spectrum(model=sim.model, k=2, record_interval=5)
+    spectrum_module = lyapunov_spectrum_observer(model=sim.model, k=2, record_interval=5)
 
     sim.assign(x=1.0, y=1.0)
-    sim.run(T=40.0, dt=0.1, record_interval=50, analysis=spectrum_module)
+    sim.run(T=40.0, dt=0.1, record_interval=50, observers=spectrum_module)
 
-    spectrum = sim.results().analysis["lyapunov_spectrum"]
+    spectrum = sim.results().observers["lyapunov_spectrum"]
     assert int(spectrum.variational_mode) in (MODE_COMBINED, MODE_TANGENT_ONLY)
 
     expected_set = {0.2, -0.5}
@@ -210,32 +214,34 @@ expr = [
 
 
 def test_combined_analysis_rejects_mutating_child():
-    from dynlib.analysis.runtime.core import AnalysisModule, AnalysisRequirements, AnalysisHooks
+    from dynlib.runtime.observers import ObserverModule, ObserverRequirements, ObserverHooks
 
-    mutating = AnalysisModule(
+    mutating = ObserverModule(
+        key="mutator",
         name="mutator",
-        requirements=AnalysisRequirements(mutates_state=True),
+        requirements=ObserverRequirements(mutates_state=True),
         workspace_size=0,
         output_size=0,
-        hooks=AnalysisHooks(),
+        hooks=ObserverHooks(),
         analysis_kind=1,
     )
     with pytest.raises(ValueError) as excinfo:
-        CombinedAnalysis([mutating])
+        CombinedObserver([mutating])
     assert "mutate state" in str(excinfo.value).lower()
 
 
 def test_combined_analysis_rejects_multiple_variational_runner_children():
-    from dynlib.analysis.runtime.core import AnalysisModule, AnalysisRequirements, AnalysisHooks
+    from dynlib.runtime.observers import ObserverModule, ObserverRequirements, ObserverHooks
 
-    class VarAnalysis(AnalysisModule):
+    class VarAnalysis(ObserverModule):
         def __init__(self, name: str):
             super().__init__(
+                key=name,
                 name=name,
-                requirements=AnalysisRequirements(variational_in_step=True),
+                requirements=ObserverRequirements(variational_in_step=True),
                 workspace_size=0,
                 output_size=0,
-                hooks=AnalysisHooks(),
+                hooks=ObserverHooks(),
                 analysis_kind=1,
             )
 
@@ -246,7 +252,7 @@ def test_combined_analysis_rejects_multiple_variational_runner_children():
     a2 = VarAnalysis("var2")
 
     with pytest.raises(ValueError) as excinfo:
-        CombinedAnalysis([a1, a2])
+        CombinedObserver([a1, a2])
 
     msg = str(excinfo.value)
     assert "runner-level variational stepping" in msg

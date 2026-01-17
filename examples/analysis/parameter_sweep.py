@@ -24,7 +24,7 @@ sim = setup(DSL,
             disk_cache=False)
 
 values = np.arange(-5.0, -1.0, 1.0)
-res=sweep.traj(sim, param="a", record_vars=["x"], values=values, T=5)
+res=sweep.traj_sweep(sim, param="a", record_vars=["x"], values=values, T=5)
 
 # Plot all trajectories at once (stacked access)
 series.multi(x=res.t, y=res["x"], legend=False)

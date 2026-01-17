@@ -461,7 +461,7 @@ def _warmup_jit_runner(
     are called by the runner, ensuring everything is warmed up.
     """
     from dynlib.runtime.buffers import allocate_pools
-    from dynlib.analysis.runtime import analysis_noop_variational_step
+    from dynlib.runtime.observers import observer_noop_variational_step
     
     dtype_np = np.dtype(dtype)
     n_state = len(spec.states)
@@ -524,7 +524,7 @@ def _warmup_jit_runner(
     analysis_trace_cap = np.int64(0)
     analysis_trace_stride = np.int64(0)
     variational_step_enabled = np.int32(0)
-    variational_step_fn = analysis_noop_variational_step()
+    variational_step_fn = observer_noop_variational_step()
     
     user_break_flag = np.zeros((1,), dtype=np.int32)
     status_out = np.zeros((1,), dtype=np.int32)

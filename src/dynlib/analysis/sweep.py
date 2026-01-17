@@ -519,7 +519,7 @@ def _init_sweep_mle_worker(init_config: dict) -> None:
     global _sweep_worker_sim, _sweep_worker_config, _sweep_worker_analysis
     _sweep_worker_sim = _build_worker_sim(init_config)
     _sweep_worker_config = init_config
-    from dynlib.analysis.runtime import lyapunov_mle as lyapunov_mle_module
+    from dynlib.runtime.observers import lyapunov_mle_observer as lyapunov_mle_module
 
     _sweep_worker_analysis = lyapunov_mle_module(
         model=_sweep_worker_sim.model,
@@ -579,7 +579,7 @@ def _sweep_mle_chunk_worker(args: tuple[np.ndarray, int]):
             params=params_stack,
             parallel_mode="none",
             max_workers=1,
-            analysis=analysis,
+            observers=analysis,
         )
         if views is None:
             use_fastpath = False
@@ -595,7 +595,7 @@ def _sweep_mle_chunk_worker(args: tuple[np.ndarray, int]):
                 record=False,
                 transient=transient,
                 resume=False,
-                analysis=analysis,
+                observers=analysis,
             )
             if t0 is not None:
                 kwargs["t0"] = float(t0)
@@ -619,7 +619,7 @@ def _sweep_mle_chunk_worker(args: tuple[np.ndarray, int]):
     trace_list: list[np.ndarray] | None = [] if record_interval else None
 
     for i, res in enumerate(views):
-        lyap_result = res.analysis["lyapunov_mle"]
+        lyap_result = res.observers["lyapunov_mle"]
         mle_values[i] = float(lyap_result.mle)
         log_growth[i] = float(lyap_result.log_growth)
         steps_values[i] = float(lyap_result.steps)
@@ -633,7 +633,7 @@ def _init_sweep_spectrum_worker(init_config: dict) -> None:
     global _sweep_worker_sim, _sweep_worker_config, _sweep_worker_analysis
     _sweep_worker_sim = _build_worker_sim(init_config)
     _sweep_worker_config = init_config
-    from dynlib.analysis.runtime import lyapunov_spectrum as lyapunov_spectrum_module
+    from dynlib.runtime.observers import lyapunov_spectrum_observer as lyapunov_spectrum_module
 
     _sweep_worker_analysis = lyapunov_spectrum_module(
         model=_sweep_worker_sim.model,
@@ -696,7 +696,7 @@ def _sweep_spectrum_chunk_worker(args: tuple[np.ndarray, int]):
             params=params_stack,
             parallel_mode="none",
             max_workers=1,
-            analysis=analysis,
+            observers=analysis,
         )
         if views is None:
             use_fastpath = False
@@ -712,7 +712,7 @@ def _sweep_spectrum_chunk_worker(args: tuple[np.ndarray, int]):
                 record=False,
                 transient=transient,
                 resume=False,
-                analysis=analysis,
+                observers=analysis,
             )
             if t0 is not None:
                 kwargs["t0"] = float(t0)
@@ -735,7 +735,7 @@ def _sweep_spectrum_chunk_worker(args: tuple[np.ndarray, int]):
     steps_values = np.zeros(count, dtype=float)
 
     for i, res in enumerate(views):
-        lyap_result = res.analysis["lyapunov_spectrum"]
+        lyap_result = res.observers["lyapunov_spectrum"]
         out = lyap_result["out"]
         if out is None or out.size < k_use + 2:
             raise RuntimeError("Lyapunov spectrum analysis output missing or incomplete.")
@@ -876,7 +876,7 @@ def _run_one(
     return sim.results()
 
 
-def scalar(
+def scalar_sweep(
     sim: Sim,
     *,
     param: str,
@@ -922,7 +922,7 @@ def scalar(
     
     Example:
         >>> # Bifurcation diagram: equilibrium vs parameter
-        >>> res = sweep.scalar(sim, param="r", values=np.linspace(2.5, 4.0, 100),
+        >>> res = sweep.scalar_sweep(sim, param="r", values=np.linspace(2.5, 4.0, 100),
         ...                    var="x", mode="final", N=1000, transient=500)
         >>> plot.curve(res.values, res.y, xlabel="r", ylabel="x*")
     """
@@ -1013,7 +1013,7 @@ def scalar(
     )
 
 
-def traj(
+def traj_sweep(
     sim: Sim,
     *,
     param: str,
@@ -1060,7 +1060,7 @@ def traj(
     
     Example:
         >>> # Phase portraits across parameter values
-        >>> res = sweep.traj(sim, param="r", values=[2.5, 3.0, 3.5, 4.0],
+        >>> res = sweep.traj_sweep(sim, param="r", values=[2.5, 3.0, 3.5, 4.0],
         ...                  record_vars=["x", "y"], T=50, transient=10)
         >>> for i, r_val in enumerate(res.values):
         ...     plot.phase2d(res.data[i][:, 0], res.data[i][:, 1],
@@ -1250,7 +1250,7 @@ def traj(
     )
 
 
-def lyapunov_mle(
+def lyapunov_mle_sweep(
     sim: Sim,
     *,
     param: str,
@@ -1296,12 +1296,12 @@ def lyapunov_mle(
     Example:
         >>> # Characterize chaos onset in logistic map
         >>> r_vals = np.linspace(3.0, 4.0, 100)
-        >>> res = sweep.lyapunov_mle(sim, param="r", values=r_vals, 
+        >>> res = sweep.lyapunov_mle_sweep(sim, param="r", values=r_vals, 
         ...                          N=5000, transient=1000, record_interval=10)
         >>> series.plot(x=res.values, y=res.mle, xlabel="r", ylabel="λ")
         >>> # λ transitions from negative (stable) to positive (chaotic)
     """
-    from dynlib.analysis.runtime import lyapunov_mle as lyapunov_mle_module
+    from dynlib.runtime.observers import lyapunov_mle_observer as lyapunov_mle_module
     
     vals = np.asarray(values, dtype=float)
     M = vals.size
@@ -1310,7 +1310,7 @@ def lyapunov_mle(
     base_states = sim.state_vector(source="session", copy=True)
     base_params = sim.param_vector(source="session", copy=True)
 
-    # Build analysis module for Lyapunov MLE
+    # Build observer module for Lyapunov MLE
     analysis = lyapunov_mle_module(
         model=sim.model,
         record_interval=record_interval,
@@ -1435,7 +1435,7 @@ def lyapunov_mle(
         params=params_stack,
         parallel_mode=effective_parallel_mode,  # type: ignore[arg-type]
         max_workers=max_workers,
-        analysis=analysis,
+        observers=analysis,
     )
 
     run_iter: Iterable[ResultsView]
@@ -1454,7 +1454,7 @@ def lyapunov_mle(
                     record=False,
                     transient=transient,
                     resume=False,
-                    analysis=analysis,
+                    observers=analysis,
                 )
                 if t0 is not None:
                     kwargs["t0"] = float(t0)
@@ -1474,9 +1474,9 @@ def lyapunov_mle(
         
         run_iter = _sequential_runs()
 
-    # Extract analysis results from each run
+    # Extract observer results from each run
     for i, res in enumerate(run_iter):
-        lyap_result = res.analysis["lyapunov_mle"]
+        lyap_result = res.observers["lyapunov_mle"]
         mle_values[i] = float(lyap_result.mle)
         log_growth_list.append(float(lyap_result.log_growth))
         steps_values[i] = float(lyap_result.steps)
@@ -1517,7 +1517,7 @@ def lyapunov_mle(
     )
 
 
-def lyapunov_spectrum(
+def lyapunov_spectrum_sweep(
     sim: Sim,
     *,
     param: str,
@@ -1566,13 +1566,13 @@ def lyapunov_spectrum(
 
     Example:
         >>> r_vals = np.linspace(3.0, 4.0, 50)
-        >>> res = sweep.lyapunov_spectrum(sim, param="r", values=r_vals,
+        >>> res = sweep.lyapunov_spectrum_sweep(sim, param="r", values=r_vals,
         ...                               k=2, N=5000, transient=1000,
         ...                               record_interval=10)
         >>> exponents = res.spectrum  # shape (M, k)
         >>> lam1 = res.lyap0  # final values for first exponent (M,)
     """
-    from dynlib.analysis.runtime import lyapunov_spectrum as lyapunov_spectrum_module
+    from dynlib.runtime.observers import lyapunov_spectrum_observer as lyapunov_spectrum_module
 
     vals = np.asarray(values, dtype=float)
     M = vals.size
@@ -1584,7 +1584,7 @@ def lyapunov_spectrum(
     base_states = sim.state_vector(source="session", copy=True)
     base_params = sim.param_vector(source="session", copy=True)
 
-    # Build analysis module for Lyapunov spectrum
+    # Build observer module for Lyapunov spectrum
     analysis = lyapunov_spectrum_module(
         model=sim.model,
         k=k_use,
@@ -1708,7 +1708,7 @@ def lyapunov_spectrum(
         params=params_stack,
         parallel_mode=effective_parallel_mode,  # type: ignore[arg-type]
         max_workers=max_workers,
-        analysis=analysis,
+        observers=analysis,
     )
 
     run_iter: Iterable[ResultsView]
@@ -1727,7 +1727,7 @@ def lyapunov_spectrum(
                     record=False,
                     transient=transient,
                     resume=False,
-                    analysis=analysis,
+                    observers=analysis,
                 )
                 if t0 is not None:
                     kwargs["t0"] = float(t0)
@@ -1747,9 +1747,9 @@ def lyapunov_spectrum(
         
         run_iter = _sequential_runs()
 
-    # Extract analysis results from each run
+    # Extract observer results from each run
     for i, res in enumerate(run_iter):
-        lyap_result = res.analysis["lyapunov_spectrum"]
+        lyap_result = res.observers["lyapunov_spectrum"]
         out = lyap_result["out"]
         if out is None or out.size < k_use + 2:
             raise RuntimeError("Lyapunov spectrum analysis output missing or incomplete.")

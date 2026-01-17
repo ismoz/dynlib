@@ -28,10 +28,10 @@ from dynlib.dsl.spec import ModelSpec
 
 if TYPE_CHECKING:
     from .sim import Segment
-    from dynlib.analysis.runtime import AnalysisModule
+    from dynlib.runtime.observers import ObserverModule
 
 __all__ = [
-    "AnalysisResult",
+    "ObserverResult",
     "ResultsView",
 ]
 
@@ -50,10 +50,10 @@ def _friendly_key_error(kind: str, name: str, options: Iterable[str]) -> KeyErro
     return KeyError(f"Unknown {kind} '{name}'. Available: {opts}")
 
 
-# ------------------------------ analysis results -----------------------------
+# ------------------------------ observer results ----------------------------
 
-class AnalysisResult(Mapping[str, object]):
-    """Smart wrapper for runtime analysis results with named access.
+class ObserverResult(Mapping[str, object]):
+    """Smart wrapper for runtime observer results with named access.
     
     Provides both Mapping interface (backward compat) and attribute access (ergonomic).
     Automatically exposes output_names and trace_names as attributes/keys.
@@ -62,7 +62,7 @@ class AnalysisResult(Mapping[str, object]):
     Named access: Any name from output_names or trace_names
     
     Examples:
-        >>> lyap = result_view.analysis["lyapunov_mle"]
+        >>> lyap = result_view.observers["lyapunov_mle"]
         >>> # Mapping interface (backward compat)
         >>> lyap["out"][0]  # raw access
         >>> lyap["trace"][:, 0]
@@ -142,7 +142,7 @@ class AnalysisResult(Mapping[str, object]):
         if key in self._trace_idx:
             if self._trace is None or self._trace.size == 0:
                 raise KeyError(
-                    f"Trace '{key}' not recorded for analysis '{self._name}'. "
+                    f"Trace '{key}' not recorded for observer '{self._name}'. "
                     "Enable recording with record_interval or trace_plan."
                 )
             return self._trace[:, self._trace_idx[key]]
@@ -196,7 +196,7 @@ class AnalysisResult(Mapping[str, object]):
         if name in self._trace_idx:
             if self._trace is None or self._trace.size == 0:
                 raise AttributeError(
-                    f"Trace '{name}' not recorded for analysis '{self._name}'. "
+                    f"Trace '{name}' not recorded for observer '{self._name}'. "
                     "Enable recording with record_interval or trace_plan."
                 )
             col = self._trace[:, self._trace_idx[name]]
@@ -216,7 +216,7 @@ class AnalysisResult(Mapping[str, object]):
         # Not found
         available = list(self._output_names) + list(self._trace_names)
         raise AttributeError(
-            f"Analysis '{self._name}' has no attribute '{name}'. "
+            f"Observer '{self._name}' has no attribute '{name}'. "
             f"Available: {available}"
         )
     
@@ -235,7 +235,7 @@ class AnalysisResult(Mapping[str, object]):
     
     @property
     def name(self) -> str:
-        """Analysis module name."""
+        """Observer name."""
         return self._name
     
     @property
@@ -281,7 +281,7 @@ class AnalysisResult(Mapping[str, object]):
     def __repr__(self) -> str:
         out_info = f"{len(self._output_names)} outputs" if self._output_names else "no outputs"
         trace_info = f"{len(self._trace_names)} traces" if self._trace_names else "no traces"
-        return f"<AnalysisResult '{self._name}': {out_info}, {trace_info}>"
+        return f"<ObserverResult '{self._name}': {out_info}, {trace_info}>"
 
 
 # ------------------------------ main wrapper ---------------------------------
@@ -412,20 +412,20 @@ class ResultsView:
     def m(self) -> int:
         return int(self._raw.m)
 
-    # ---- runtime analysis (during-run diagnostics) ----
+    # ---- runtime observers (during-run diagnostics) ----
     @property
-    def analysis(self) -> Dict[str, AnalysisResult]:
+    def observers(self) -> Dict[str, ObserverResult]:
         """
-        Runtime analysis outputs keyed by analysis module name.
+        Runtime observer outputs keyed by observer key.
 
-        Each result is an :class:`AnalysisResult` providing:
+        Each result is an :class:`ObserverResult` providing:
         
         - Mapping interface (backward compat): ``result["out"]``, ``result["trace"]``
         - Named access (ergonomic): ``result.log_growth``, ``result.steps``, ``result.mle``
         - Discovery: ``result.output_names``, ``result.trace_names``, ``list(result)``
         
         Examples:
-            >>> lyap = res.analysis["lyapunov_mle"]
+            >>> lyap = res.observers["lyapunov_mle"]
             >>> # Named access (auto-discovered from output_names)
             >>> lyap.log_growth  # instead of lyap["out"][0]
             >>> lyap.steps       # instead of lyap["out"][1]
@@ -436,7 +436,7 @@ class ResultsView:
             >>> lyap.output_names  # ('log_growth', 'steps')
             >>> list(lyap)  # all available keys
         """
-        modules: Tuple["AnalysisModule", ...] | None = getattr(self._raw, "analysis_modules", None)  # type: ignore[attr-defined]
+        modules: Tuple["ObserverModule", ...] | None = getattr(self._raw, "analysis_modules", None)  # type: ignore[attr-defined]
         if not modules:
             return {}
         out_attr = getattr(self._raw, "analysis_out_view", None)
@@ -445,7 +445,7 @@ class ResultsView:
         trace = trace_attr() if callable(trace_attr) else trace_attr
         stride = getattr(self._raw, "analysis_trace_stride", None)
         trace_start_offset = getattr(self._raw, "analysis_trace_offset", None)
-        result: Dict[str, AnalysisResult] = {}
+        result: Dict[str, ObserverResult] = {}
         out_offset = 0
         trace_col_offset = 0
         for mod in modules:
@@ -476,8 +476,8 @@ class ResultsView:
                             t0 = t_vals[0] - dt * float(step_vals[0])
                             trace_time = t0 + dt * trace_steps
 
-            # Wrap in AnalysisResult for ergonomic access
-            result[mod.name] = AnalysisResult(
+            # Wrap in ObserverResult for ergonomic access
+            result[mod.key] = ObserverResult(
                 name=mod.name,
                 out=out_slice,
                 trace=trace_slice,
@@ -494,9 +494,9 @@ class ResultsView:
         return result
 
     @property
-    def analysis_metadata(self) -> Mapping[str, object] | None:
-        """Return analysis metadata attached to the raw results."""
-        raw_meta = getattr(self._raw, "analysis_metadata", None)
+    def observer_metadata(self) -> Mapping[str, object] | None:
+        """Return observer metadata attached to the raw results."""
+        raw_meta = getattr(self._raw, "observer_metadata", None)
         if callable(raw_meta):
             return raw_meta()
         return getattr(self._raw, "analysis_meta", None)

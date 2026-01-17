@@ -11,7 +11,7 @@ Key design principles:
 1. Hooks are injected as globals (ANALYSIS_PRE, ANALYSIS_POST) not as arguments
 2. Runner variants are cached per (model_hash, stepper, analysis_signature)
 3. Base runner (no analysis) has zero analysis overhead - no branching
-4. CombinedAnalysis generates explicit sequential calls, not loops over containers
+4. CombinedObserver generates explicit sequential calls, not loops over containers
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ from dynlib.errors import JITUnavailableError
 from dynlib.compiler.codegen import runner_cache
 
 if TYPE_CHECKING:
-    from dynlib.analysis.runtime import AnalysisModule, AnalysisHooks
+    from dynlib.runtime.observers import ObserverModule, ObserverHooks
 
 __all__ = [
     "RunnerVariant",
@@ -51,7 +51,7 @@ _SOFTDEPS = softdeps()
 _NUMBA_AVAILABLE = _SOFTDEPS.numba
 
 
-def analysis_signature_hash(analysis: Optional["AnalysisModule"], dtype: np.dtype) -> str:
+def analysis_signature_hash(analysis: Optional["ObserverModule"], dtype: np.dtype) -> str:
     """
     Compute a stable hash for an analysis configuration.
     
@@ -2332,7 +2332,7 @@ def _get_base_runner_discrete(jit: bool) -> Callable:
 # -----------------------------------------------------------------------------
 
 def compile_analysis_hooks(
-    analysis: "AnalysisModule",
+    analysis: "ObserverModule",
     *,
     jit: bool,
     dtype: np.dtype,
@@ -2345,7 +2345,7 @@ def compile_analysis_hooks(
     
     Parameters
     ----------
-    analysis : AnalysisModule
+    analysis : ObserverModule
         The analysis module with hooks
     jit : bool
         Whether to JIT-compile the hooks
@@ -2394,7 +2394,7 @@ def get_runner(
     *,
     model_hash: str,
     stepper_name: str,
-    analysis: Optional["AnalysisModule"],
+    analysis: Optional["ObserverModule"],
     dtype: np.dtype,
     jit: bool,
     discrete: bool,
@@ -2477,7 +2477,7 @@ def get_runner_variant(
     *,
     model_hash: str,
     stepper_name: str,
-    analysis: Optional["AnalysisModule"],
+    analysis: Optional["ObserverModule"],
     dtype: np.dtype,
     jit: bool,
 ) -> Callable:
@@ -2498,7 +2498,7 @@ def get_runner_variant_discrete(
     *,
     model_hash: str,
     stepper_name: str,
-    analysis: Optional["AnalysisModule"],
+    analysis: Optional["ObserverModule"],
     dtype: np.dtype,
     jit: bool,
 ) -> Callable:

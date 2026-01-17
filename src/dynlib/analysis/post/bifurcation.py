@@ -2,7 +2,7 @@
 """Bifurcation post-processing utilities.
 
 This module intentionally separates:
-- Runtime: generating trajectories via ``dynlib.analysis.post.sweep.traj``
+- Runtime: generating trajectories via ``dynlib.analysis.sweep.traj_sweep``
 - Post-processing: extracting bifurcation scatter points from the trajectories
 """
 
@@ -228,7 +228,7 @@ class BifurcationExtractor:
             BifurcationResult with all recorded points
             
         Example:
-            >>> res = sweep.traj(sim, param="r", values=r_values, record_vars=["x"], N=500)
+            >>> res = sweep.traj_sweep(sim, param="r", values=r_values, record_vars=["x"], N=500)
             >>> bif = res.bifurcation("x").all()  # Use all 500 points per parameter
         """
         p_parts: list[np.ndarray] = []

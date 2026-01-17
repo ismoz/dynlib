@@ -22,7 +22,7 @@ r_values = np.linspace(2.8, 4.0, 1500)
 print("Computing bifurcation diagrams in different modes...")
 
 # Runtime sweep (do once)
-sweep_result = sweep.traj(
+sweep_result = sweep.traj_sweep(
     sim,
     param="r",
     values=r_values,

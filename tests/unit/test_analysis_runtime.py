@@ -5,12 +5,13 @@ import tomllib
 from dynlib.compiler.build import build, FullModel
 from dynlib.dsl.parser import parse_model_v2
 from dynlib.dsl.spec import build_spec
-from dynlib.analysis.runtime import (
-    AnalysisHooks,
-    AnalysisModule,
-    AnalysisRequirements,
+from dynlib.runtime.observers import (
+    ObserverHooks,
+    ObserverModule,
+    ObserverRequirements,
     TraceSpec,
-    lyapunov_mle,
+    lyapunov_mle_observer,
+    mark_observer_factory,
 )
 from dynlib.runtime.fastpath import FixedStridePlan, FixedTracePlan
 from dynlib.runtime.fastpath.capability import assess_capability
@@ -62,10 +63,11 @@ def _counter_analysis():
             else:
                 trace_count[0] = trace_cap + 1
 
-    hooks = AnalysisHooks(post_step=_post)
-    return AnalysisModule(
+    hooks = ObserverHooks(post_step=_post)
+    return ObserverModule(
+        key="counter",
         name="counter",
-        requirements=AnalysisRequirements(fixed_step=True),
+        requirements=ObserverRequirements(fixed_step=True),
         workspace_size=0,
         output_size=1,
         trace=TraceSpec(width=1, plan=plan),
@@ -89,18 +91,19 @@ def _increment_factory(name: str):
 
     def _factory(model=None, record_interval=None):
         plan = FixedTracePlan(stride=int(record_interval) if record_interval is not None else 1)
-        return AnalysisModule(
+        return ObserverModule(
+            key=name,
             name=name,
-            requirements=AnalysisRequirements(fixed_step=True),
+            requirements=ObserverRequirements(fixed_step=True),
             workspace_size=0,
             output_size=1,
             output_names=(f"{name}_out",),
             trace=TraceSpec(width=1, plan=plan),
             trace_names=(f"{name}_trace",),
-            hooks=AnalysisHooks(post_step=_post),
+            hooks=ObserverHooks(post_step=_post),
         )
 
-    return _factory
+    return mark_observer_factory(_factory)
 
 
 def _tracking_analysis(call_log: list[float]):
@@ -110,13 +113,14 @@ def _tracking_analysis(call_log: list[float]):
     ):
         call_log.append(float(t))
 
-    return AnalysisModule(
+    return ObserverModule(
+        key="tracker",
         name="tracker",
-        requirements=AnalysisRequirements(fixed_step=True),
+        requirements=ObserverRequirements(fixed_step=True),
         workspace_size=0,
         output_size=0,
         trace=None,
-        hooks=AnalysisHooks(post_step=_post),
+        hooks=ObserverHooks(post_step=_post),
     )
 
 
@@ -178,13 +182,13 @@ def test_wrapper_analysis_survives_reentry():
         params=params,
         cap_rec=1,  # force GROW_REC re-entry
         cap_evt=1,
-        analysis=analysis,
+        observers=analysis,
         model_hash="test-model",
         stepper_name="euler",
     )
 
     assert res.ok
-    counters = res.analysis.get("counter")
+    counters = res.observers.get("counter")
     assert counters is not None
     assert counters["out"] is not None
     assert counters["out"][0] == res.step_count_final
@@ -208,11 +212,11 @@ def test_sim_run_preserves_analysis():
         max_steps=5,
         cap_rec=8,
         cap_evt=1,
-        analysis=analysis,
+        observers=analysis,
     )
 
     raw = sim.raw_results()
-    obs = sim.results().analysis
+    obs = sim.results().observers
     assert "counter" in obs
     counter = obs["counter"]
     assert counter["out"] is not None
@@ -235,18 +239,21 @@ def test_sim_resolves_analysis_sequence_factories():
         max_steps=5,
         cap_rec=8,
         cap_evt=1,
-        analysis=[_increment_factory("a"), _increment_factory("b")],
+        observers=[
+            _increment_factory("a")(model=model, record_interval=2),
+            _increment_factory("b")(model=model, record_interval=2),
+        ],
     )
 
     raw = sim.raw_results()
-    obs = sim.results().analysis
+    obs = sim.results().observers
     assert set(obs.keys()) == {"a", "b"}
-    assert obs["a"].out is not None and obs["b"].out is not None
-    assert obs["a"].out[0] == pytest.approx(raw.step_count_final)
-    assert obs["b"].out[0] == pytest.approx(raw.step_count_final)
-    assert obs["a"].stride == 2
-    assert obs["b"].trace is not None and obs["a"].trace is not None
-    assert obs["a"].trace.shape == obs["b"].trace.shape
+    assert obs["a"]["out"] is not None and obs["b"]["out"] is not None
+    assert obs["a"]["out"][0] == pytest.approx(raw.step_count_final)
+    assert obs["b"]["out"][0] == pytest.approx(raw.step_count_final)
+    assert obs["a"]["stride"] == 2
+    assert obs["b"]["trace"] is not None and obs["a"]["trace"] is not None
+    assert obs["a"]["trace"].shape == obs["b"]["trace"].shape
 
 
 def test_combined_analysis_runs_with_jit():
@@ -261,18 +268,21 @@ def test_combined_analysis_runs_with_jit():
         max_steps=4,
         cap_rec=8,
         cap_evt=1,
-        analysis=[_increment_factory("a"), _increment_factory("b")],
+        observers=[
+            _increment_factory("a")(model=model, record_interval=1),
+            _increment_factory("b")(model=model, record_interval=1),
+        ],
     )
 
     raw = sim.raw_results()
-    obs = sim.results().analysis
-    assert obs["a"].out is not None and obs["b"].out is not None
-    assert obs["a"].out[0] == pytest.approx(raw.step_count_final)
-    assert obs["b"].out[0] == pytest.approx(raw.step_count_final)
-    assert obs["a"].trace is not None and obs["b"].trace is not None
-    assert obs["a"].trace.shape[1] == 1 and obs["b"].trace.shape[1] == 1
-    assert obs["a"].trace.shape[0] >= raw.step_count_final
-    assert obs["a"].trace.shape == obs["b"].trace.shape
+    obs = sim.results().observers
+    assert obs["a"]["out"] is not None and obs["b"]["out"] is not None
+    assert obs["a"]["out"][0] == pytest.approx(raw.step_count_final)
+    assert obs["b"]["out"][0] == pytest.approx(raw.step_count_final)
+    assert obs["a"]["trace"] is not None and obs["b"]["trace"] is not None
+    assert obs["a"]["trace"].shape[1] == 1 and obs["b"]["trace"].shape[1] == 1
+    assert obs["a"]["trace"].shape[0] >= raw.step_count_final
+    assert obs["a"]["trace"].shape == obs["b"]["trace"].shape
 
 def test_fastpath_gate_rejects_python_only_observer():
     toml_str = """
@@ -301,13 +311,14 @@ x = "-a * x"
     full_model = build(spec, stepper=spec.sim.stepper, jit=False)
     simple_sim = Sim(full_model)
 
-    analysis_module = AnalysisModule(
+    analysis_module = ObserverModule(
+        key="py-only",
         name="py-only",
-        requirements=AnalysisRequirements(fixed_step=True),
+        requirements=ObserverRequirements(fixed_step=True),
         workspace_size=0,
         output_size=0,
         trace=None,
-        hooks=AnalysisHooks(post_step=lambda *a, **k: None),
+        hooks=ObserverHooks(post_step=lambda *a, **k: None),
     )
     plan = FixedStridePlan(stride=1)
     support = assess_capability(
@@ -317,7 +328,7 @@ x = "-a * x"
         dt=0.1,
         transient=0.0,
         adaptive=False,
-        analysis=analysis_module,
+        observers=analysis_module,
     )
     if support.ok:
         assert support.reason is None
@@ -331,7 +342,7 @@ def test_transient_warmup_skips_analysis_hooks():
     calls: list[float] = []
     analysis = _tracking_analysis(calls)
 
-    sim.run(N=5, transient=3, analysis=analysis)
+    sim.run(N=5, transient=3, observers=analysis)
 
     assert len(calls) == 5
     assert min(calls) >= 3.0
@@ -342,7 +353,7 @@ def test_lyapunov_matches_wrapper_and_fastpath():
     assert model.jvp is not None
     sim = Sim(model)
 
-    analysis_mod = lyapunov_mle(
+    analysis_mod = lyapunov_mle_observer(
         jvp=model.jvp,
         n_state=1,
         trace_plan=FixedTracePlan(stride=1),
@@ -376,7 +387,7 @@ def test_lyapunov_matches_wrapper_and_fastpath():
         discrete=True,
         target_steps=5,
         make_stepper_workspace=model.make_stepper_workspace,
-        analysis=analysis_mod,
+        observers=analysis_mod,
         model_hash=model.spec_hash,
         stepper_name=model.stepper_name,
     )
@@ -394,14 +405,14 @@ def test_lyapunov_matches_wrapper_and_fastpath():
         max_steps=10,
         ic=np.array([1.0], dtype=model.dtype),
         params=np.array([2.0], dtype=model.dtype),
-        analysis=analysis_mod,
+        observers=analysis_mod,
     )
 
     assert fast_res_view is not None
     fast_res = fast_res_view._raw
 
-    mle_wrapper = wrapper_res.analysis["lyapunov_mle"]["out"][0] / wrapper_res.analysis["lyapunov_mle"]["out"][1]
-    mle_fast = fast_res_view.analysis["lyapunov_mle"]["out"][0] / fast_res_view.analysis["lyapunov_mle"]["out"][1]
+    mle_wrapper = wrapper_res.observers["lyapunov_mle"]["out"][0] / wrapper_res.observers["lyapunov_mle"]["out"][1]
+    mle_fast = fast_res_view.observers["lyapunov_mle"]["out"][0] / fast_res_view.observers["lyapunov_mle"]["out"][1]
     target = np.log(2.0)
     assert mle_wrapper == pytest.approx(target, rel=1e-6)
     assert mle_fast == pytest.approx(target, rel=1e-6)
@@ -413,7 +424,7 @@ def test_lyapunov_defaults_from_model_and_record_interval():
     model = _build_map_model(jit=False)
     sim = Sim(model)
     interval = 3
-    mod = lyapunov_mle(model=sim, record_interval=interval)
+    mod = lyapunov_mle_observer(model=sim, record_interval=interval)
 
     assert mod.trace_stride == interval
     assert mod.workspace_size == 2 * len(model.spec.states)
@@ -421,11 +432,11 @@ def test_lyapunov_defaults_from_model_and_record_interval():
 
 
 def test_lyapunov_requires_jvp_or_model():
-    factory = lyapunov_mle()
+    factory = lyapunov_mle_observer()
     assert callable(factory)
     model = _build_map_model(jit=False)
     mod = factory(model)
-    assert isinstance(mod, AnalysisModule)
+    assert isinstance(mod, ObserverModule)
 
 
 def test_sim_resolves_analysis_factory_and_passes_record_interval():
@@ -433,8 +444,8 @@ def test_sim_resolves_analysis_factory_and_passes_record_interval():
     sim = Sim(model)
     interval = 2
 
-    mod = sim._resolve_analysis(lyapunov_mle, record_interval=interval)
-    assert isinstance(mod, AnalysisModule)
+    mod = sim._resolve_observers(lyapunov_mle_observer, record_interval=interval)
+    assert isinstance(mod, ObserverModule)
     assert mod.trace_stride == interval
 
 
@@ -450,10 +461,10 @@ def test_sim_run_accepts_analysis_factory():
         cap_evt=1,
         ic=np.array([1.0], dtype=model.dtype),
         params=np.array([2.0], dtype=model.dtype),
-        analysis=lyapunov_mle,
+        observers=lyapunov_mle_observer,
     )
 
-    result = sim.results().analysis["lyapunov_mle"]
+    result = sim.results().observers["lyapunov_mle"]
     assert result.steps == 3
     # Backward compat: raw access still works
     assert result["out"][1] == 3
@@ -462,7 +473,7 @@ def test_sim_run_accepts_analysis_factory():
 def test_lyapunov_partial_with_record_interval():
     model = _build_map_model(jit=False)
     sim = Sim(model)
-    analysis_factory = lyapunov_mle(record_interval=2)
-    mod = sim._resolve_analysis(analysis_factory, record_interval=1)  # Sim-provided interval should be accepted
-    assert isinstance(mod, AnalysisModule)
+    analysis_factory = lyapunov_mle_observer(record_interval=2)
+    mod = sim._resolve_observers(analysis_factory, record_interval=1)  # Sim-provided interval should be accepted
+    assert isinstance(mod, ObserverModule)
     assert mod.trace_stride == 2  # respects user-provided stride

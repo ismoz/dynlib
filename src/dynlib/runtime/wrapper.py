@@ -11,7 +11,7 @@ from dynlib.runtime.buffers import (
     allocate_pools, grow_rec_arrays, grow_evt_arrays,
 )
 from dynlib.runtime.results import Results
-from dynlib.runtime.analysis_meta import build_analysis_metadata
+from dynlib.runtime.analysis_meta import build_observer_metadata
 from dynlib.runtime.workspace import (
     make_runtime_workspace,
     initialize_lag_runtime_workspace,
@@ -19,7 +19,7 @@ from dynlib.runtime.workspace import (
     restore_workspace,
 )
 from dynlib.runtime.initial_step import WRMSConfig, choose_initial_dt_wrms
-from dynlib.analysis.runtime import AnalysisModule, analysis_noop_variational_step
+from dynlib.runtime.observers import ObserverModule, observer_noop_variational_step
 from dynlib.compiler.codegen.runner_variants import RunnerVariant, get_runner
 
 __all__ = ["run_with_wrapper"]
@@ -70,7 +70,7 @@ def run_with_wrapper(
     lag_state_info: Tuple[Tuple[int, int, int, int], ...] | None = None,
     make_stepper_workspace: Callable[[], object] | None = None,
     wrms_cfg: WRMSConfig | None = None,
-    analysis: AnalysisModule | None = None,
+    observers: ObserverModule | None = None,
     adaptive: bool = False,
     model_hash: str | None = None,
     stepper_name: str | None = None,
@@ -107,9 +107,10 @@ def run_with_wrapper(
       - When ``discrete=True`` the runner horizon is interpreted as an iteration
         budget ``N`` (second argument). Otherwise it is ``t_end`` (continuous time).
       - state_rec_indices and aux_rec_indices control selective recording.
-      - analysis hooks are baked into runner variants; pre-step runs after pre-events
+      - observer hooks are baked into runner variants; pre-step runs after pre-events
         and post-step runs after commit + aux update.
     """
+    analysis = observers
     if discrete:
         if target_steps is None:
             raise ValueError("target_steps must be provided when discrete=True")
@@ -235,16 +236,16 @@ def run_with_wrapper(
         trace_width = analysis.trace.width if analysis.trace else 0
         if trace_width > 0:
             if analysis.trace is None:
-                raise ValueError("analysis trace requested but TracePlan is missing")
+                raise ValueError("observer trace requested but TracePlan is missing")
             if adaptive:
-                raise ValueError("analysis traces require fixed-step execution")
+                raise ValueError("observer traces require fixed-step execution")
             if discrete and steps_horizon is not None:
                 total_steps = int(steps_horizon)
             else:
                 total_steps = int(max_steps)
             trace_cap = int(analysis.trace.capacity(total_steps=total_steps))
             if trace_cap <= 0:
-                raise ValueError("TracePlan must provide positive capacity for runtime analysis")
+                raise ValueError("TracePlan must provide positive capacity for runtime observers")
             analysis_trace = np.zeros((trace_cap, trace_width), dtype=dtype)
             analysis_trace_cap = np.int64(trace_cap)
             analysis_trace_stride = np.int64(analysis.trace.record_interval())
@@ -254,7 +255,7 @@ def run_with_wrapper(
             analysis_trace_stride = np.int64(0)
         analysis_trace_count = np.zeros((1,), dtype=np.int64)
         variational_step_enabled = np.int32(0)
-        variational_step_fn = analysis_noop_variational_step()
+        variational_step_fn = observer_noop_variational_step()
         runner_var = getattr(analysis, "runner_variational_step", None)
         if callable(runner_var):
             var_fn = runner_var(jit=is_jit_runner)
@@ -270,7 +271,7 @@ def run_with_wrapper(
         analysis_trace_cap = np.int64(0)
         analysis_trace_stride = np.int64(0)
         variational_step_enabled = np.int32(0)
-        variational_step_fn = analysis_noop_variational_step()
+        variational_step_fn = observer_noop_variational_step()
     analysis_modules = tuple(getattr(analysis, "modules", (analysis,))) if analysis is not None else None
 
     def _analysis_meta(overflow: bool = False):
@@ -278,7 +279,7 @@ def run_with_wrapper(
             return None
         stride_payload = int(analysis_trace_stride) if int(analysis_trace_stride) > 0 else None
         cap_payload = int(analysis_trace_cap) if int(analysis_trace_cap) > 0 else None
-        return build_analysis_metadata(
+        return build_observer_metadata(
             analysis_modules,
             analysis_kind=analysis_kind,
             trace_stride=stride_payload,

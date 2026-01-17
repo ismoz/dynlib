@@ -3,7 +3,7 @@ import pytest
 from pathlib import Path
 
 from dynlib import Status, build
-from dynlib.analysis.runtime import AnalysisHooks, AnalysisModule, AnalysisRequirements
+from dynlib.runtime.observers import ObserverHooks, ObserverModule, ObserverRequirements
 from dynlib.errors import ModelLoadError
 from dynlib.runtime.sim import Sim
 
@@ -50,7 +50,7 @@ def _build_logistic_map(*, jit: bool = False):
     return build(str(base_model), jit=jit)
 
 
-def _analysis_stop_after(step_stop: int) -> AnalysisModule:
+def _analysis_stop_after(step_stop: int) -> ObserverModule:
     def _post(
         t,
         dt,
@@ -69,12 +69,13 @@ def _analysis_stop_after(step_stop: int) -> AnalysisModule:
         if step >= step_stop and runtime_ws.stop_flag.shape[0] > 0:
             runtime_ws.stop_flag[0] = 1
 
-    return AnalysisModule(
+    return ObserverModule(
+        key="analysis_stop",
         name="analysis_stop",
-        requirements=AnalysisRequirements(fixed_step=True),
+        requirements=ObserverRequirements(fixed_step=True),
         workspace_size=0,
         output_size=0,
-        hooks=AnalysisHooks(post_step=_post),
+        hooks=ObserverHooks(post_step=_post),
         stop_phase_mask=2,
     )
 
@@ -142,7 +143,7 @@ def test_analysis_stop_early_exit_wrapper():
     sim = Sim(model)
     analysis = _analysis_stop_after(3)
 
-    sim.run(N=50, analysis=analysis)
+    sim.run(N=50, observers=analysis)
     raw = sim.raw_results()
 
     assert raw.ok is True
@@ -157,7 +158,7 @@ def test_analysis_stop_early_exit_fastpath():
     sim = Sim(model)
     analysis = _analysis_stop_after(3)
 
-    res = sim.fastpath(N=50, analysis=analysis)
+    res = sim.fastpath(N=50, observers=analysis)
 
     assert res.ok is True
     assert res.exited_early is True

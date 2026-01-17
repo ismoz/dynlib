@@ -7,7 +7,7 @@ and Lyapunov spectrum in continuous dynamical systems using the high-level Sim.r
 
 from __future__ import annotations
 from dynlib import setup
-from dynlib.analysis.runtime import lyapunov_mle, lyapunov_spectrum
+from dynlib.runtime.observers import lyapunov_mle_observer, lyapunov_spectrum_observer
 from dynlib.plot import fig, export, phase, series
 
 # 1. Setup simulation
@@ -35,10 +35,10 @@ sim.run(
     T=total_time,
     dt=dt,
     record_interval=record_interval,
-    analysis=lyapunov_mle(record_interval=record_interval)
+    observers=lyapunov_mle_observer(record_interval=record_interval)
 )
 res_mle = sim.results()
-mle_analysis = res_mle.analysis["lyapunov_mle"]
+mle_analysis = res_mle.observers["lyapunov_mle"]
 
 # 3. Run Spectrum Analysis
 # ------------------------
@@ -50,10 +50,10 @@ sim.run(
     T=total_time,
     dt=dt,
     record_interval=record_interval,
-    analysis=lyapunov_spectrum(k=3, record_interval=record_interval)
+    observers=lyapunov_spectrum_observer(k=3, record_interval=record_interval)
 )
 res_spec = sim.results()
-spec_analysis = res_spec.analysis["lyapunov_spectrum"]
+spec_analysis = res_spec.observers["lyapunov_spectrum"]
 
 # 4. Results & Validation
 # -----------------------

@@ -20,7 +20,7 @@ print("Computing bifurcation diagram...")
 print(f"  Parameter: r ∈ [{r0}, {rend}]")
 print(f"  Grid points: {len(r_values)}")
 
-sweep_result = sweep.traj(
+sweep_result = sweep.traj_sweep(
     sim,
     param="r",
     values=r_values,

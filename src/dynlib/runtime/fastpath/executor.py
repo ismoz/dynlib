@@ -9,11 +9,11 @@ import os
 import threading
 import numpy as np
 
-from dynlib.analysis.runtime import AnalysisModule, analysis_noop_variational_step
+from dynlib.runtime.observers import ObserverModule, observer_noop_variational_step
 from dynlib.runtime.fastpath.plans import RecordingPlan
 from dynlib.runtime.fastpath.capability import assess_capability, FastpathSupport
 from dynlib.runtime.results import Results
-from dynlib.runtime.analysis_meta import build_analysis_metadata
+from dynlib.runtime.analysis_meta import build_observer_metadata
 from dynlib.runtime.workspace import (
     initialize_lag_runtime_workspace,
     make_runtime_workspace,
@@ -130,7 +130,7 @@ class _WorkspaceBundle:
         state_names: list[str],
         aux_names: list[str],
         stepper_config: np.ndarray | None,
-        analysis: AnalysisModule | None,
+        analysis: ObserverModule | None,
     ) -> None:
         self.model = model
         self.plan = plan
@@ -203,7 +203,7 @@ class _WorkspaceBundle:
 
         # Analysis buffers (present even for base runner for ABI compatibility)
         self.variational_step_enabled = 0
-        self.variational_step_fn = analysis_noop_variational_step()
+        self.variational_step_fn = observer_noop_variational_step()
         if analysis is not None:
             ws_size = int(analysis.workspace_size)
             out_size = int(analysis.output_size)
@@ -213,10 +213,10 @@ class _WorkspaceBundle:
             trace_width = analysis.trace.width if analysis.trace else 0
             if trace_width > 0:
                 if analysis.trace is None:
-                    raise RuntimeError("analysis trace requested but TracePlan is missing")
+                    raise RuntimeError("observer trace requested but TracePlan is missing")
                 trace_cap = int(analysis.trace.capacity(total_steps=total_steps))
                 if trace_cap <= 0:
-                    raise RuntimeError("TracePlan must provide positive capacity for fastpath analysis.")
+                    raise RuntimeError("TracePlan must provide positive capacity for fastpath observers.")
                 self.analysis_trace = np.zeros((trace_cap, trace_width), dtype=self.dtype)
                 self.analysis_trace_cap = int(trace_cap)
                 self.analysis_trace_stride = int(analysis.trace.record_interval())
@@ -387,7 +387,7 @@ def _call_runner(
     ic: np.ndarray,
     runtime_ws,
     stepper_ws,
-    analysis: AnalysisModule | None = None,
+    analysis: ObserverModule | None = None,
 ):
     dtype = model.dtype
     n_state = len(model.spec.states)
@@ -433,7 +433,7 @@ def _call_runner(
 
     # Analysis buffers (present even for base runner for ABI compatibility)
     variational_step_enabled = 0
-    variational_step_fn = analysis_noop_variational_step()
+    variational_step_fn = observer_noop_variational_step()
 
     if analysis is not None:
         analysis_kind = int(analysis.analysis_kind)
@@ -472,7 +472,7 @@ def _call_runner(
         analysis_trace_cap = 0
         analysis_trace_stride = 0
         variational_step_enabled = 0
-        variational_step_fn = analysis_noop_variational_step()
+        variational_step_fn = observer_noop_variational_step()
 
     variant = RunnerVariant.FASTPATH_ANALYSIS if analysis is not None else RunnerVariant.FASTPATH
     runner = get_runner(
@@ -574,7 +574,7 @@ def _call_runner(
                     trace_offset = int(sl.start) if sl.start is not None else 0
             analysis_trace_view = trace_view
             analysis_trace_offset = trace_offset
-        analysis_meta = build_analysis_metadata(
+        analysis_meta = build_observer_metadata(
             analysis_modules,
             analysis_kind=analysis_kind,
             trace_stride=analysis_stride_payload,
@@ -677,9 +677,10 @@ def run_single_fastpath(
     params: np.ndarray,
     ic: np.ndarray,
     stepper_config: np.ndarray | None = None,
-    analysis: AnalysisModule | None = None,
+    observers: ObserverModule | None = None,
 ) -> Results:
     """Core fastpath execution using the compiled runner."""
+    analysis = observers
     if stepper_config is None:
         stepper_config = np.array([], dtype=np.float64)
     dtype = model.dtype
@@ -803,7 +804,7 @@ def run_batch_fastpath(
     stepper_config: np.ndarray | None = None,
     parallel_mode: Literal["auto", "threads", "process", "none"] = "auto",
     max_workers: Optional[int] = None,
-    analysis: AnalysisModule | None = None,
+    observers: ObserverModule | None = None,
 ) -> list[Results]:
     """
     Batch fastpath execution across multiple IC/parameter sets.
@@ -811,6 +812,7 @@ def run_batch_fastpath(
     For JIT builds, threads will leverage the numba-compiled runner (GIL-free).
     For pure Python builds, a thread pool is used unless ``parallel_mode="none"``.
     """
+    analysis = observers
     n_state = len(model.spec.states)
     n_params = len(model.spec.params)
     ic_batch, params_batch, batch = _normalize_batch_inputs(
@@ -836,7 +838,7 @@ def run_batch_fastpath(
                 params=params_batch[0],
                 ic=ic_batch[0],
                 stepper_config=stepper_config,
-                analysis=analysis,
+                observers=analysis,
             )
         ]
 
@@ -862,7 +864,7 @@ def run_batch_fastpath(
             params=params_batch[idx],
             ic=ic_batch[idx],
             stepper_config=stepper_config,
-            analysis=analysis,
+            observers=analysis,
         )
 
     if backend == "none" or max_workers == 1:
@@ -920,7 +922,7 @@ def run_batch_fastpath_optimized(
     stepper_config: np.ndarray | None = None,
     parallel_mode: Literal["auto", "threads", "process", "none"] = "auto",
     max_workers: Optional[int] = None,
-    analysis: AnalysisModule | None = None,
+    observers: ObserverModule | None = None,
     analysis_only: bool = False,
 ) -> list[Results] | list[FastpathAnalysisResult]:
     """
@@ -929,6 +931,7 @@ def run_batch_fastpath_optimized(
     When analysis_only is True, returns FastpathAnalysisResult entries and skips
     full Results construction.
     """
+    analysis = observers
     if not analysis_only:
         return run_batch_fastpath(
             model=model,
@@ -948,7 +951,7 @@ def run_batch_fastpath_optimized(
             stepper_config=stepper_config,
             parallel_mode=parallel_mode,
             max_workers=max_workers,
-            analysis=analysis,
+            observers=analysis,
         )
 
     if analysis is None:
@@ -1061,7 +1064,7 @@ def fastpath_for_sim(
     ic: np.ndarray,
     params: np.ndarray,
     support: FastpathSupport | None = None,
-    analysis: AnalysisModule | None = None,
+    observers: ObserverModule | None = None,
 ) -> ResultsView | None:
     """
     Fastpath convenience entry point for :class:`Sim`.
@@ -1076,6 +1079,7 @@ def fastpath_for_sim(
     stepper_spec = sim._stepper_spec
     adaptive = getattr(stepper_spec.meta, "time_control", "fixed") == "adaptive"
 
+    analysis = observers
     if analysis is not None:
         analysis.validate_stepper(stepper_spec)
 
@@ -1086,7 +1090,7 @@ def fastpath_for_sim(
         dt=dt_use,
         transient=transient_use,
         adaptive=adaptive,
-        analysis=analysis,
+        observers=analysis,
     )
     if not support.ok:
         return None
@@ -1133,7 +1137,7 @@ def fastpath_for_sim(
         params=params,
         ic=ic,
         stepper_config=stepper_cfg,
-        analysis=analysis,
+        observers=analysis,
     )
 
     seg = Segment(
@@ -1170,7 +1174,7 @@ def fastpath_batch_for_sim(
     support: FastpathSupport | None = None,
     parallel_mode: Literal["auto", "threads", "process", "none"] = "auto",
     max_workers: Optional[int] = None,
-    analysis: AnalysisModule | None = None,
+    observers: ObserverModule | None = None,
 ) -> list[ResultsView] | None:
     """
     Batch fastpath entry point for :class:`Sim`.
@@ -1186,6 +1190,7 @@ def fastpath_batch_for_sim(
     stepper_spec = sim._stepper_spec
     adaptive = getattr(stepper_spec.meta, "time_control", "fixed") == "adaptive"
 
+    analysis = observers
     if analysis is not None:
         analysis.validate_stepper(stepper_spec)
 
@@ -1196,7 +1201,7 @@ def fastpath_batch_for_sim(
         dt=dt_use,
         transient=transient_use,
         adaptive=adaptive,
-        analysis=analysis,
+        observers=analysis,
     )
     if not support.ok:
         return None
@@ -1245,7 +1250,7 @@ def fastpath_batch_for_sim(
         stepper_config=stepper_cfg,
         parallel_mode=parallel_mode,
         max_workers=max_workers,
-        analysis=analysis,
+        observers=analysis,
     )
 
     views: list[ResultsView] = []
