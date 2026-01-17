@@ -1467,7 +1467,7 @@ def basin_auto(
     >>> # Create grid of initial conditions
     >>> x = np.linspace(-2, 2, 200)
     >>> y = np.linspace(-2, 2, 200)
-    >>> X, Y = np.meshgrid(x, y)
+    >>> X, Y = np.meshgrid(x, y, indexing="ij")
     >>> ic = np.column_stack([X.ravel(), Y.ravel()])
     >>> 
     >>> # Compute basins (method 1: manual IC grid)
@@ -1507,7 +1507,6 @@ def basin_auto(
         raise ValueError("ic_bounds must be provided when using ic_grid")
 
     # Auto-generate IC grid if requested
-    meshgrids = None
     ic_grid_meta: tuple[int, ...] | None = None
     ic_bounds_meta: tuple[tuple[float, float], ...] | None = None
     if ic_grid is not None:
@@ -1521,8 +1520,8 @@ def basin_auto(
         # Create meshgrid
         axes = [np.linspace(float(bmin), float(bmax), int(n)) 
                 for (bmin, bmax), n in zip(ic_bounds, ic_grid_arr)]
-        meshgrids = np.meshgrid(*axes, indexing='xy')
-        ic = np.column_stack([g.ravel() for g in meshgrids])
+        meshgrids = np.meshgrid(*axes, indexing="ij")
+        ic = np.column_stack([g.ravel(order="C") for g in meshgrids])
         ic_grid_meta = tuple(int(x) for x in ic_grid_arr)
         ic_bounds_meta = tuple((float(bmin), float(bmax)) for bmin, bmax in ic_bounds)
 

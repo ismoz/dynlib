@@ -2,6 +2,13 @@
 
 ---
 
+## [0.36.6] – 2026-01-17
+### Fixed
+- `basin_auto` plot results were rotated. `basin_auto.py` now uses `np.meshgrid(..., indexing="ij")` with explicit 
+  order="C" raveling for consistent grid flattening.
+
+---
+
 ## [0.36.5] – 2026-01-17
 ### Changed
 - Moved all of the runtime analysis utilities from `./analysis/runtime` folder to `./runtime/observers` folder.
