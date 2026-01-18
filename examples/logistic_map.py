@@ -23,6 +23,10 @@ sim.run(N=192, transient=40)
 sim.run(resume=True, N=400)
 res=sim.results()
 
+seeds = [[0.1], [0.7], [0.9]]
+fps = sim.model.fixed_points(seeds=seeds)
+print(fps.points)
+
 theme.use("notebook")
 theme.update(grid=False)
 

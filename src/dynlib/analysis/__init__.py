@@ -38,6 +38,11 @@ if TYPE_CHECKING:
         TrajectoryAnalyzer,
         MultiVarAnalyzer,
     )
+    from dynlib.analysis.fixed_points import (
+        FixedPointConfig,
+        FixedPointResult,
+        find_fixed_points,
+    )
 
 _SWEEP_EXPORTS = {
     "SweepResult",
@@ -77,6 +82,12 @@ _BASIN_STATS_EXPORTS = {
     "print_basin_summary",
 }
 
+_FIXED_POINT_EXPORTS = {
+    "FixedPointConfig",
+    "FixedPointResult",
+    "find_fixed_points",
+}
+
 __all__ = [
     # Sweep orchestration
     *_SWEEP_EXPORTS,
@@ -86,6 +97,8 @@ __all__ = [
     *_BASIN_EXPORTS,
     # Basin statistics
     *_BASIN_STATS_EXPORTS,
+    # Fixed points
+    *_FIXED_POINT_EXPORTS,
 ]
 
 
@@ -112,6 +125,11 @@ def __getattr__(name):
         return value
     if name in _BASIN_STATS_EXPORTS:
         module = importlib.import_module("dynlib.analysis.basin_stats")
+        value = getattr(module, name)
+        globals()[name] = value
+        return value
+    if name in _FIXED_POINT_EXPORTS:
+        module = importlib.import_module("dynlib.analysis.fixed_points")
         value = getattr(module, name)
         globals()[name] = value
         return value

@@ -1,7 +1,7 @@
 # src/dynlib/compiler/build.py
 from __future__ import annotations
-from dataclasses import dataclass
-from typing import Tuple, Callable, Dict, Any, Union, List, Optional
+from dataclasses import dataclass, replace
+from typing import Tuple, Callable, Dict, Any, Union, List, Optional, Mapping, Sequence
 from pathlib import Path
 import inspect
 import numpy as np
@@ -27,6 +27,7 @@ from dynlib.compiler.guards import get_guards, configure_guards_disk_cache
 from dynlib.errors import ModelLoadError, StepperKindMismatchError
 from dynlib.runtime.workspace import (
     make_runtime_workspace,
+    initialize_lag_runtime_workspace,
     workspace_structsig,
 )
 from dynlib.runtime.softdeps import softdeps
@@ -193,6 +194,177 @@ class FullModel:
                 exported[name] = file_path
         
         return exported
+
+    def fixed_points(
+        self,
+        *,
+        params: Mapping[str, float] | Sequence[float] | np.ndarray | None = None,
+        seeds: Mapping[str, float] | Sequence[Sequence[float]] | np.ndarray | None = None,
+        method: str | None = None,
+        jac: str | None = None,
+        tol: float | None = None,
+        max_iter: int | None = None,
+        unique_tol: float | None = None,
+        classify: bool | None = None,
+        cfg: "FixedPointConfig | None" = None, # type: ignore
+        t: float | None = None,
+    ) -> "FixedPointResult": # type: ignore
+        """
+        Find fixed points / equilibria using a numerical root solver.
+
+        Args:
+            params: Parameter vector or dict overrides (default: model defaults).
+            seeds: Initial guesses (array-like) or dict overrides for a single seed.
+            method: Solver method (currently "newton").
+            jac: "auto" (default), "fd" (finite-diff), or "analytic".
+            tol: Residual tolerance for convergence.
+            max_iter: Maximum solver iterations per seed.
+            unique_tol: De-duplication tolerance for solutions.
+            classify: Compute eigenvalues and stability labels.
+            cfg: Optional FixedPointConfig override.
+            t: Evaluation time for non-autonomous systems (default: spec.sim.t0).
+        """
+        from dynlib.analysis.fixed_points import FixedPointConfig, find_fixed_points
+
+        n_state = len(self.spec.states)
+        n_params = len(self.spec.params)
+        dtype = self.dtype
+
+        base_params = np.asarray(self.spec.param_vals, dtype=dtype)
+        if params is None:
+            params_vec = np.array(base_params, copy=True)
+        elif isinstance(params, Mapping):
+            params_vec = np.array(base_params, copy=True)
+            param_index = {name: i for i, name in enumerate(self.spec.params)}
+            for key, val in params.items():
+                if key not in param_index:
+                    raise KeyError(f"Unknown param '{key}'.")
+                params_vec[param_index[key]] = float(val)
+        else:
+            params_arr = np.asarray(params, dtype=dtype)
+            if params_arr.ndim != 1 or params_arr.shape[0] != n_params:
+                raise ValueError(f"params must have shape ({n_params},)")
+            params_vec = params_arr
+
+        base_state = np.asarray(self.spec.state_ic, dtype=dtype)
+        if seeds is None:
+            seed_arr = base_state[None, :]
+        elif isinstance(seeds, Mapping):
+            seed_vec = np.array(base_state, copy=True)
+            state_index = {name: i for i, name in enumerate(self.spec.states)}
+            for key, val in seeds.items():
+                if key not in state_index:
+                    raise KeyError(f"Unknown state '{key}'.")
+                seed_vec[state_index[key]] = float(val)
+            seed_arr = seed_vec[None, :]
+        else:
+            seed_arr = np.asarray(seeds, dtype=dtype)
+            if seed_arr.ndim == 1:
+                seed_arr = seed_arr[None, :]
+            if seed_arr.ndim != 2 or seed_arr.shape[1] != n_state:
+                raise ValueError(f"seeds must have shape (n_seeds, {n_state})")
+
+        stop_phase_mask = 0
+        if self.spec.sim.stop is not None:
+            phase = self.spec.sim.stop.phase
+            if phase in ("pre", "both"):
+                stop_phase_mask |= 1
+            if phase in ("post", "both"):
+                stop_phase_mask |= 2
+        runtime_ws = make_runtime_workspace(
+            lag_state_info=self.lag_state_info or (),
+            dtype=dtype,
+            n_aux=len(self.spec.aux or {}),
+            stop_enabled=stop_phase_mask != 0,
+            stop_phase_mask=stop_phase_mask,
+        )
+
+        t_eval = float(self.spec.sim.t0 if t is None else t)
+        rhs_out = np.zeros((n_state,), dtype=dtype)
+        jac_out = np.zeros((n_state, n_state), dtype=dtype)
+        kind = self.spec.kind
+        map_eye = np.eye(n_state, dtype=dtype) if kind == "map" else None
+
+        def _prep_ws(y_vec: np.ndarray) -> None:
+            if self.lag_state_info:
+                initialize_lag_runtime_workspace(
+                    runtime_ws,
+                    lag_state_info=self.lag_state_info,
+                    y_curr=y_vec,
+                )
+
+        def f_root(x: np.ndarray, params_in: np.ndarray) -> np.ndarray:
+            y_vec = np.asarray(x, dtype=dtype)
+            if y_vec.shape != (n_state,):
+                raise ValueError(f"state must have shape ({n_state},)")
+            if params_in.shape != (n_params,):
+                raise ValueError(f"params must have shape ({n_params},)")
+            p_vec = np.asarray(params_in, dtype=dtype)
+            _prep_ws(y_vec)
+            self.rhs(t_eval, y_vec, rhs_out, p_vec, runtime_ws)
+            out = np.array(rhs_out, copy=True)
+            if kind == "map":
+                out -= y_vec
+            return out
+
+        def jac_root(x: np.ndarray, params_in: np.ndarray) -> np.ndarray:
+            if self.jacobian is None:
+                raise ValueError("Analytic Jacobian not available for this model.")
+            y_vec = np.asarray(x, dtype=dtype)
+            if y_vec.shape != (n_state,):
+                raise ValueError(f"state must have shape ({n_state},)")
+            if params_in.shape != (n_params,):
+                raise ValueError(f"params must have shape ({n_params},)")
+            p_vec = np.asarray(params_in, dtype=dtype)
+            _prep_ws(y_vec)
+            self.jacobian(t_eval, y_vec, p_vec, jac_out, runtime_ws)
+            out = np.array(jac_out, copy=True)
+            if kind == "map":
+                out -= map_eye
+            return out
+
+        cfg_obj = cfg or FixedPointConfig()
+        if method is not None:
+            cfg_obj = replace(cfg_obj, method=method)
+        if tol is not None:
+            cfg_obj = replace(cfg_obj, tol=float(tol))
+        if max_iter is not None:
+            cfg_obj = replace(cfg_obj, max_iter=int(max_iter))
+        if unique_tol is not None:
+            cfg_obj = replace(cfg_obj, unique_tol=float(unique_tol))
+        if classify is not None:
+            cfg_obj = replace(cfg_obj, classify=bool(classify))
+        cfg_obj = replace(cfg_obj, kind=kind)
+
+        jac_mode = cfg_obj.jac
+        if jac is not None:
+            jac_norm = jac.lower()
+            if jac_norm in ("auto",):
+                jac_mode = "auto"
+            elif jac_norm in ("fd", "finite-diff", "finite_diff"):
+                jac_mode = "fd"
+            elif jac_norm in ("analytic", "model", "provided"):
+                jac_mode = "provided"
+            else:
+                raise ValueError("jac must be 'auto', 'fd', or 'analytic'")
+
+        if jac_mode == "fd":
+            jac_fn = None
+        elif jac_mode == "provided":
+            if self.jacobian is None:
+                raise ValueError("jac='analytic' requires a model Jacobian.")
+            jac_fn = jac_root
+        else:
+            jac_fn = jac_root if self.jacobian is not None else None
+
+        cfg_obj = replace(cfg_obj, jac=jac_mode)
+        return find_fixed_points(
+            f_root,
+            jac_fn,
+            seeds=seed_arr,
+            params=params_vec,
+            cfg=cfg_obj,
+        )
 
 @dataclass
 class _StepperCacheEntry:

@@ -2,6 +2,18 @@
 
 ---
 
+## [0.36.7] – 2026-01-18
+### Added
+- Introduced a fixed points / equilibria calculator in `analysis/fixed_points.py` file. It uses Newton solver with
+  model type awareness (ODE vs map). Seeds are required as initial guesses. `fixed_points()` method is attached to 
+  the `FullModel` class for user convenience (fixed points of a model can be calculated easily for that model with
+  its current parameters).
+
+### Tests
+- Introduced `test_fixed_points.py` for testing the fixed point calculation feature.
+
+---
+
 ## [0.36.6] – 2026-01-17
 ### Fixed
 - `basin_auto` plot results were rotated. `basin_auto.py` now uses `np.meshgrid(..., indexing="ij")` with explicit 
