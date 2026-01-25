@@ -2,6 +2,14 @@
 
 ---
 
+## [0.36.9] – 2026-01-25
+### Added
+- Added analysis tool `trace_manifold_1d_ode()` for tracing stable/unstable 1D manifolds of ODE models. The results
+  can be plotted using the same `plot.manifold()` utility introduced previously.
+- Added an example `manifold_ode_saddle.py` for demonstrating ODE manifold tracing. 
+
+---
+
 ## [0.36.8] – 2026-01-25
 ### Added
 - Added analysis tool `trace_manifold_1d_map()` for tracing stable/unstable 1D manifolds of nD maps.

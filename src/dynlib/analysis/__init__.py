@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from dynlib.analysis.manifold import (
         ManifoldTraceResult,
         trace_manifold_1d_map,
+        trace_manifold_1d_ode,
     )
 
 _SWEEP_EXPORTS = {
@@ -95,6 +96,7 @@ _FIXED_POINT_EXPORTS = {
 _MANIFOLD_EXPORTS = {
     "ManifoldTraceResult",
     "trace_manifold_1d_map",
+    "trace_manifold_1d_ode",
 }
 
 __all__ = [
