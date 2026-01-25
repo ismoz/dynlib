@@ -1,7 +1,7 @@
 # src/dynlib/compiler/build.py
 from __future__ import annotations
 from dataclasses import dataclass, replace
-from typing import Tuple, Callable, Dict, Any, Union, List, Optional, Mapping, Sequence
+from typing import Tuple, Callable, Dict, Any, Union, List, Optional, Mapping, Sequence, TYPE_CHECKING
 from pathlib import Path
 import inspect
 import numpy as np
@@ -32,6 +32,9 @@ from dynlib.runtime.workspace import (
 )
 from dynlib.runtime.softdeps import softdeps
 from dynlib.runtime.stepper_checks import check_stepper
+
+if TYPE_CHECKING:
+    from dynlib.analysis.fixed_points import FixedPointResult, FixedPointConfig
 
 
 def _format_toml_parse_error(toml_content: str, error: Exception, source_desc: str = "inline model") -> str:
@@ -206,9 +209,9 @@ class FullModel:
         max_iter: int | None = None,
         unique_tol: float | None = None,
         classify: bool | None = None,
-        cfg: "FixedPointConfig | None" = None, # type: ignore
+        cfg: "FixedPointConfig | None" = None,
         t: float | None = None,
-    ) -> "FixedPointResult": # type: ignore
+    ) -> "FixedPointResult":
         """
         Find fixed points / equilibria using a numerical root solver.
 
@@ -365,6 +368,7 @@ class FullModel:
             params=params_vec,
             cfg=cfg_obj,
         )
+
 
 @dataclass
 class _StepperCacheEntry:

@@ -2,6 +2,15 @@
 
 ---
 
+## [0.36.8] – 2026-01-25
+### Added
+- Added analysis tool `trace_manifold_1d_map()` for tracing stable/unstable 1D manifolds of nD maps.
+- Added `plot.manifold()` plot utility for plotting manifold analysis results.
+- Added an example `manifold_henon.py` for demonstrating manifold tracing.
+- Added another built-in Henon map model in `henon2.toml` which is the version used in Kathleen Alligood's book.
+
+---
+
 ## [0.36.7] – 2026-01-18
 ### Added
 - Introduced a fixed points / equilibria calculator in `analysis/fixed_points.py` file. It uses Newton solver with

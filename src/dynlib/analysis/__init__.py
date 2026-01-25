@@ -43,6 +43,10 @@ if TYPE_CHECKING:
         FixedPointResult,
         find_fixed_points,
     )
+    from dynlib.analysis.manifold import (
+        ManifoldTraceResult,
+        trace_manifold_1d_map,
+    )
 
 _SWEEP_EXPORTS = {
     "SweepResult",
@@ -88,6 +92,11 @@ _FIXED_POINT_EXPORTS = {
     "find_fixed_points",
 }
 
+_MANIFOLD_EXPORTS = {
+    "ManifoldTraceResult",
+    "trace_manifold_1d_map",
+}
+
 __all__ = [
     # Sweep orchestration
     *_SWEEP_EXPORTS,
@@ -99,6 +108,8 @@ __all__ = [
     *_BASIN_STATS_EXPORTS,
     # Fixed points
     *_FIXED_POINT_EXPORTS,
+    # Manifold tracing
+    *_MANIFOLD_EXPORTS,
 ]
 
 
@@ -130,6 +141,11 @@ def __getattr__(name):
         return value
     if name in _FIXED_POINT_EXPORTS:
         module = importlib.import_module("dynlib.analysis.fixed_points")
+        value = getattr(module, name)
+        globals()[name] = value
+        return value
+    if name in _MANIFOLD_EXPORTS:
+        module = importlib.import_module("dynlib.analysis.manifold")
         value = getattr(module, name)
         globals()[name] = value
         return value

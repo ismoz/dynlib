@@ -5,6 +5,7 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection
 from matplotlib.ticker import AutoMinorLocator, MaxNLocator
 
 from dynlib.runtime.workspace import make_runtime_workspace
@@ -674,6 +675,23 @@ def _style_from_mapping(style: Mapping[str, Any]) -> dict[str, Any]:
     return _style_kwargs(**filtered)
 
 
+def _style_overrides_from_mapping(style: Mapping[str, Any]) -> dict[str, Any]:
+    overrides: dict[str, Any] = {}
+    if "color" in style:
+        overrides["color"] = style["color"]
+    if "lw" in style:
+        overrides["linewidth"] = float(style["lw"])
+    if "ls" in style:
+        overrides["linestyle"] = style["ls"]
+    if "marker" in style:
+        overrides["marker"] = style["marker"]
+    if "ms" in style:
+        overrides["markersize"] = float(style["ms"])
+    if "alpha" in style:
+        overrides["alpha"] = style["alpha"]
+    return overrides
+
+
 def _scatter_kwargs(style_kw: dict[str, Any]) -> dict[str, Any]:
     scatter_kw: dict[str, Any] = {}
     for key, value in style_kw.items():
@@ -756,9 +774,213 @@ def _coerce_series(
     return normalized
 
 
+def _coerce_segments(segments: Any) -> list[np.ndarray]:
+    if segments is None:
+        return []
+    if isinstance(segments, np.ndarray):
+        arr = np.asarray(segments)
+        if arr.ndim != 2:
+            raise ValueError("segments array must be 2D")
+        return [arr]
+    if isinstance(segments, (list, tuple)):
+        out: list[np.ndarray] = []
+        for seg in segments:
+            arr = np.asarray(seg)
+            if arr.ndim != 2:
+                raise ValueError("segments entries must be 2D arrays")
+            out.append(arr)
+        return out
+    raise TypeError("segments must be an array or a sequence of arrays")
+
+
+def _coerce_manifold_groups(
+    *,
+    segments: Any = None,
+    branches: Any = None,
+    result: Any = None,
+    groups: Any = None,
+    label: str | None = None,
+) -> list[dict[str, Any]]:
+    if groups is not None:
+        out: list[dict[str, Any]] = []
+        for entry in groups:
+            if isinstance(entry, Mapping):
+                if "segments" not in entry:
+                    raise ValueError("group mapping must include 'segments'")
+                out.append(
+                    {
+                        "segments": _coerce_segments(entry["segments"]),
+                        "label": entry.get("label"),
+                        "style": entry.get("style"),
+                    }
+                )
+            elif isinstance(entry, (list, tuple)):
+                if len(entry) < 1 or len(entry) > 3:
+                    raise ValueError("group tuples must be (segments, label?, style?)")
+                out.append(
+                    {
+                        "segments": _coerce_segments(entry[0]),
+                        "label": entry[1] if len(entry) >= 2 else None,
+                        "style": entry[2] if len(entry) == 3 else None,
+                    }
+                )
+            else:
+                raise TypeError("groups must contain mappings or tuples")
+        return out
+
+    if result is not None:
+        branches = getattr(result, "branches", None)
+        if branches is None:
+            raise TypeError("result must provide a 'branches' attribute")
+        if label is None:
+            label = getattr(result, "kind", None)
+
+    if branches is not None:
+        if not isinstance(branches, (list, tuple)) or len(branches) != 2:
+            raise ValueError("branches must be a 2-tuple of segment lists")
+        label_main = label
+        return [
+            {"segments": _coerce_segments(branches[0]), "label": label_main, "style": None},
+            {"segments": _coerce_segments(branches[1]), "label": None, "style": None},
+        ]
+
+    if segments is None:
+        raise ValueError("Provide segments, branches, result, or groups")
+    return [{"segments": _coerce_segments(segments), "label": label, "style": None}]
+
+
 # ----------------------------------------------------------------------------
 # Public plotting primitives (array-only)
 # ----------------------------------------------------------------------------
+
+def manifold(
+    *,
+    segments=None,
+    branches=None,
+    result=None,
+    groups=None,
+    components: tuple[int, int] = (0, 1),
+    label: str | None = None,
+    style: str | dict[str, Any] | None = "continuous",
+    color: str | None = None,
+    lw: float | None = None,
+    ls: str | None = None,
+    marker: str | None = None,
+    ms: float | None = None,
+    alpha: float | None = None,
+    xlim: tuple[float | None, float | None] | None = None,
+    ylim: tuple[float | None, float | None] | None = None,
+    xlabel: str | None = None,
+    ylabel: str | None = None,
+    title: str | None = None,
+    ax=None,
+    legend: bool = True,
+    aspect: str | None = None,
+    xlabel_rot: float | None = None,
+    ylabel_rot: float | None = None,
+    xpad: float | None = None,
+    ypad: float | None = None,
+    titlepad: float | None = None,
+    xlabel_fs: float | None = None,
+    ylabel_fs: float | None = None,
+    title_fs: float | None = None,
+    xtick_fs: float | None = None,
+    ytick_fs: float | None = None,
+) -> plt.Axes:
+    """
+    Plot 1D manifolds represented as segmented trajectories.
+
+    Accepts raw segments, branch tuples, or result objects with a ``branches``
+    attribute (e.g., ManifoldTraceResult). For higher-dimensional systems,
+    select which components to plot via ``components``.
+    """
+    if len(components) != 2:
+        raise ValueError("components must be a 2-tuple like (0, 1)")
+    c0, c1 = (int(components[0]), int(components[1]))
+    if c0 == c1:
+        raise ValueError("components entries must be distinct")
+
+    plot_ax = _get_ax(ax)
+    base_style = _resolve_style(style, color=color, lw=lw, ls=ls, marker=marker, ms=ms, alpha=alpha)
+    groups_list = _coerce_manifold_groups(
+        segments=segments, branches=branches, result=result, groups=groups, label=label
+    )
+
+    for group in groups_list:
+        segs = [seg for seg in group["segments"] if seg.shape[0] >= 2]
+        if not segs:
+            continue
+        max_dim = max(c0, c1)
+        for seg in segs:
+            if seg.shape[1] <= max_dim:
+                raise ValueError("segment dimensionality is smaller than components")
+
+        style_args = dict(base_style)
+        group_style = group.get("style")
+        if group_style is not None:
+            if isinstance(group_style, str):
+                if group_style not in STYLE_PRESETS:
+                    raise ValueError(
+                        f"Unknown style preset '{group_style}'. Available: {', '.join(sorted(STYLE_PRESETS.keys()))}"
+                    )
+                style_args.update(STYLE_PRESETS[group_style])
+            elif isinstance(group_style, Mapping):
+                style_args.update(_style_overrides_from_mapping(group_style))
+                passthrough = {
+                    k: v
+                    for k, v in group_style.items()
+                    if k not in ("color", "lw", "ls", "marker", "ms", "alpha")
+                }
+                style_args.update(passthrough)
+            else:
+                raise TypeError("group style must be a preset name or a mapping")
+
+        marker_val = style_args.get("marker")
+        wants_markers = bool(marker_val) and marker_val != "None"
+        label_val = group.get("label")
+
+        if wants_markers:
+            for idx, seg in enumerate(segs):
+                lbl = label_val if (label_val and idx == 0) else None
+                plot_ax.plot(seg[:, c0], seg[:, c1], label=lbl, **style_args)
+        else:
+            lines = [seg[:, (c0, c1)] for seg in segs]
+            lc_kwargs: dict[str, Any] = {}
+            if "color" in style_args:
+                lc_kwargs["colors"] = style_args["color"]
+            if "linewidth" in style_args:
+                lc_kwargs["linewidths"] = style_args["linewidth"]
+            if "linestyle" in style_args:
+                ls_val = style_args["linestyle"]
+                if ls_val not in ("", "None", None):
+                    lc_kwargs["linestyles"] = ls_val
+            if "alpha" in style_args:
+                lc_kwargs["alpha"] = style_args["alpha"]
+            lc = LineCollection(lines, label=label_val, **lc_kwargs)
+            plot_ax.add_collection(lc)
+
+    if any(group.get("label") for group in groups_list) and legend:
+        plot_ax.legend()
+
+    _apply_limits(plot_ax, xlim=xlim, ylim=ylim)
+    if aspect is not None:
+        plot_ax.set_aspect(aspect)
+    _apply_labels(
+        plot_ax,
+        xlabel=xlabel,
+        ylabel=ylabel,
+        title=title,
+        xpad=xpad,
+        ypad=ypad,
+        titlepad=titlepad,
+        xlabel_fs=xlabel_fs,
+        ylabel_fs=ylabel_fs,
+        title_fs=title_fs,
+    )
+    _apply_tick_rotation(plot_ax, xlabel_rot=xlabel_rot, ylabel_rot=ylabel_rot, theme=_theme)
+    _apply_tick_fontsizes(plot_ax, xtick_fs=xtick_fs, ytick_fs=ytick_fs)
+    return plot_ax
+
 
 class _SeriesPlot:
     def plot(
@@ -1915,4 +2137,4 @@ series = _SeriesPlot()
 phase = _PhasePlot()
 utils = _UtilsPlot()
 
-__all__ = ["series", "phase", "utils"]
+__all__ = ["series", "phase", "utils", "manifold"]

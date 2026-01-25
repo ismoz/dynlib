@@ -1,0 +1,30 @@
+# Henon map version used in Kathleen Alligood's book
+[model]
+type = "map"
+label = "Henon Map 2"
+dtype = "float64"
+
+[states]
+x = 0.0
+y = 0.0
+
+[params]
+a = 1.4
+b = 0.3
+
+[equations.rhs]
+x = "a - x**2 + b*y"
+y = "x"
+
+[equations.inverse.rhs]
+x = "y"
+y = "(x - a + y**2) / b"
+
+[equations.jacobian]
+expr = [
+    ["-2.0 * x", "b"],
+    ["1.0", "0.0"]
+]
+
+[meta]
+title = "Henon Map (chaotic 2D map)"

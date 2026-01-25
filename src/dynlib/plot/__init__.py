@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from . import _theme as theme
 from . import _fig as fig
-from ._primitives import series, phase, utils
+from ._primitives import series, phase, utils, manifold
 from ._facet import wrap as facet_wrap
 from . import _export as export
 from .bifurcation import bifurcation_diagram
@@ -39,6 +39,7 @@ __all__ = [
     "series",
     "phase",
     "utils",
+    "manifold",
     "facet",
     "export",
     "cobweb",
