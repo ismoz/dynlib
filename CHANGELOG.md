@@ -2,6 +2,17 @@
 
 ---
 
+## [0.36.11] – 2026-01-27
+### Added
+- Added `homoclinic_finder` analysis tool for searching and finding a homoclinic orbit for a given equilibrium.
+  A single parameter of an ODE system is changed between an interval during the search.
+- Added `homoclinic_tracer` analysis tool for finding a homoclinic orbit of an equilibrium for fixed parameter values. 
+  Its result can be plotted using `plot.manifold` plotter utility.
+- Added example `homoclinic_finder_tracer.py` for finding a parameter value of an ODE model that might have a
+  homoclinic orbit and the tracer is used to visualize the homoclinic orbit for the found parameter.
+
+---
+
 ## [0.36.10] – 2026-01-26
 ### Added
 - Added `heteroclinic_finder` analysis tool for searching and finding a heteroclinic orbit between two equilibria.

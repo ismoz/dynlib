@@ -60,6 +60,17 @@ if TYPE_CHECKING:
         HeteroclinicPreset,
         heteroclinic_finder,
         heteroclinic_tracer,
+        HomoclinicRK45Config,
+        HomoclinicBranchConfig,
+        HomoclinicFinderConfig,
+        HomoclinicMissResult,
+        HomoclinicFinderResult,
+        HomoclinicTraceEvent,
+        HomoclinicTraceMeta,
+        HomoclinicTraceResult,
+        HomoclinicPreset,
+        homoclinic_finder,
+        homoclinic_tracer,
     )
 
 _SWEEP_EXPORTS = {
@@ -123,6 +134,17 @@ _MANIFOLD_EXPORTS = {
     "HeteroclinicPreset",
     "heteroclinic_finder",
     "heteroclinic_tracer",
+    "HomoclinicRK45Config",
+    "HomoclinicBranchConfig",
+    "HomoclinicFinderConfig",
+    "HomoclinicMissResult",
+    "HomoclinicFinderResult",
+    "HomoclinicTraceEvent",
+    "HomoclinicTraceMeta",
+    "HomoclinicTraceResult",
+    "HomoclinicPreset",
+    "homoclinic_finder",
+    "homoclinic_tracer",
 }
 
 __all__ = [

@@ -37,7 +37,36 @@ __all__ = [
     "HeteroclinicPreset",
     "heteroclinic_finder",
     "heteroclinic_tracer",
+    "HomoclinicRK45Config",
+    "HomoclinicBranchConfig",
+    "HomoclinicFinderConfig",
+    "HomoclinicMissResult",
+    "HomoclinicFinderResult",
+    "HomoclinicTraceEvent",
+    "HomoclinicTraceMeta",
+    "HomoclinicTraceResult",
+    "HomoclinicPreset",
+    "homoclinic_finder",
+    "homoclinic_tracer",
 ]
+
+
+def _brief_warning_format(message, category, filename, lineno, line=None):
+    return f"{category.__name__}: {message}\n"
+
+
+def _warn_rk45_mismatch(caller: str, stepper_name: str) -> None:
+    old_format = warnings.formatwarning
+    try:
+        warnings.formatwarning = _brief_warning_format
+        warnings.warn(
+            f"{caller} uses an internal RK45 integrator, but Sim is configured with "
+            f"stepper '{stepper_name}'. This is informational only; the internal "
+            "RK45 will be used regardless.",
+            stacklevel=2,
+        )
+    finally:
+        warnings.formatwarning = old_format
 
 
 @dataclass
@@ -2142,12 +2171,7 @@ def _build_heteroclinic_context(
     # Warn if stepper differs from internal RK45
     stepper_name = model.stepper_name.lower() if model.stepper_name else ""
     if stepper_name and stepper_name not in ("rk45", "dopri5", "rk45_dopri"):
-        warnings.warn(
-            f"{caller} uses an internal RK45 integrator, but Sim is configured with "
-            f"stepper '{model.stepper_name}'. This is informational only; the internal "
-            "RK45 will be used regardless.",
-            stacklevel=2,
-        )
+        _warn_rk45_mismatch(caller, model.stepper_name)
 
     stop_phase_mask = 0
     if model.spec.sim.stop is not None:
@@ -5253,3 +5277,1582 @@ def heteroclinic_tracer(
         cfg_u=cfg_u,
         hit_radius=float(hit_radius),
     )
+
+
+# =============================================================================
+# Homoclinic finder/tracer (ODE)
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class HomoclinicRK45Config:
+    dt0: float = 1e-3
+    min_step: float = 1e-12
+    dt_max: float = 1e-1
+    atol: float = 1e-10
+    rtol: float = 1e-7
+    safety: float = 0.9
+    max_steps: int = 2_000_000
+
+
+@dataclass(frozen=True)
+class HomoclinicBranchConfig:
+    eq_tol: float = 1e-12
+    eq_max_iter: int = 40
+    eq_track_max_dist: float | None = None
+
+    eps_mode: Literal["leave", "fixed"] = "leave"
+    eps: float = 1e-6
+    eps_min: float = 1e-10
+    eps_max: float = 1e-2
+    r_leave: float = 1e-2
+    t_leave_target: float = 0.05
+
+    r_sec: float = 1e-2
+    t_min_event: float = 0.2
+
+    t_max: float = 500.0
+    s_max: float = 1e6
+    r_blow: float = 200.0
+
+    window_min: Sequence[float] | np.ndarray | None = None
+    window_max: Sequence[float] | np.ndarray | None = None
+
+    require_leave_before_event: bool = True
+
+    eig_real_tol: float = 1e-10
+    eig_imag_tol: float = 1e-12
+    strict_1d: bool = True
+    jac: Literal["auto", "fd", "analytic"] = "auto"
+    fd_eps: float = 1e-6
+
+    rk: HomoclinicRK45Config = field(default_factory=HomoclinicRK45Config)
+
+
+@dataclass(frozen=True)
+class HomoclinicFinderConfig:
+    trace: HomoclinicBranchConfig = field(default_factory=HomoclinicBranchConfig)
+
+    scan_n: int = 61
+    max_bisect: int = 60
+
+    gap_tol: float = 1e-4
+    x_tol: float = 1e-4
+
+    branch_mode: Literal["auto", "fixed"] = "auto"
+    sign_u: int = +1
+
+
+@dataclass
+class HomoclinicMissResult:
+    qualified: bool
+    param_value: float
+
+    eq: np.ndarray
+    sign_u: int
+    eps: float
+    v_dir: np.ndarray
+    x0: np.ndarray
+
+    r_sec: float
+    r_leave: float
+    t_min: float
+
+    t_cross: float
+    x_cross: np.ndarray
+
+    g: float
+    q: float
+
+    status: str
+    diag: dict[str, object]
+
+
+class HomoclinicFinderResult(NamedTuple):
+    success: bool
+    param_found: float
+    miss: HomoclinicMissResult | None
+    info: dict[str, object]
+
+
+@dataclass
+class HomoclinicTraceEvent:
+    kind: str
+    t: float
+    x: np.ndarray
+    info: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass
+class HomoclinicTraceMeta:
+    param_value: float
+    eq: np.ndarray
+    sign_u: int
+    eps_used: float
+    status: str
+    success: bool
+    event: HomoclinicTraceEvent | None
+    t_cross: float
+    x_cross: np.ndarray
+    diag: dict[str, object]
+
+
+class HomoclinicTraceResult(NamedTuple):
+    t: np.ndarray
+    X: np.ndarray
+    meta: HomoclinicTraceMeta
+
+    @property
+    def branches(self) -> tuple[list[np.ndarray], list[np.ndarray]]:
+        return ([self.X], [])
+
+    @property
+    def branch_pos(self) -> list[np.ndarray]:
+        return [self.X]
+
+    @property
+    def branch_neg(self) -> list[np.ndarray]:
+        return []
+
+    @property
+    def kind(self) -> str:
+        return "homoclinic"
+
+    @property
+    def success(self) -> bool:
+        return bool(self.meta.success)
+
+
+# =============================================================================
+# Presets for homoclinic finder/tracer
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class HomoclinicPreset:
+    """
+    Preset configurations for homoclinic finder/tracer.
+
+    Available presets:
+    - "fast": Quick scan with lower accuracy, good for exploration.
+    - "default": Balanced accuracy and speed for typical use.
+    - "precise": High accuracy with more iterations, slower but robust.
+    """
+    name: str
+    rk: HomoclinicRK45Config
+    branch: HomoclinicBranchConfig
+    scan_n: int
+    max_bisect: int
+    gap_tol: float
+    x_tol: float
+
+
+_HOMOCLINIC_PRESETS: dict[str, HomoclinicPreset] = {
+    "fast": HomoclinicPreset(
+        name="fast",
+        rk=HomoclinicRK45Config(
+            dt0=1e-2,
+            dt_max=1e-1,
+            atol=1e-8,
+            rtol=1e-5,
+            max_steps=500_000,
+        ),
+        branch=HomoclinicBranchConfig(
+            r_leave=1e-2,
+            t_leave_target=0.05,
+            t_max=100.0,
+            r_blow=200.0,
+        ),
+        scan_n=31,
+        max_bisect=30,
+        gap_tol=1e-3,
+        x_tol=1e-3,
+    ),
+    "default": HomoclinicPreset(
+        name="default",
+        rk=HomoclinicRK45Config(
+            dt0=1e-3,
+            dt_max=5e-2,
+            atol=1e-10,
+            rtol=1e-7,
+            max_steps=1_000_000,
+        ),
+        branch=HomoclinicBranchConfig(
+            r_leave=1e-2,
+            t_leave_target=0.05,
+            t_max=200.0,
+            r_blow=200.0,
+        ),
+        scan_n=61,
+        max_bisect=60,
+        gap_tol=1e-4,
+        x_tol=1e-4,
+    ),
+    "precise": HomoclinicPreset(
+        name="precise",
+        rk=HomoclinicRK45Config(
+            dt0=1e-4,
+            dt_max=1e-2,
+            atol=1e-12,
+            rtol=1e-9,
+            max_steps=3_000_000,
+        ),
+        branch=HomoclinicBranchConfig(
+            r_leave=1e-3,
+            t_leave_target=0.02,
+            t_max=500.0,
+            r_blow=500.0,
+        ),
+        scan_n=121,
+        max_bisect=80,
+        gap_tol=1e-6,
+        x_tol=1e-6,
+    ),
+}
+
+
+def _get_homoclinic_preset(preset: str | HomoclinicPreset) -> HomoclinicPreset:
+    if isinstance(preset, HomoclinicPreset):
+        return preset
+    if preset not in _HOMOCLINIC_PRESETS:
+        available = ", ".join(sorted(_HOMOCLINIC_PRESETS.keys()))
+        raise ValueError(f"Unknown preset '{preset}'. Available: {available}")
+    return _HOMOCLINIC_PRESETS[preset]
+
+
+def _build_homoclinic_branch_config_from_preset(
+    preset: HomoclinicPreset,
+    *,
+    window: Sequence[tuple[float, float]] | None = None,
+    t_max: float | None = None,
+    r_blow: float | None = None,
+    r_sec: float | None = None,
+    t_min_event: float | None = None,
+) -> HomoclinicBranchConfig:
+    window_min = None
+    window_max = None
+    if window is not None:
+        window_min = np.array([lo for lo, _ in window], dtype=float)
+        window_max = np.array([hi for _, hi in window], dtype=float)
+
+    return HomoclinicBranchConfig(
+        eq_tol=preset.branch.eq_tol,
+        eq_max_iter=preset.branch.eq_max_iter,
+        eq_track_max_dist=preset.branch.eq_track_max_dist,
+        eps_mode=preset.branch.eps_mode,
+        eps=preset.branch.eps,
+        eps_min=preset.branch.eps_min,
+        eps_max=preset.branch.eps_max,
+        r_leave=preset.branch.r_leave,
+        t_leave_target=preset.branch.t_leave_target,
+        r_sec=r_sec if r_sec is not None else preset.branch.r_sec,
+        t_min_event=t_min_event if t_min_event is not None else preset.branch.t_min_event,
+        t_max=t_max if t_max is not None else preset.branch.t_max,
+        s_max=preset.branch.s_max,
+        r_blow=r_blow if r_blow is not None else preset.branch.r_blow,
+        window_min=window_min,
+        window_max=window_max,
+        require_leave_before_event=preset.branch.require_leave_before_event,
+        eig_real_tol=preset.branch.eig_real_tol,
+        eig_imag_tol=preset.branch.eig_imag_tol,
+        strict_1d=preset.branch.strict_1d,
+        jac=preset.branch.jac,
+        fd_eps=preset.branch.fd_eps,
+        rk=preset.rk,
+    )
+
+
+def _build_homoclinic_finder_config_from_kwargs(
+    *,
+    preset: str | HomoclinicPreset | None = None,
+    trace_cfg: HomoclinicBranchConfig | None = None,
+    window: Sequence[tuple[float, float]] | None = None,
+    scan_n: int | None = None,
+    max_bisect: int | None = None,
+    gap_tol: float | None = None,
+    x_tol: float | None = None,
+    t_max: float | None = None,
+    r_blow: float | None = None,
+    r_sec: float | None = None,
+    t_min_event: float | None = None,
+) -> HomoclinicFinderConfig:
+    pset = _get_homoclinic_preset(preset if preset is not None else "default")
+
+    if trace_cfg is not None:
+        if window is not None or t_max is not None or r_blow is not None or r_sec is not None or t_min_event is not None:
+            window_min = None
+            window_max = None
+            if window is not None:
+                window_min = np.array([lo for lo, _ in window], dtype=float)
+                window_max = np.array([hi for _, hi in window], dtype=float)
+            trace_cfg = HomoclinicBranchConfig(
+                eq_tol=trace_cfg.eq_tol,
+                eq_max_iter=trace_cfg.eq_max_iter,
+                eq_track_max_dist=trace_cfg.eq_track_max_dist,
+                eps_mode=trace_cfg.eps_mode,
+                eps=trace_cfg.eps,
+                eps_min=trace_cfg.eps_min,
+                eps_max=trace_cfg.eps_max,
+                r_leave=trace_cfg.r_leave,
+                t_leave_target=trace_cfg.t_leave_target,
+                r_sec=r_sec if r_sec is not None else trace_cfg.r_sec,
+                t_min_event=t_min_event if t_min_event is not None else trace_cfg.t_min_event,
+                t_max=t_max if t_max is not None else trace_cfg.t_max,
+                s_max=trace_cfg.s_max,
+                r_blow=r_blow if r_blow is not None else trace_cfg.r_blow,
+                window_min=window_min if window_min is not None else trace_cfg.window_min,
+                window_max=window_max if window_max is not None else trace_cfg.window_max,
+                require_leave_before_event=trace_cfg.require_leave_before_event,
+                eig_real_tol=trace_cfg.eig_real_tol,
+                eig_imag_tol=trace_cfg.eig_imag_tol,
+                strict_1d=trace_cfg.strict_1d,
+                jac=trace_cfg.jac,
+                fd_eps=trace_cfg.fd_eps,
+                rk=trace_cfg.rk,
+            )
+    else:
+        trace_cfg = _build_homoclinic_branch_config_from_preset(
+            pset,
+            window=window,
+            t_max=t_max,
+            r_blow=r_blow,
+            r_sec=r_sec,
+            t_min_event=t_min_event,
+        )
+
+    final_scan_n = scan_n if scan_n is not None else pset.scan_n
+    final_max_bisect = max_bisect if max_bisect is not None else pset.max_bisect
+    final_gap_tol = gap_tol if gap_tol is not None else pset.gap_tol
+    final_x_tol = x_tol if x_tol is not None else pset.x_tol
+
+    return HomoclinicFinderConfig(
+        trace=trace_cfg,
+        scan_n=final_scan_n,
+        max_bisect=final_max_bisect,
+        gap_tol=final_gap_tol,
+        x_tol=final_x_tol,
+    )
+
+
+def _validate_homoclinic_rk45_cfg(cfg: HomoclinicRK45Config) -> None:
+    if cfg.dt0 <= 0.0:
+        raise ValueError("rk.dt0 must be positive")
+    if cfg.min_step <= 0.0:
+        raise ValueError("rk.min_step must be positive")
+    if cfg.dt_max <= 0.0:
+        raise ValueError("rk.dt_max must be positive")
+    if cfg.min_step > cfg.dt_max:
+        raise ValueError("rk.min_step must be <= rk.dt_max")
+    if cfg.atol <= 0.0:
+        raise ValueError("rk.atol must be positive")
+    if cfg.rtol <= 0.0:
+        raise ValueError("rk.rtol must be positive")
+    if cfg.safety <= 0.0:
+        raise ValueError("rk.safety must be positive")
+    if cfg.max_steps <= 0:
+        raise ValueError("rk.max_steps must be positive")
+
+
+def _validate_homoclinic_branch_cfg(cfg: HomoclinicBranchConfig) -> None:
+    if cfg.eq_tol <= 0.0:
+        raise ValueError("eq_tol must be positive")
+    if cfg.eq_max_iter <= 0:
+        raise ValueError("eq_max_iter must be positive")
+    if cfg.eps <= 0.0:
+        raise ValueError("eps must be positive")
+    if cfg.eps_min <= 0.0:
+        raise ValueError("eps_min must be positive")
+    if cfg.eps_max <= 0.0:
+        raise ValueError("eps_max must be positive")
+    if cfg.eps_min > cfg.eps_max:
+        raise ValueError("eps_min must be <= eps_max")
+    if cfg.r_leave <= 0.0:
+        raise ValueError("r_leave must be positive")
+    if cfg.t_leave_target <= 0.0:
+        raise ValueError("t_leave_target must be positive")
+    if cfg.r_sec <= 0.0:
+        raise ValueError("r_sec must be positive")
+    if cfg.t_min_event < 0.0:
+        raise ValueError("t_min_event must be non-negative")
+    if cfg.t_max <= 0.0:
+        raise ValueError("t_max must be positive")
+    if cfg.s_max <= 0.0:
+        raise ValueError("s_max must be positive")
+    if cfg.r_blow <= 0.0:
+        raise ValueError("r_blow must be positive")
+    if cfg.eig_real_tol < 0.0:
+        raise ValueError("eig_real_tol must be non-negative")
+    if cfg.eig_imag_tol < 0.0:
+        raise ValueError("eig_imag_tol must be non-negative")
+    if cfg.fd_eps <= 0.0:
+        raise ValueError("fd_eps must be positive")
+    if cfg.jac not in ("auto", "fd", "analytic"):
+        raise ValueError("jac must be 'auto', 'fd', or 'analytic'")
+    _validate_homoclinic_rk45_cfg(cfg.rk)
+
+
+def _validate_homoclinic_finder_cfg(cfg: HomoclinicFinderConfig) -> None:
+    if cfg.scan_n < 2:
+        raise ValueError("scan_n must be >= 2")
+    if cfg.max_bisect < 0:
+        raise ValueError("max_bisect must be >= 0")
+    if cfg.gap_tol < 0.0:
+        raise ValueError("gap_tol must be non-negative")
+    if cfg.x_tol < 0.0:
+        raise ValueError("x_tol must be non-negative")
+    if cfg.branch_mode not in ("auto", "fixed"):
+        raise ValueError("branch_mode must be 'auto' or 'fixed'")
+    _validate_homoclinic_branch_cfg(cfg.trace)
+
+
+def _eig_index1_saddle_data(
+    J: np.ndarray,
+    *,
+    real_tol: float,
+    imag_tol: float,
+    strict_1d: bool,
+) -> tuple[bool, tuple[complex, np.ndarray, np.ndarray, int] | None, dict[str, object]]:
+    w, V = np.linalg.eig(J)
+    re = np.real(w)
+
+    unstable = np.where(re > real_tol)[0]
+    stable = np.where(re < -real_tol)[0]
+
+    info: dict[str, object] = {
+        "eigvals": w,
+        "unstable_count": int(unstable.size),
+        "stable_count": int(stable.size),
+    }
+
+    if strict_1d and unstable.size != 1:
+        info["fail"] = "not_index1_saddle"
+        return False, None, info
+    if unstable.size == 0:
+        info["fail"] = "no_unstable"
+        return False, None, info
+    if stable.size < 1:
+        info["fail"] = "no_stable"
+        return False, None, info
+
+    idx = int(unstable[0])
+    lam = w[idx]
+    v_u = V[:, idx]
+
+    if np.max(np.abs(np.imag(lam))) > imag_tol or np.max(np.abs(np.imag(v_u))) > imag_tol:
+        info["fail"] = "complex_unstable_mode_not_supported"
+        return False, None, info
+    v_u = np.real(v_u)
+
+    wt, Lt = np.linalg.eig(J.T)
+    jmatch = int(np.argmin(np.abs(wt - lam)))
+    l_u = Lt[:, jmatch]
+    if np.max(np.abs(np.imag(wt[jmatch]))) > imag_tol or np.max(np.abs(np.imag(l_u))) > imag_tol:
+        info["fail"] = "complex_left_mode_not_supported"
+        return False, None, info
+    l_u = np.real(l_u)
+
+    denom = float(l_u @ v_u)
+    if abs(denom) < 1e-14:
+        info["fail"] = "left_right_normalization_failed"
+        return False, None, info
+    l_u = l_u / denom
+
+    info["unstable_index"] = idx
+    return True, (lam, v_u, l_u, idx), info
+
+
+def _integrate_homoclinic_branch(
+    ctx: _HeteroclinicContext,
+    params_vec: np.ndarray,
+    *,
+    x0: np.ndarray,
+    x_eq: np.ndarray,
+    cfg: HomoclinicBranchConfig,
+) -> tuple[str, np.ndarray, np.ndarray]:
+    wmin = None if cfg.window_min is None else np.array(cfg.window_min, float).reshape(-1,)
+    wmax = None if cfg.window_max is None else np.array(cfg.window_max, float).reshape(-1,)
+    if wmin is not None and wmin.shape != x_eq.shape:
+        raise ValueError("window_min must have shape (n_state,)")
+    if wmax is not None and wmax.shape != x_eq.shape:
+        raise ValueError("window_max must have shape (n_state,)")
+
+    def blow_fn(_t: float, x: np.ndarray) -> bool:
+        if not np.all(np.isfinite(x)):
+            return True
+        if float(np.linalg.norm(np.array(x, float) - x_eq)) > float(cfg.r_blow):
+            return True
+        if not _in_window(np.array(x, float), wmin, wmax):
+            return True
+        return False
+
+    use_numba = ctx.use_jit and _rk45_integrate_numba is not None
+    update_aux_fn = ctx.update_aux_fn
+    if use_numba:
+        if ctx.do_aux_pre or ctx.do_aux_post:
+            if not _is_numba_dispatcher(ctx.update_aux_fn):
+                use_numba = False
+        else:
+            if _update_aux_noop_numba is not None:
+                update_aux_fn = _update_aux_noop_numba
+            else:
+                use_numba = False
+
+    n_state = int(x_eq.size)
+    has_window = wmin is not None and wmax is not None
+    wmin_arr = np.array(wmin if wmin is not None else np.zeros(n_state), float).reshape(-1,)
+    wmax_arr = np.array(wmax if wmax is not None else np.zeros(n_state), float).reshape(-1,)
+    if use_numba and has_window:
+        if wmin_arr.size != n_state or wmax_arr.size != n_state:
+            use_numba = False
+
+    ctx.prep_ws(x0)
+    if use_numba:
+        status, ts, xs, _ = _rk45_integrate_numba_wrapper(
+            ctx.rhs_fn,
+            params_vec,
+            ctx.runtime_ws,
+            update_aux_fn,
+            ctx.do_aux_pre,
+            ctx.do_aux_post,
+            x0,
+            float(ctx.t_eval),
+            float(ctx.t_eval) + float(cfg.t_max),
+            cfg.rk,
+            sign_factor=1.0,
+            x_eq=x_eq,
+            r_blow=float(cfg.r_blow),
+            wmin=wmin_arr,
+            wmax=wmax_arr,
+            has_window=bool(has_window),
+            t_min_event=float(cfg.t_min_event),
+            require_leave_before_event=bool(cfg.require_leave_before_event),
+            r_leave=float(cfg.r_leave),
+            target_center=np.zeros(n_state, float),
+            target_r=0.0,
+            enable_target=False,
+            section_kind=0,
+            section_center=np.zeros(n_state, float),
+            section_normal=np.zeros(n_state, float),
+            section_tau=np.zeros(n_state, float),
+            section_radius=0.0,
+            section_xsec=np.zeros(n_state, float),
+            rho_max=-1.0,
+            enable_section=False,
+        )
+    else:
+        def rhs_eval(t: float, x: np.ndarray, out: np.ndarray) -> None:
+            ctx.rhs_fn(t, x, out, params_vec, ctx.runtime_ws)
+
+        status, ts, xs, _ = _rk45_integrate(
+            rhs_eval,
+            params_vec,
+            ctx.runtime_ws,
+            ctx.update_aux_fn,
+            ctx.do_aux_pre,
+            ctx.do_aux_post,
+            x0,
+            float(ctx.t_eval),
+            float(ctx.t_eval) + float(cfg.t_max),
+            cfg.rk,
+            blow_fn=blow_fn,
+            event_fn=None,
+        )
+
+    if status == "blow":
+        x_last = xs[-1]
+        if (wmin is not None and wmax is not None) and (not _in_window(x_last, wmin, wmax)):
+            status = "window"
+        else:
+            status = "blow"
+
+    s_len = _polyline_arclength(xs)
+    if s_len > float(cfg.s_max) and status in ("ok", "max_steps"):
+        status = "smax"
+
+    return str(status), np.array(ts, float), np.array(xs, float)
+
+
+def _scan_homoclinic_section(
+    ts: np.ndarray,
+    xs: np.ndarray,
+    *,
+    x_eq: np.ndarray,
+    l_u: np.ndarray,
+    v_proj: np.ndarray,
+    cfg: HomoclinicBranchConfig,
+) -> tuple[bool, float, np.ndarray, float, float]:
+    if xs.ndim != 2 or xs.shape[0] == 0:
+        return False, float("nan"), np.array(x_eq, float), float("nan"), float("inf")
+
+    def a_of(x: np.ndarray) -> float:
+        return float(l_u @ (x - x_eq))
+
+    def b_of(x: np.ndarray) -> float:
+        xi = x - x_eq
+        a = float(l_u @ xi)
+        stable = xi - v_proj * a
+        return float(np.linalg.norm(stable))
+
+    left = False
+    best_q = float("inf")
+    best_t = float("nan")
+    best_x = xs[-1].copy()
+
+    b_prev = b_of(xs[0])
+    s_prev = b_prev - float(cfg.r_sec)
+
+    for i in range(1, len(ts)):
+        t0, x_prev = float(ts[i - 1]), xs[i - 1]
+        t1, x_curr = float(ts[i]), xs[i]
+
+        if t1 < float(cfg.t_min_event):
+            b_prev = b_of(x_curr)
+            s_prev = b_prev - float(cfg.r_sec)
+            continue
+
+        r_curr = float(np.linalg.norm(x_curr - x_eq))
+        if (not left) and (r_curr >= float(cfg.r_leave)):
+            left = True
+
+        b_curr = b_of(x_curr)
+        s_curr = b_curr - float(cfg.r_sec)
+
+        q_here = abs(s_curr)
+        if q_here < best_q:
+            best_q = float(q_here)
+            best_t = float(t1)
+            best_x = x_curr.copy()
+
+        if left and (s_prev > 0.0) and (s_curr <= 0.0):
+            denom = (s_curr - s_prev)
+            if denom == 0.0:
+                alpha = 0.0
+            else:
+                alpha = (0.0 - s_prev) / denom
+                alpha = min(1.0, max(0.0, alpha))
+            t_cross = t0 + alpha * (t1 - t0)
+            x_cross = x_prev + alpha * (x_curr - x_prev)
+            g = a_of(x_cross)
+            return True, float(t_cross), np.array(x_cross, float), float(g), 0.0
+
+        b_prev = b_curr
+        s_prev = s_curr
+
+    return False, float(best_t), np.array(best_x, float), float("nan"), float(best_q)
+
+
+def _homoclinic_miss_index1(
+    ctx: _HeteroclinicContext,
+    params_vec: np.ndarray,
+    param_value: float,
+    *,
+    eq_guess: np.ndarray,
+    eq_prev: np.ndarray | None,
+    sign_u: int,
+    cfg: HomoclinicFinderConfig,
+) -> HomoclinicMissResult:
+    diag: dict[str, object] = {"param_value": float(param_value)}
+
+    def rhs_eval_reset(x: np.ndarray, out: np.ndarray) -> None:
+        ctx.prep_ws(x)
+        ctx.rhs_fn(ctx.t_eval, x, out, params_vec, ctx.runtime_ws)
+
+    def jac_eval(x: np.ndarray) -> np.ndarray:
+        cfg_branch = cfg.trace
+        if cfg_branch.jac == "fd" or (cfg_branch.jac == "auto" and ctx.jac_fn is None):
+            fx = np.empty((x.size,), dtype=ctx.model.dtype)
+            rhs_eval_reset(x, fx)
+            J = np.zeros((x.size, x.size), dtype=float)
+            for j in range(x.size):
+                step = cfg_branch.fd_eps * (1.0 + abs(float(x[j])))
+                if step == 0.0:
+                    step = cfg_branch.fd_eps
+                x_step = np.array(x, copy=True)
+                x_step[j] += step
+                f_step = np.empty((x.size,), dtype=ctx.model.dtype)
+                rhs_eval_reset(x_step, f_step)
+                J[:, j] = (f_step - fx) / step
+            return J
+
+        if cfg_branch.jac == "analytic" and ctx.jac_fn is None:
+            raise ValueError("jac='analytic' requires a model Jacobian.")
+        if ctx.jac_fn is None:
+            raise ValueError("Jacobian is not available (jac='auto' found none).")
+
+        jac_out = np.zeros((x.size, x.size), dtype=ctx.model.dtype)
+        ctx.prep_ws(x)
+        ctx.jac_fn(ctx.t_eval, x, params_vec, jac_out, ctx.runtime_ws)
+        return np.array(jac_out, copy=True)
+
+    ok_eq, x_eq, eqinfo = _solve_equilibrium_locked(
+        rhs_eval_reset,
+        jac_eval,
+        np.array(eq_guess, float),
+        x_prev=(None if eq_prev is None else np.array(eq_prev, float)),
+        eq_tol=float(cfg.trace.eq_tol),
+        eq_max_iter=int(cfg.trace.eq_max_iter),
+        eq_track_max_dist=cfg.trace.eq_track_max_dist,
+        r_leave_for_default=float(cfg.trace.r_leave),
+    )
+    diag["eq"] = eqinfo
+    if not ok_eq:
+        status = "eq_jump" if eqinfo.get("fail_mode") == "eq_jump" else "eq_fail"
+        z = np.array(x_eq, float, copy=True)
+        return HomoclinicMissResult(
+            qualified=False,
+            param_value=float(param_value),
+            eq=z,
+            sign_u=int(sign_u),
+            eps=float(cfg.trace.eps),
+            v_dir=np.zeros_like(z),
+            x0=z.copy(),
+            r_sec=float(cfg.trace.r_sec),
+            r_leave=float(cfg.trace.r_leave),
+            t_min=float(cfg.trace.t_min_event),
+            t_cross=float("nan"),
+            x_cross=z.copy(),
+            g=float("nan"),
+            q=float("inf"),
+            status=status,
+            diag=diag,
+        )
+
+    J = jac_eval(np.array(x_eq, float))
+    ok_e, ed, einfo = _eig_index1_saddle_data(
+        J,
+        real_tol=float(cfg.trace.eig_real_tol),
+        imag_tol=float(cfg.trace.eig_imag_tol),
+        strict_1d=bool(cfg.trace.strict_1d),
+    )
+    diag["saddle"] = einfo
+    if not ok_e or ed is None:
+        z = np.array(x_eq, float)
+        return HomoclinicMissResult(
+            qualified=False,
+            param_value=float(param_value),
+            eq=z,
+            sign_u=int(sign_u),
+            eps=float(cfg.trace.eps),
+            v_dir=np.zeros_like(z),
+            x0=z.copy(),
+            r_sec=float(cfg.trace.r_sec),
+            r_leave=float(cfg.trace.r_leave),
+            t_min=float(cfg.trace.t_min_event),
+            t_cross=float("nan"),
+            x_cross=z.copy(),
+            g=float("nan"),
+            q=float("inf"),
+            status="saddle_fail",
+            diag=diag,
+        )
+
+    lam, v_raw, l_u, _ = ed
+    v_norm = float(np.linalg.norm(v_raw))
+    if not np.isfinite(v_norm) or v_norm <= 1e-300:
+        diag["fail"] = "unstable_vector_norm_bad"
+        z = np.array(x_eq, float)
+        return HomoclinicMissResult(
+            qualified=False,
+            param_value=float(param_value),
+            eq=z,
+            sign_u=int(sign_u),
+            eps=float(cfg.trace.eps),
+            v_dir=np.zeros_like(z),
+            x0=z.copy(),
+            r_sec=float(cfg.trace.r_sec),
+            r_leave=float(cfg.trace.r_leave),
+            t_min=float(cfg.trace.t_min_event),
+            t_cross=float("nan"),
+            x_cross=z.copy(),
+            g=float("nan"),
+            q=float("inf"),
+            status="saddle_fail",
+            diag=diag,
+        )
+    v_dir = np.array(v_raw, float) / v_norm
+
+    denom = float(l_u @ v_dir)
+    if abs(denom) < 1e-14:
+        diag["fail"] = "projection_normalization_failed"
+        z = np.array(x_eq, float)
+        return HomoclinicMissResult(
+            qualified=False,
+            param_value=float(param_value),
+            eq=z,
+            sign_u=int(sign_u),
+            eps=float(cfg.trace.eps),
+            v_dir=np.zeros_like(z),
+            x0=z.copy(),
+            r_sec=float(cfg.trace.r_sec),
+            r_leave=float(cfg.trace.r_leave),
+            t_min=float(cfg.trace.t_min_event),
+            t_cross=float("nan"),
+            x_cross=z.copy(),
+            g=float("nan"),
+            q=float("inf"),
+            status="saddle_fail",
+            diag=diag,
+        )
+    v_proj = v_dir / denom
+
+    sign = +1.0 if int(sign_u) >= 0 else -1.0
+    growth_rate = float(np.real(lam))
+    eps = float(cfg.trace.eps) if cfg.trace.eps_mode == "fixed" else _choose_eps_leave(
+        r_leave=float(cfg.trace.r_leave),
+        rate=growth_rate,
+        t_leave_target=float(cfg.trace.t_leave_target),
+        eps_min=float(cfg.trace.eps_min),
+        eps_max=float(cfg.trace.eps_max),
+        fallback=float(cfg.trace.eps),
+    )
+    x0 = np.array(x_eq, float) + sign * eps * v_dir
+
+    status_int, ts, xs = _integrate_homoclinic_branch(
+        ctx,
+        params_vec,
+        x0=np.array(x0, ctx.model.dtype),
+        x_eq=np.array(x_eq, ctx.model.dtype),
+        cfg=cfg.trace,
+    )
+    diag["integrate_status"] = status_int
+
+    qualified, t_cross, x_cross, g_val, q_val = _scan_homoclinic_section(
+        ts,
+        xs,
+        x_eq=np.array(x_eq, float),
+        l_u=np.array(l_u, float),
+        v_proj=np.array(v_proj, float),
+        cfg=cfg.trace,
+    )
+
+    status = str(status_int)
+    if not qualified and status in ("ok", "max_steps"):
+        status = "no_cross"
+
+    return HomoclinicMissResult(
+        qualified=bool(qualified),
+        param_value=float(param_value),
+        eq=np.array(x_eq, float),
+        sign_u=int(sign_u),
+        eps=float(eps),
+        v_dir=np.array(v_dir, float),
+        x0=np.array(x0, float),
+        r_sec=float(cfg.trace.r_sec),
+        r_leave=float(cfg.trace.r_leave),
+        t_min=float(cfg.trace.t_min_event),
+        t_cross=float(t_cross),
+        x_cross=np.array(x_cross, float),
+        g=float(g_val),
+        q=float(q_val),
+        status=status,
+        diag=diag,
+    )
+
+
+def _homoclinic_is_success(cfg: HomoclinicFinderConfig, r: HomoclinicMissResult) -> bool:
+    if not (r.qualified and np.isfinite(r.g) and np.isfinite(r.q)):
+        return False
+    if abs(float(r.g)) > float(cfg.gap_tol):
+        return False
+    if float(r.q) > float(cfg.x_tol):
+        return False
+    return True
+
+
+def _find_homoclinic_param(
+    ctx: _HeteroclinicContext,
+    *,
+    param_min: float,
+    param_max: float,
+    param_init: float,
+    eq_guess: np.ndarray,
+    cfg: HomoclinicFinderConfig,
+) -> tuple[bool, float, HomoclinicMissResult | None, dict[str, object]]:
+    param_min = float(param_min)
+    param_max = float(param_max)
+    param_init = float(param_init)
+
+    param_grid, idx0 = _scan_grid_centered(param_min, param_max, param_init, int(cfg.scan_n))
+
+    if cfg.branch_mode == "fixed":
+        combos = [+1 if int(cfg.sign_u) >= 0 else -1]
+    else:
+        combos = [+1, -1]
+
+    best_overall: tuple[float, HomoclinicMissResult, dict[str, object]] | None = None
+
+    for sign_u in combos:
+        results: list[HomoclinicMissResult | None] = [None] * len(param_grid)
+
+        info: dict[str, object] = {
+            "param_min": param_min,
+            "param_max": param_max,
+            "param_init": param_init,
+            "param_used": float(param_grid[idx0]),
+            "scan_n": int(cfg.scan_n),
+            "sign_u": int(sign_u),
+            "branch_mode": str(cfg.branch_mode),
+            "eq_track_max_dist": (
+                _track_max_dist_default(cfg.trace.r_leave)
+                if cfg.trace.eq_track_max_dist is None
+                else float(cfg.trace.eq_track_max_dist)
+            ),
+            "qualified_count": 0,
+            "eq_jump_count": 0,
+            "eq_fail_count": 0,
+            "best_by_abs_gap": None,
+            "best_by_q": None,
+            "fail": None,
+        }
+
+        params_vec = _params_with_override(ctx.params_base, ctx.param_index, float(param_grid[idx0]))
+        r0 = _homoclinic_miss_index1(
+            ctx,
+            params_vec,
+            float(param_grid[idx0]),
+            eq_guess=np.array(eq_guess, float),
+            eq_prev=None,
+            sign_u=sign_u,
+            cfg=cfg,
+        )
+        results[idx0] = r0
+
+        if not r0.qualified and r0.status in ("eq_fail", "eq_jump"):
+            info["fail"] = "anchor_equilibrium_failed"
+            continue
+
+        eq_prev_right = r0.eq.copy()
+        for i in range(idx0 + 1, len(param_grid)):
+            param_val = float(param_grid[i])
+            params_vec = _params_with_override(ctx.params_base, ctx.param_index, param_val)
+            r = _homoclinic_miss_index1(
+                ctx,
+                params_vec,
+                param_val,
+                eq_guess=eq_prev_right,
+                eq_prev=eq_prev_right,
+                sign_u=sign_u,
+                cfg=cfg,
+            )
+            results[i] = r
+            if r.status == "eq_jump":
+                info["eq_jump_count"] += 1
+            elif r.status == "eq_fail":
+                info["eq_fail_count"] += 1
+            else:
+                eq_prev_right = r.eq.copy()
+
+        eq_prev_left = r0.eq.copy()
+        for i in range(idx0 - 1, -1, -1):
+            param_val = float(param_grid[i])
+            params_vec = _params_with_override(ctx.params_base, ctx.param_index, param_val)
+            r = _homoclinic_miss_index1(
+                ctx,
+                params_vec,
+                param_val,
+                eq_guess=eq_prev_left,
+                eq_prev=eq_prev_left,
+                sign_u=sign_u,
+                cfg=cfg,
+            )
+            results[i] = r
+            if r.status == "eq_jump":
+                info["eq_jump_count"] += 1
+            elif r.status == "eq_fail":
+                info["eq_fail_count"] += 1
+            else:
+                eq_prev_left = r.eq.copy()
+
+        qual = [r for r in results if (r is not None and r.qualified and np.isfinite(r.g))]
+        info["qualified_count"] = int(len(qual))
+        if not qual:
+            info["fail"] = "no_qualified_points_in_scan"
+            allr = [r for r in results if r is not None]
+            best_any = min(allr, key=lambda rr: rr.q if np.isfinite(rr.q) else float("inf"))
+            info["best_by_q"] = {
+                "param_value": best_any.param_value,
+                "g": best_any.g,
+                "q": best_any.q,
+                "status": best_any.status,
+            }
+            continue
+
+        qual_sorted = sorted(qual, key=lambda rr: rr.param_value)
+        best_by_q = min(qual_sorted, key=lambda rr: rr.q)
+        best_by_abs_g = min(qual_sorted, key=lambda rr: abs(rr.g))
+
+        info["best_by_abs_gap"] = {
+            "param_value": best_by_abs_g.param_value,
+            "gap": best_by_abs_g.g,
+            "q": best_by_abs_g.q,
+            "status": best_by_abs_g.status,
+        }
+        info["best_by_q"] = {
+            "param_value": best_by_q.param_value,
+            "gap": best_by_q.g,
+            "q": best_by_q.q,
+            "status": best_by_q.status,
+        }
+
+        if _homoclinic_is_success(cfg, best_by_q):
+            info["param_found"] = float(best_by_q.param_value)
+            info["gap_found"] = float(best_by_q.g)
+            info["q_found"] = float(best_by_q.q)
+            info["t_cross"] = float(best_by_q.t_cross)
+            info["section"] = {
+                "r_sec": float(best_by_q.r_sec),
+                "r_leave": float(best_by_q.r_leave),
+                "t_min_event": float(best_by_q.t_min),
+            }
+            info["departure"] = {"eps": float(best_by_q.eps), "sign_u": int(best_by_q.sign_u)}
+            info["bisection_iters"] = 0
+            return True, float(best_by_q.param_value), best_by_q, info
+
+        bracket: tuple[HomoclinicMissResult, HomoclinicMissResult] | None = None
+        for a, b in zip(qual_sorted[:-1], qual_sorted[1:]):
+            if a.g == 0.0:
+                bracket = (a, a)
+                break
+            if a.g * b.g < 0.0:
+                bracket = (a, b)
+                break
+        if bracket is None:
+            last = qual_sorted[-1]
+            if np.isfinite(last.g) and abs(last.g) <= float(cfg.gap_tol):
+                bracket = (last, last)
+
+        if bracket is None:
+            info["fail"] = "no_sign_change_in_qualified_scan"
+            score = float(best_by_q.q + 0.1 * abs(best_by_q.g))
+            if best_overall is None or score < best_overall[0]:
+                best_overall = (score, best_by_q, info)
+            continue
+
+        a, b = bracket
+        if a.param_value == b.param_value:
+            r_star = a
+            info["bisection_iters"] = 0
+        else:
+            param_lo, param_hi = float(a.param_value), float(b.param_value)
+            r_lo, r_hi = a, b
+            r_star = r_lo
+            iters = 0
+
+            for it in range(int(cfg.max_bisect)):
+                iters = it + 1
+                param_mid = 0.5 * (param_lo + param_hi)
+
+                if abs(param_mid - param_lo) <= abs(param_mid - param_hi):
+                    eq_seed = r_lo.eq
+                    eq_prev = r_lo.eq
+                else:
+                    eq_seed = r_hi.eq
+                    eq_prev = r_hi.eq
+
+                params_vec = _params_with_override(ctx.params_base, ctx.param_index, float(param_mid))
+                r_mid = _homoclinic_miss_index1(
+                    ctx,
+                    params_vec,
+                    float(param_mid),
+                    eq_guess=eq_seed,
+                    eq_prev=eq_prev,
+                    sign_u=sign_u,
+                    cfg=cfg,
+                )
+
+                if _homoclinic_is_success(cfg, r_mid):
+                    r_star = r_mid
+                    break
+
+                if (not r_mid.qualified) or (not np.isfinite(r_mid.g)):
+                    if r_lo.q <= r_hi.q:
+                        param_hi = float(param_mid)
+                    else:
+                        param_lo = float(param_mid)
+                    continue
+
+                if r_lo.g * r_mid.g <= 0.0:
+                    param_hi, r_hi = float(param_mid), r_mid
+                else:
+                    param_lo, r_lo = float(param_mid), r_mid
+
+            else:
+                r_star = min([r_lo, r_hi], key=lambda rr: (rr.q, abs(rr.g)))
+
+            info["bisection_iters"] = int(iters)
+
+        if not _homoclinic_is_success(cfg, r_star):
+            info["fail"] = "bisection_did_not_converge"
+            cand = r_star if (r_star.qualified and np.isfinite(r_star.g)) else best_by_q
+            score = float(cand.q + 0.1 * abs(cand.g))
+            if best_overall is None or score < best_overall[0]:
+                best_overall = (score, cand, info)
+            continue
+
+        info["param_found"] = float(r_star.param_value)
+        info["gap_found"] = float(r_star.g)
+        info["q_found"] = float(r_star.q)
+        info["t_cross"] = float(r_star.t_cross)
+        info["section"] = {
+            "r_sec": float(r_star.r_sec),
+            "r_leave": float(r_star.r_leave),
+            "t_min_event": float(r_star.t_min),
+        }
+        info["departure"] = {"eps": float(r_star.eps), "sign_u": int(r_star.sign_u)}
+
+        return True, float(r_star.param_value), r_star, info
+
+    if best_overall is not None:
+        _, best_r, best_info = best_overall
+        best_info = dict(best_info)
+        best_info["fail"] = best_info.get("fail", "no_branch_converged")
+        best_info["param_candidate"] = float(best_r.param_value)
+        best_info["gap_candidate"] = float(best_r.g) if np.isfinite(best_r.g) else float("nan")
+        best_info["q_candidate"] = float(best_r.q)
+        return False, float("nan"), None, best_info
+
+    return False, float("nan"), None, {"fail": "no_branch_had_qualified_points"}
+
+
+def homoclinic_finder(
+    sim: "Sim",
+    *,
+    param: str | int | None,
+    param_min: float,
+    param_max: float,
+    param_init: float,
+    eq_guess: Mapping[str, float] | Sequence[float] | np.ndarray,
+    cfg: HomoclinicFinderConfig | None = None,
+    # Simplified API: preset and flattened kwargs
+    preset: str | HomoclinicPreset | None = None,
+    trace_cfg: HomoclinicBranchConfig | None = None,
+    window: Sequence[tuple[float, float]] | None = None,
+    scan_n: int | None = None,
+    max_bisect: int | None = None,
+    gap_tol: float | None = None,
+    x_tol: float | None = None,
+    t_max: float | None = None,
+    r_blow: float | None = None,
+    r_sec: float | None = None,
+    t_min_event: float | None = None,
+    # Base params
+    params: Mapping[str, float] | Sequence[float] | np.ndarray | None = None,
+    t: float | None = None,
+) -> HomoclinicFinderResult:
+    """
+    Find a homoclinic orbit associated with a saddle equilibrium.
+
+    Parameters
+    ----------
+    sim : Sim
+        The simulation object.
+    param : str | int | None
+        The parameter to vary (name or index). If None, model must have exactly one parameter.
+    param_min, param_max : float
+        Search bounds for the parameter.
+    param_init : float
+        Initial guess for the parameter value.
+    eq_guess : Mapping | Sequence | np.ndarray
+        Initial equilibrium guess near the homoclinic orbit.
+
+    cfg : HomoclinicFinderConfig | None
+        Full configuration object (advanced). If provided, overrides preset/trace_cfg/kwargs.
+
+    Simplified API (preferred for typical use):
+    -------------------------------------------
+    preset : str | HomoclinicPreset | None
+        Preset configuration: "fast", "default", or "precise".
+    trace_cfg : HomoclinicBranchConfig | None
+        Trace configuration for the unstable branch.
+    window : Sequence[tuple[float, float]] | None
+        State-space window as [(x_min, x_max), (y_min, y_max), ...].
+    scan_n : int | None
+        Number of parameter scan points.
+    max_bisect : int | None
+        Maximum bisection iterations.
+    gap_tol : float | None
+        Tolerance for the signed return value g.
+    x_tol : float | None
+        Tolerance for section miss distance.
+    t_max : float | None
+        Maximum integration time for manifold tracing.
+    r_blow : float | None
+        Blow-up radius for manifold tracing.
+    r_sec : float | None
+        Section radius in the stable complement.
+    t_min_event : float | None
+        Minimum time before checking the return section.
+
+    params : Mapping | Sequence | np.ndarray | None
+        Fixed parameter values (other than the search parameter).
+    t : float | None
+        Evaluation time for auxiliary variables.
+    """
+    if param_min >= param_max:
+        raise ValueError("param_min must be < param_max")
+
+    has_simplified_kwargs = any(
+        x is not None
+        for x in [
+            preset,
+            trace_cfg,
+            window,
+            scan_n,
+            max_bisect,
+            gap_tol,
+            x_tol,
+            t_max,
+            r_blow,
+            r_sec,
+            t_min_event,
+        ]
+    )
+    if cfg is not None and has_simplified_kwargs:
+        raise ValueError(
+            "Cannot use 'cfg' together with simplified kwargs (preset, trace_cfg, window, etc.). "
+            "Use either 'cfg' for full control, or the simplified kwargs."
+        )
+
+    ctx = _build_heteroclinic_context(
+        sim,
+        params=params,
+        param=param,
+        t=t,
+        caller="homoclinic_finder",
+    )
+
+    if cfg is None:
+        cfg = _build_homoclinic_finder_config_from_kwargs(
+            preset=preset,
+            trace_cfg=trace_cfg,
+            window=window,
+            scan_n=scan_n,
+            max_bisect=max_bisect,
+            gap_tol=gap_tol,
+            x_tol=x_tol,
+            t_max=t_max,
+            r_blow=r_blow,
+            r_sec=r_sec,
+            t_min_event=t_min_event,
+        )
+    else:
+        if not isinstance(cfg, HomoclinicFinderConfig):
+            raise ValueError("cfg must be a HomoclinicFinderConfig")
+
+    _validate_homoclinic_finder_cfg(cfg)
+
+    eq_guess_vec = _resolve_fixed_point(ctx.model, eq_guess)
+
+    success, param_found, miss, info = _find_homoclinic_param(
+        ctx,
+        param_min=float(param_min),
+        param_max=float(param_max),
+        param_init=float(param_init),
+        eq_guess=np.array(eq_guess_vec, float),
+        cfg=cfg,
+    )
+
+    return HomoclinicFinderResult(
+        success=bool(success),
+        param_found=float(param_found),
+        miss=miss,
+        info=info,
+    )
+
+
+def homoclinic_tracer(
+    sim: "Sim",
+    *,
+    param: str | int | None,
+    param_value: float,
+    eq: Mapping[str, float] | Sequence[float] | np.ndarray,
+    sign_u: int,
+    cfg_u: HomoclinicBranchConfig | None = None,
+    # Simplified API: preset and flattened kwargs
+    preset: str | HomoclinicPreset | None = None,
+    trace_cfg: HomoclinicBranchConfig | None = None,
+    window: Sequence[tuple[float, float]] | None = None,
+    t_max: float | None = None,
+    r_blow: float | None = None,
+    r_sec: float | None = None,
+    t_min_event: float | None = None,
+    # Base params
+    params: Mapping[str, float] | Sequence[float] | np.ndarray | None = None,
+    t: float | None = None,
+) -> HomoclinicTraceResult:
+    """
+    Trace a homoclinic excursion from a saddle equilibrium.
+
+    Parameters
+    ----------
+    sim : Sim
+        The simulation object.
+    param : str | int | None
+        The parameter name or index. If None, model must have exactly one parameter.
+    param_value : float
+        The parameter value at which to trace the orbit.
+    eq : Mapping | Sequence | np.ndarray
+        Equilibrium point (saddle) to trace from.
+    sign_u : int
+        Sign for unstable eigenvector direction (+1 or -1).
+    cfg_u : HomoclinicBranchConfig | None
+        Full trace configuration (advanced). If provided, overrides preset/trace_cfg/kwargs.
+
+    Simplified API (preferred for typical use):
+    -------------------------------------------
+    preset : str | HomoclinicPreset | None
+        Preset configuration: "fast", "default", or "precise".
+    trace_cfg : HomoclinicBranchConfig | None
+        Trace configuration (alternative to cfg_u).
+    window : Sequence[tuple[float, float]] | None
+        State-space window as [(x_min, x_max), (y_min, y_max), ...].
+    t_max : float | None
+        Maximum integration time for manifold tracing.
+    r_blow : float | None
+        Blow-up radius for manifold tracing.
+    r_sec : float | None
+        Section radius in the stable complement.
+    t_min_event : float | None
+        Minimum time before checking the return section.
+    """
+    has_simplified_kwargs = any(
+        x is not None for x in [preset, trace_cfg, window, t_max, r_blow, r_sec, t_min_event]
+    )
+    if cfg_u is not None and has_simplified_kwargs:
+        raise ValueError(
+            "Cannot use 'cfg_u' together with simplified kwargs (preset, trace_cfg, window, etc.). "
+            "Use either 'cfg_u' for full control, or the simplified kwargs."
+        )
+
+    ctx = _build_heteroclinic_context(
+        sim,
+        params=params,
+        param=param,
+        t=t,
+        caller="homoclinic_tracer",
+    )
+
+    if cfg_u is None:
+        if trace_cfg is not None:
+            cfg_u = trace_cfg
+            if window is not None or t_max is not None or r_blow is not None or r_sec is not None or t_min_event is not None:
+                window_min = None
+                window_max = None
+                if window is not None:
+                    window_min = np.array([lo for lo, _ in window], dtype=float)
+                    window_max = np.array([hi for _, hi in window], dtype=float)
+                cfg_u = HomoclinicBranchConfig(
+                    eq_tol=trace_cfg.eq_tol,
+                    eq_max_iter=trace_cfg.eq_max_iter,
+                    eq_track_max_dist=trace_cfg.eq_track_max_dist,
+                    eps_mode=trace_cfg.eps_mode,
+                    eps=trace_cfg.eps,
+                    eps_min=trace_cfg.eps_min,
+                    eps_max=trace_cfg.eps_max,
+                    r_leave=trace_cfg.r_leave,
+                    t_leave_target=trace_cfg.t_leave_target,
+                    r_sec=r_sec if r_sec is not None else trace_cfg.r_sec,
+                    t_min_event=t_min_event if t_min_event is not None else trace_cfg.t_min_event,
+                    t_max=t_max if t_max is not None else trace_cfg.t_max,
+                    s_max=trace_cfg.s_max,
+                    r_blow=r_blow if r_blow is not None else trace_cfg.r_blow,
+                    window_min=window_min if window_min is not None else trace_cfg.window_min,
+                    window_max=window_max if window_max is not None else trace_cfg.window_max,
+                    require_leave_before_event=trace_cfg.require_leave_before_event,
+                    eig_real_tol=trace_cfg.eig_real_tol,
+                    eig_imag_tol=trace_cfg.eig_imag_tol,
+                    strict_1d=trace_cfg.strict_1d,
+                    jac=trace_cfg.jac,
+                    fd_eps=trace_cfg.fd_eps,
+                    rk=trace_cfg.rk,
+                )
+        else:
+            pset = _get_homoclinic_preset(preset if preset is not None else "default")
+            cfg_u = _build_homoclinic_branch_config_from_preset(
+                pset,
+                window=window,
+                t_max=t_max,
+                r_blow=r_blow,
+                r_sec=r_sec,
+                t_min_event=t_min_event,
+            )
+
+    _validate_homoclinic_branch_cfg(cfg_u)
+
+    params_vec = _params_with_override(ctx.params_base, ctx.param_index, float(param_value))
+    eq_vec = _resolve_fixed_point(ctx.model, eq)
+
+    def rhs_eval_reset(x: np.ndarray, out: np.ndarray) -> None:
+        ctx.prep_ws(x)
+        ctx.rhs_fn(ctx.t_eval, x, out, params_vec, ctx.runtime_ws)
+
+    def jac_eval(x: np.ndarray) -> np.ndarray:
+        if cfg_u.jac == "fd" or (cfg_u.jac == "auto" and ctx.jac_fn is None):
+            fx = np.empty((x.size,), dtype=ctx.model.dtype)
+            rhs_eval_reset(x, fx)
+            J = np.zeros((x.size, x.size), dtype=float)
+            for j in range(x.size):
+                step = cfg_u.fd_eps * (1.0 + abs(float(x[j])))
+                if step == 0.0:
+                    step = cfg_u.fd_eps
+                x_step = np.array(x, copy=True)
+                x_step[j] += step
+                f_step = np.empty((x.size,), dtype=ctx.model.dtype)
+                rhs_eval_reset(x_step, f_step)
+                J[:, j] = (f_step - fx) / step
+            return J
+
+        if cfg_u.jac == "analytic" and ctx.jac_fn is None:
+            raise ValueError("jac='analytic' requires a model Jacobian.")
+        if ctx.jac_fn is None:
+            raise ValueError("Jacobian is not available (jac='auto' found none).")
+
+        jac_out = np.zeros((x.size, x.size), dtype=ctx.model.dtype)
+        ctx.prep_ws(x)
+        ctx.jac_fn(ctx.t_eval, x, params_vec, jac_out, ctx.runtime_ws)
+        return np.array(jac_out, copy=True)
+
+    J = jac_eval(np.array(eq_vec, float))
+    ok_e, ed, einfo = _eig_index1_saddle_data(
+        J,
+        real_tol=float(cfg_u.eig_real_tol),
+        imag_tol=float(cfg_u.eig_imag_tol),
+        strict_1d=bool(cfg_u.strict_1d),
+    )
+    diag: dict[str, object] = {"saddle": einfo}
+    if not ok_e or ed is None:
+        meta = HomoclinicTraceMeta(
+            param_value=float(param_value),
+            eq=np.array(eq_vec, float),
+            sign_u=int(sign_u),
+            eps_used=float("nan"),
+            status="saddle_fail",
+            success=False,
+            event=None,
+            t_cross=float("nan"),
+            x_cross=np.array(eq_vec, float),
+            diag=diag,
+        )
+        return HomoclinicTraceResult(
+            t=np.array([0.0], float),
+            X=np.array([eq_vec], float),
+            meta=meta,
+        )
+
+    lam, v_raw, l_u, _ = ed
+    v_norm = float(np.linalg.norm(v_raw))
+    if not np.isfinite(v_norm) or v_norm <= 1e-300:
+        diag["fail"] = "unstable_vector_norm_bad"
+        meta = HomoclinicTraceMeta(
+            param_value=float(param_value),
+            eq=np.array(eq_vec, float),
+            sign_u=int(sign_u),
+            eps_used=float("nan"),
+            status="saddle_fail",
+            success=False,
+            event=None,
+            t_cross=float("nan"),
+            x_cross=np.array(eq_vec, float),
+            diag=diag,
+        )
+        return HomoclinicTraceResult(
+            t=np.array([0.0], float),
+            X=np.array([eq_vec], float),
+            meta=meta,
+        )
+    v_dir = np.array(v_raw, float) / v_norm
+
+    denom = float(l_u @ v_dir)
+    if abs(denom) < 1e-14:
+        diag["fail"] = "projection_normalization_failed"
+        meta = HomoclinicTraceMeta(
+            param_value=float(param_value),
+            eq=np.array(eq_vec, float),
+            sign_u=int(sign_u),
+            eps_used=float("nan"),
+            status="saddle_fail",
+            success=False,
+            event=None,
+            t_cross=float("nan"),
+            x_cross=np.array(eq_vec, float),
+            diag=diag,
+        )
+        return HomoclinicTraceResult(
+            t=np.array([0.0], float),
+            X=np.array([eq_vec], float),
+            meta=meta,
+        )
+    v_proj = v_dir / denom
+
+    sign = +1.0 if int(sign_u) >= 0 else -1.0
+    growth_rate = float(np.real(lam))
+    eps = float(cfg_u.eps) if cfg_u.eps_mode == "fixed" else _choose_eps_leave(
+        r_leave=float(cfg_u.r_leave),
+        rate=growth_rate,
+        t_leave_target=float(cfg_u.t_leave_target),
+        eps_min=float(cfg_u.eps_min),
+        eps_max=float(cfg_u.eps_max),
+        fallback=float(cfg_u.eps),
+    )
+    x0 = np.array(eq_vec, float) + sign * eps * v_dir
+
+    status_int, ts, xs = _integrate_homoclinic_branch(
+        ctx,
+        params_vec,
+        x0=np.array(x0, ctx.model.dtype),
+        x_eq=np.array(eq_vec, ctx.model.dtype),
+        cfg=cfg_u,
+    )
+    diag["integrate_status"] = status_int
+
+    qualified, t_cross, x_cross, g_val, q_val = _scan_homoclinic_section(
+        ts,
+        xs,
+        x_eq=np.array(eq_vec, float),
+        l_u=np.array(l_u, float),
+        v_proj=np.array(v_proj, float),
+        cfg=cfg_u,
+    )
+
+    status = str(status_int)
+    if not qualified and status in ("ok", "max_steps"):
+        status = "no_cross"
+
+    if qualified:
+        idx = int(np.searchsorted(ts, t_cross, side="right"))
+        if idx < 1:
+            idx = 1
+        ts_out = np.concatenate([ts[:idx], np.array([t_cross], float)])
+        xs_out = np.vstack([xs[:idx], np.array(x_cross, float)])
+    else:
+        ts_out = np.array(ts, float)
+        xs_out = np.array(xs, float)
+
+    diag["section"] = {
+        "g": float(g_val) if np.isfinite(g_val) else float("nan"),
+        "q": float(q_val),
+    }
+
+    event = None
+    if qualified:
+        event = HomoclinicTraceEvent(
+            kind="section_cross",
+            t=float(t_cross),
+            x=np.array(x_cross, float),
+            info={"g": float(g_val), "q": float(q_val)},
+        )
+
+    meta = HomoclinicTraceMeta(
+        param_value=float(param_value),
+        eq=np.array(eq_vec, float),
+        sign_u=int(sign_u),
+        eps_used=float(eps),
+        status=status,
+        success=bool(qualified),
+        event=event,
+        t_cross=float(t_cross),
+        x_cross=np.array(x_cross, float),
+        diag=diag,
+    )
+
+    return HomoclinicTraceResult(t=ts_out, X=xs_out, meta=meta)
