@@ -2,6 +2,16 @@
 
 ---
 
+## [0.36.12] – 2026-01-27
+### Added
+- Added `model.print_equations()` for printing DSL equations (no generated code) and a demo example:
+  `print_equations_demo.py`. It accepts `tables` argument so that users can print various equations like 
+  `equations.inverse` and `equations.jacobian`. This method is extendible via `register_equation_table()`
+  method inside `build.py` file. This method is only available for quickly checking equations. To view other
+  tables like aux values and events use `export_sources()` method.
+
+---
+
 ## [0.36.11] – 2026-01-27
 ### Added
 - Added `homoclinic_finder` analysis tool for searching and finding a homoclinic orbit for a given equilibrium.

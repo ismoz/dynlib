@@ -1,9 +1,10 @@
 # src/dynlib/compiler/build.py
 from __future__ import annotations
 from dataclasses import dataclass, replace
-from typing import Tuple, Callable, Dict, Any, Union, List, Optional, Mapping, Sequence, TYPE_CHECKING
+from typing import Tuple, Callable, Dict, Any, Union, List, Optional, Mapping, Sequence, TYPE_CHECKING, TextIO, ClassVar
 from pathlib import Path
 import inspect
+import sys
 import numpy as np
 import tomllib
 
@@ -156,6 +157,20 @@ class FullModel:
     equations_use_lag: bool = False
     make_stepper_workspace: Optional[Callable[[], object]] = None
     stepper_spec: Optional[object] = None  # StepperSpec for accessing capabilities
+    _equation_tables: ClassVar[Dict[str, Tuple[str, Callable[[ModelSpec], List[str]]]]] = {}
+
+    @classmethod
+    def register_equation_table(
+        cls,
+        key: str,
+        label: str,
+        render: Callable[[ModelSpec], List[str]],
+    ) -> None:
+        cls._equation_tables[key] = (label, render)
+
+    @classmethod
+    def available_equation_tables(cls) -> Tuple[str, ...]:
+        return tuple(cls._equation_tables.keys())
 
     def export_sources(self, output_dir: Union[str, Path]) -> Dict[str, Path]:
         """
@@ -197,6 +212,89 @@ class FullModel:
                 exported[name] = file_path
         
         return exported
+
+    def print_equations(
+        self,
+        *,
+        tables: Sequence[str] | str | None = ("equations",),
+        include_headers: bool = True,
+        file: Optional[TextIO] = None,
+    ) -> None:
+        """
+        Print model equations from the DSL spec (not generated code).
+
+        Args:
+            tables: TOML table keys to print (e.g., "equations", "equations.inverse",
+                "equations.jacobian"). Use "all" or None for all registered tables.
+            include_headers: Include section headers.
+            file: File-like stream to write to (defaults to stdout).
+        """
+        spec = self.spec
+        lines: List[str] = []
+
+        if tables is None or tables == "all":
+            selected = list(self._equation_tables.keys())
+        elif isinstance(tables, str):
+            selected = [tables]
+        else:
+            selected = list(tables)
+
+        for key in selected:
+            if key not in self._equation_tables:
+                known = ", ".join(self._equation_tables.keys())
+                raise ValueError(f"Unknown equations table: {key!r}. Known tables: {known}")
+            label, render = self._equation_tables[key]
+            rendered = render(spec)
+            if not rendered:
+                continue
+            if include_headers:
+                if lines:
+                    lines.append("")
+                header = label
+                if key == "equations" and spec.label:
+                    header = f"{label} ({spec.label})"
+                lines.append(f"{header}:")
+            lines.extend(rendered)
+
+        text = "\n".join(lines).rstrip()
+        print(text, file=file or sys.stdout)
+
+    @staticmethod
+    def _ordered_rhs_lines(rhs: Dict[str, str], states: Tuple[str, ...]) -> List[str]:
+        ordered: List[Tuple[str, str]] = []
+        for state in states:
+            if state in rhs:
+                ordered.append((state, rhs[state]))
+        for state, expr in rhs.items():
+            if state not in states:
+                ordered.append((state, expr))
+        return [f"{state} = {expr}" for state, expr in ordered]
+
+    @classmethod
+    def _render_equations_table(cls, spec: ModelSpec) -> List[str]:
+        if spec.equations_rhs:
+            return cls._ordered_rhs_lines(spec.equations_rhs, spec.states)
+        if spec.equations_block:
+            return [spec.equations_block.strip()]
+        return ["<no equations found>"]
+
+    @classmethod
+    def _render_inverse_table(cls, spec: ModelSpec) -> List[str]:
+        if spec.inverse_rhs:
+            return cls._ordered_rhs_lines(spec.inverse_rhs, spec.states)
+        if spec.inverse_block:
+            return [spec.inverse_block.strip()]
+        return []
+
+    @staticmethod
+    def _render_jacobian_table(spec: ModelSpec) -> List[str]:
+        if not spec.jacobian_exprs:
+            return []
+        lines: List[str] = []
+        for row in spec.jacobian_exprs:
+            row_items = ", ".join(str(expr) for expr in row)
+            lines.append(f"[{row_items}]")
+        return lines
 
     def fixed_points(
         self,
@@ -368,6 +466,11 @@ class FullModel:
             params=params_vec,
             cfg=cfg_obj,
         )
+
+
+FullModel.register_equation_table("equations", "Equations", FullModel._render_equations_table)
+FullModel.register_equation_table("equations.inverse", "Inverse equations", FullModel._render_inverse_table)
+FullModel.register_equation_table("equations.jacobian", "Jacobian", FullModel._render_jacobian_table)
 
 
 @dataclass
