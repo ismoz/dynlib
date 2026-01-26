@@ -47,6 +47,19 @@ if TYPE_CHECKING:
         ManifoldTraceResult,
         trace_manifold_1d_map,
         trace_manifold_1d_ode,
+        HeteroclinicRK45Config,
+        HeteroclinicBranchConfig,
+        HeteroclinicFinderConfig2D,
+        HeteroclinicFinderConfigND,
+        HeteroclinicTraceEvent,
+        HeteroclinicMissResult2D,
+        HeteroclinicMissResultND,
+        HeteroclinicFinderResult,
+        HeteroclinicTraceMeta,
+        HeteroclinicTraceResult,
+        HeteroclinicPreset,
+        heteroclinic_finder,
+        heteroclinic_tracer,
     )
 
 _SWEEP_EXPORTS = {
@@ -97,6 +110,19 @@ _MANIFOLD_EXPORTS = {
     "ManifoldTraceResult",
     "trace_manifold_1d_map",
     "trace_manifold_1d_ode",
+    "HeteroclinicRK45Config",
+    "HeteroclinicBranchConfig",
+    "HeteroclinicFinderConfig2D",
+    "HeteroclinicFinderConfigND",
+    "HeteroclinicTraceEvent",
+    "HeteroclinicMissResult2D",
+    "HeteroclinicMissResultND",
+    "HeteroclinicFinderResult",
+    "HeteroclinicTraceMeta",
+    "HeteroclinicTraceResult",
+    "HeteroclinicPreset",
+    "heteroclinic_finder",
+    "heteroclinic_tracer",
 }
 
 __all__ = [

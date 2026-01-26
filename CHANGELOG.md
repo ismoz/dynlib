@@ -2,6 +2,18 @@
 
 ---
 
+## [0.36.10] – 2026-01-26
+### Added
+- Added `heteroclinic_finder` analysis tool for searching and finding a heteroclinic orbit between two equilibria.
+  A single parameter of an ODE system is changed between an interval during the search.
+- Added `heteroclinic_tracer` analysis tool for finding a heteroclinic orbit between two equilibria for fixed
+  parameter values. Its result can be plotted using `plot.manifold` plotter utility.
+- Added example `heteroclinic_finder_tracer.py` for finding a parameter value of an ODE model that might have a
+  heteroclinic orbit between its two equilibria. The tracer is used to visualize the heteroclinic orbit for the found 
+  parameter.
+
+---
+
 ## [0.36.9] – 2026-01-25
 ### Added
 - Added analysis tool `trace_manifold_1d_ode()` for tracing stable/unstable 1D manifolds of ODE models. The results
