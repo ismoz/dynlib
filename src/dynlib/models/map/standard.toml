@@ -1,6 +1,6 @@
 [model]
 type = "map"
-label = "Standard Map"
+name = "Standard Map"
 dtype = "float64"
 
 [states]

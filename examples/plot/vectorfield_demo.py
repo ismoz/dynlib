@@ -15,7 +15,7 @@ def _make_model():
 inline:
 [model]
 type = "ode"
-label = "spiral"
+name = "spiral"
 
 [sim]
 t0 = 0.0

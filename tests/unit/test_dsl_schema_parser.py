@@ -11,7 +11,7 @@ from dynlib.dsl.astcheck import validate_functions_signature
 
 def minimal_doc(**over):
     doc = {
-        "model": {"type": "ode", "label": "m"},
+        "model": {"type": "ode", "name": "m"},
         "states": {"x": 1.0, "u": 0.0},
         "params": {"a": 1.0, "b": 2.0},
         "equations": {"rhs": {"x": "-a*x", "u": "x - b*u"}},
@@ -28,8 +28,8 @@ def minimal_doc(**over):
 
 def test_validate_model_header_ok_and_default_dtype():
     d = minimal_doc()
-    # remove dtype to trigger defaulting path
-    del d["model"]["label"]
+    # remove optional name to ensure header validation still passes
+    del d["model"]["name"]
     validate_model_header(d)
     # ensure tables validation doesn’t raise
     validate_tables(d)

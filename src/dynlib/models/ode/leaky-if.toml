@@ -1,6 +1,6 @@
 [model]
 type = "ode"
-label = "Leaky Integrate-and-Fire Neuron Model"
+name = "Leaky Integrate-and-Fire Neuron Model"
 
 [states]
 v = -65.0  # Membrane potential in mV

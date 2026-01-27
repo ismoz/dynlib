@@ -10,7 +10,7 @@
 
 [model]
 type = "ode"
-label = "Resonate Integrate-and-Fire Neuron Model"
+name = "Resonate Integrate-and-Fire Neuron Model"
 
 [states]
 x = 0.0  

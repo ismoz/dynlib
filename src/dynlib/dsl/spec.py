@@ -85,7 +85,7 @@ class EventSpec:
 @dataclass(frozen=True)
 class ModelSpec:
     kind: str                 # "ode" | "map"
-    label: str | None
+    name: str | None
     dtype: str               # canonical dtype string
     constants: Tuple[str, ...]
     constant_vals: Tuple[float | int, ...]
@@ -189,7 +189,7 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
     model = normal["model"]
     kind = model["type"]
     dtype = _canon_dtype(model.get("dtype", "float64"))
-    label = model.get("label")
+    name = model.get("name")
 
     constants = tuple((normal.get("constants") or {}).keys())
     constant_vals = tuple((normal.get("constants") or {}).values())
@@ -294,7 +294,7 @@ def build_spec(normal: Dict[str, Any]) -> ModelSpec:
 
     return ModelSpec(
         kind=kind,
-        label=label,
+        name=name,
         dtype=dtype,
         constants=constants,
         constant_vals=constant_vals,
@@ -327,7 +327,7 @@ def _json_canon(obj: Any) -> str:
         if isinstance(o, ModelSpec):
             return {
                 "kind": o.kind,
-                "label": o.label,
+                "name": o.name,
                 "dtype": o.dtype,
                 "constants": list(o.constants),
                 "constant_vals": list(o.constant_vals),

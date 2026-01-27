@@ -3,7 +3,7 @@
 
 [model]
 type = "ode"
-label = "ETO-Circular"
+name = "ETO-Circular"
 dtype = "float64"
 
 [states]

@@ -22,7 +22,7 @@ def create_model():
 inline:
 [model]
 type = "ode"
-label = "Demo Exponential Decay"
+name = "Demo Exponential Decay"
 dtype = "float64"
 
 [states]

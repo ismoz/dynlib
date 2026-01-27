@@ -19,7 +19,7 @@ def _build_lorenz_model():
     toml_str = """
 [model]
 type = "ode"
-label = "Lorenz"
+name = "Lorenz"
 stepper = "rk4"
 
 [states]

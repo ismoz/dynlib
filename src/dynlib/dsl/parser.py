@@ -364,7 +364,7 @@ def parse_model_v2(doc: Dict[str, Any]) -> Dict[str, Any]:
         raise ModelLoadError("[sim] must be a table if present")
 
     return {
-        "model": {"type": model["type"], "label": model.get("label"), "dtype": model["dtype"]},
+        "model": {"type": model["type"], "name": model.get("name"), "dtype": model["dtype"]},
         "states": states,
         "params": params,
         "constants": constants,

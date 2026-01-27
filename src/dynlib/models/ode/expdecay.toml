@@ -3,7 +3,7 @@
 
 [model]
 type = "ode"
-label = "Exponential Decay"
+name = "Exponential Decay"
 
 [states]
 x = 1.0

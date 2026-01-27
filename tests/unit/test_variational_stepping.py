@@ -176,7 +176,7 @@ def test_linear_system_known_spectrum():
 inline:
 [model]
 type = "ode"
-label = "Linear 2D System"
+name = "Linear 2D System"
 
 [states]
 x = 1.0

@@ -18,7 +18,7 @@ def _lorenz_model():
 inline:
 [model]
 type = "ode"
-label = "lorenz-3d"
+name = "lorenz-3d"
 stepper = "rk4"
 
 [sim]

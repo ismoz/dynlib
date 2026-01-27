@@ -9,7 +9,7 @@ MODEL = """
 inline:
 [model]
 type="ode"
-label="Damped oscillator with aux energy"
+name="Damped oscillator with aux energy"
 
 [states]
 x=1.0

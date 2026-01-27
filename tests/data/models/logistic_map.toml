@@ -1,6 +1,6 @@
 [model]
 type = "map"
-label = "Logistic Map"
+name = "Logistic Map"
 
 [states]
 x = 0.1

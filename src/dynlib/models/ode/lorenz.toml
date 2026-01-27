@@ -1,7 +1,7 @@
 
 [model]
 type = "ode"
-label = "Lorenz System"
+name = "Lorenz System"
 
 [states]
 x = 1.0

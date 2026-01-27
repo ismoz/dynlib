@@ -1,6 +1,6 @@
 [model]
 type = "ode"
-label = "Quadratic Integrate-and-Fire Neuron Model"
+name = "Quadratic Integrate-and-Fire Neuron Model"
 
 [states]
 v = -65.0 

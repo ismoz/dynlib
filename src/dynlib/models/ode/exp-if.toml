@@ -1,6 +1,6 @@
 [model]
 type = "ode"
-label = "Exponential Integrate-and-Fire Neuron Model"
+name = "Exponential Integrate-and-Fire Neuron Model"
 
 [states]
 v = -70.0

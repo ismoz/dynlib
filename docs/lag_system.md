@@ -313,7 +313,7 @@ lag_ring[0 + ((2 - 2) % 3)] = lag_ring[0] = 0.2 ✓ (step 1 value)
 ```toml
 [model]
 type = "map"
-label = "Delayed Logistic Map"
+name = "Delayed Logistic Map"
 
 [states]
 x = 0.1

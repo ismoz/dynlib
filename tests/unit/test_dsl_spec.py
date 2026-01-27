@@ -11,7 +11,7 @@ from dynlib.compiler.codegen.emitter import emit_rhs_and_events
 
 def minimal_doc():
     return {
-        "model": {"type": "ode", "dtype": "double", "label": "L"},  # alias should canon to float64
+        "model": {"type": "ode", "dtype": "double", "name": "L"},  # alias should canon to float64
         "states": {"x": 1.0, "u": 0.0},
         "params": {"a": 1.0},
         "equations": {"rhs": {"x": "-a*x", "u": "x - u"}, "expr": None},

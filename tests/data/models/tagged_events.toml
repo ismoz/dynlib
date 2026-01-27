@@ -2,7 +2,7 @@
 
 [model]
 type = "ode"
-label = "Tagged Events Test"
+name = "Tagged Events Test"
 dtype = "float64"
 
 [states]

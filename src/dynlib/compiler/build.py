@@ -251,8 +251,8 @@ class FullModel:
                 if lines:
                     lines.append("")
                 header = label
-                if key == "equations" and spec.label:
-                    header = f"{label} ({spec.label})"
+                if key == "equations" and spec.name:
+                    header = f"{label} ({spec.name})"
                 lines.append(f"{header}:")
             lines.extend(rendered)
 

@@ -1,6 +1,6 @@
 [model]
 type = "map"
-label = "Ikeda Map"
+name = "Ikeda Map"
 dtype = "float64"
 
 [states]

@@ -1,6 +1,6 @@
 [model]
 type = "ode"
-label = "FitzHugh-Nagumo Neuron"
+name = "FitzHugh-Nagumo Neuron"
 dtype = "float64"
 
 [states]

@@ -75,7 +75,7 @@ MODEL = """
 inline:
 [model]
 type = "ode"
-label = "heteroclinic-demo"
+name = "heteroclinic-demo"
 
 [sim]
 t0 = 0.0

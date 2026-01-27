@@ -1,7 +1,7 @@
 # Henon map version used in Kathleen Alligood's book
 [model]
 type = "map"
-label = "Henon Map 2"
+name = "Henon Map 2"
 dtype = "float64"
 
 [states]

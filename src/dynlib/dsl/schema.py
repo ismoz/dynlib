@@ -45,6 +45,9 @@ def validate_model_header(doc: Dict[str, Any]) -> None:
     if not isinstance(model, dict):
         raise ModelLoadError("[model] must be a table")
 
+    if "label" in model:
+        raise ModelLoadError("[model].label is no longer supported; use [model].name")
+
     mtype = model.get("type")
     if mtype not in {"ode", "map"}:
         raise ModelLoadError("[model].type must be 'ode' or 'map'")

@@ -2,6 +2,13 @@
 
 ---
 
+## [0.36.13] – 2026-01-27
+### Changed
+- Renamed `label` key in [model] DSL table with `name` key. Replaced all occurrences throughout the package.
+- Removed temporary development docs. 
+
+---
+
 ## [0.36.12] – 2026-01-27
 ### Added
 - Added `model.print_equations()` for printing DSL equations (no generated code) and a demo example:

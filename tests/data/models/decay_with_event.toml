@@ -2,7 +2,7 @@
 
 [model]
 type = "ode"
-label = "Decay with Reset Event"
+name = "Decay with Reset Event"
 dtype = "float64"
 
 [states]

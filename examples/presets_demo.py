@@ -26,7 +26,7 @@ from dynlib.runtime.sim import Sim
 MODEL_TOML = """
 [model]
 type = "ode"
-label = "Izhikevich Neuron (Simple)"
+name = "Izhikevich Neuron (Simple)"
 
 [states]
 v = -65.0

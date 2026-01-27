@@ -1,6 +1,6 @@
 [model]
 type = "ode"
-label = "Hodgkin-Huxley Neuron (activation-function form)"
+name = "Hodgkin-Huxley Neuron (activation-function form)"
 dtype = "float64"
 
 [states]

@@ -7,7 +7,7 @@ It lists all available tables and their keys.
 
 ### [model]
 - `type` (required): "ode" | "map"
-- `label` (optional): string
+- `name` (optional): string
 - `dtype` (optional): data type, default "float64"
 
 ### [states]

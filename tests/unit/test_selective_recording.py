@@ -11,7 +11,7 @@ from dynlib.runtime.sim import Sim
 TEST_MODEL_ODE = """
 [model]
 type = "ode"
-label = "Test ODE"
+name = "Test ODE"
 dtype = "float64"
 
 [sim]
@@ -42,7 +42,7 @@ z = "x - y"
 TEST_MODEL_MAP = """
 [model]
 type = "map"
-label = "Test Map"
+name = "Test Map"
 dtype = "float64"
 
 [sim]

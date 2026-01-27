@@ -20,7 +20,7 @@ model_toml = """
 inline:
 [model]
 type = "ode"
-label = "saddle2d"
+name = "saddle2d"
 
 [sim]
 t0 = 0.0

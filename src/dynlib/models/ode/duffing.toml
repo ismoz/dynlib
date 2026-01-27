@@ -1,6 +1,6 @@
 [model]
 type = "ode"
-label = "Duffing Oscillator"
+name = "Duffing Oscillator"
 dtype = "float64"
 
 [states]

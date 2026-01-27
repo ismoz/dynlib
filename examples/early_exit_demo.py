@@ -43,7 +43,7 @@ def demo_simple_threshold():
 inline:
 [model]
 type = "map"
-label = "Logistic Map - Simple Threshold"
+name = "Logistic Map - Simple Threshold"
 
 [states]
 x = 0.1
@@ -82,7 +82,7 @@ def demo_interval_check():
 inline:
 [model]
 type = "map"
-label = "Logistic Map - Interval Check"
+name = "Logistic Map - Interval Check"
 
 [states]
 x = 0.1
@@ -121,7 +121,7 @@ def demo_cross_up():
 inline:
 [model]
 type = "map"
-label = "Logistic Map - Cross Up Detection"
+name = "Logistic Map - Cross Up Detection"
 
 [states]
 x = 0.1
@@ -163,7 +163,7 @@ def demo_decreasing():
 inline:
 [model]
 type = "map"
-label = "Logistic Map - Detect Decrease"
+name = "Logistic Map - Detect Decrease"
 
 [states]
 x = 0.1
