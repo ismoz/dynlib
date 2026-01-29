@@ -1023,9 +1023,9 @@ def build(
     *,
     stepper: Optional[str] = None,
     mods: Optional[List[str]] = None,
-    jit: bool = True,
+    jit: bool = False,
     dtype: Optional[str] = None,
-    disk_cache: bool = True,
+    disk_cache: bool = False,
     config: Optional[PathConfig] = None,
     validate_stepper: bool = True,
 ) -> FullModel:
@@ -1045,8 +1045,8 @@ def build(
             If None, uses the model's sim.stepper default.
         mods: List of mod URIs to apply (same URI schemes as model).
             Mods are applied in order after loading the base model.
-        jit: Enable JIT compilation (default True)
-        disk_cache: Enable persistent runner cache on disk (default True)
+        jit: Enable JIT compilation (default False)
+        disk_cache: Enable persistent runner cache on disk (default False)
         dtype: Model dtype string. If None (default), uses the dtype from the model spec.
         config: PathConfig for URI resolution (loads default if None)
         validate_stepper: Enable build-time stepper validation (default True)

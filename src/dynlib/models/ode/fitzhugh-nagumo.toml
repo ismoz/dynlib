@@ -26,5 +26,3 @@ expr = [
     ["1 / tau", "-b / tau"]
 ]
 
-[meta]
-title = "FitzHugh-Nagumo Model (2D reduction of Hodgkin-Huxley)"

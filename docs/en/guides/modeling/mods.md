@@ -284,7 +284,7 @@ action = "x = x + 0.1 * randn()"
 
 - `"mods.toml"` - Load single mod from file
 - `"mods.toml#mod=variant1"` - Load specific mod from collection
-- `"inline: [mod]\\nname='patch'\\n..."` - Inline mod definition
+- `"inline: [mod]\nname='patch'\n..."` - Inline mod definition
 
 ### Programmatic Usage
 
@@ -395,11 +395,9 @@ This example shows how to convert a constant parameter into a time-dependent aux
 [mods.sine_drive]
 name = "sine_drive"
 
-# Remove the constant parameter
-[mods.sine_drive.remove.params]
-names = ["V"]
+# Note: Cannot add states via mods (would raise error)
+# Instead, add auxiliary noise variables
 
-# Add new parameters for the sine wave
 [mods.sine_drive.add.params]
 freq = 1000.0
 Vmax = 4.0
@@ -444,6 +442,55 @@ action = ""  # No action, just logging
 log = ["debug_t", "debug_x", "debug_dx"]
 ```
 
+### Function Variants
+
+In the below example h(phi,N) function has two variants. One can be chosen as follows:
+
+```python
+sim = setup("memristive_chua#mod=odd")
+```
+
+```toml
+[model]
+type="ode"
+name="Flux Controlled Memristor"
+
+[states]
+phi=0.1
+
+[params]
+a=0.08
+b=1
+c=0.83
+d=1.8
+N=0
+freq=1.0
+Vmax=4.0
+
+[functions.W]
+args=["phi"]
+expr="a+b*tanh(phi)**2"
+
+[aux]
+V = "Vmax*sin(2*pi*freq*t)"
+I = "W(phi)*V"
+
+[equations.rhs]
+phi="c*V-d*h(phi,N)"
+
+### MODS:
+
+[mods.odd.add.functions]
+h = {args = ["phi","N"], expr="""
+phi if N==0 else phi-sum(sign(phi+(2*j-1))+sign(phi-(2*j-1)) for j in range(1,N+1))
+"""}
+
+[mods.even.add.functions]
+h = {args = ["phi","N"], expr = """
+phi-sign(phi) if N==0 else phi-sign(phi)-sum(sign(phi+2*j)+sign(phi-2*j) for j in range(1,N+1))
+"""}
+```
+
 ## Verb Order Matters
 
 Remember that verbs are applied in this fixed order:
@@ -453,5 +500,4 @@ Remember that verbs are applied in this fixed order:
 3. **Add** - Add new components
 4. **Set** - Set/update values
 
-This allows complex transformations like: remove old component → add new one with different name, or replace component → then modify its parameters.</content>
-<parameter name="filePath">/home/ismail/remote/PYTHON/my-packages/dynlib/docs/mods.md
+This allows complex transformations like: remove old component → add new one with different name, or replace component → then modify its parameters.

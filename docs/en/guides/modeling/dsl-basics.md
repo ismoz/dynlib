@@ -28,7 +28,8 @@ It lists all available tables and their keys.
 - `state_name = "expression"`
 
 #### [equations] (block form)
-- `expr = """dx = expression \n dy = expression"""`
+- `expr = """dx = expression 
+ dy = expression"""
 
 ### [equations.jacobian] (optional dense Jacobian)
 - `expr = [[ "...", "...", ... ], [...], ...]` (n × n matrix of expressions)
@@ -39,12 +40,12 @@ It lists all available tables and their keys.
 
 ### [functions.function_name]
 - `args = ["arg1", "arg2", ...]`
-- `expr = "expression"`
+- `expr = "expression"
 
 ### [events.event_name]
 - `phase` (optional): "pre" | "post" | "both" (default "post")
-- `cond = "expression"`
-- `action = "expression"` or `action.state_name = "expression"`
+- `cond = "expression"
+- `action = "expression"` or `action.state_name = "expression"
 - `tags` (optional): ["tag1", "tag2", ...]
 - `log` (optional): ["var1", "var2", ...]
 
@@ -57,4 +58,8 @@ It lists all available tables and their keys.
 - `stepper_config = value (stepper-specific config values)`
 
 ### [meta]
-- `title = "string"`
+- `title = "string"
+- Meta table is currently ignored. Anything can be written into [meta].
+
+## Special Variables
+- `t` - Current time (available in all expressions)

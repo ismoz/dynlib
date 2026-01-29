@@ -26,5 +26,3 @@ expr = [
     ["1.0", "0.0"]
 ]
 
-[meta]
-title = "Henon Map (chaotic 2D map)"

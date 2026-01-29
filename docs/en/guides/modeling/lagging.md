@@ -7,11 +7,11 @@ The lag system provides access to historical state values in dynlib models using
 - `lag_<name>(k)` - Access state `<name>` from k steps ago
 
 **Key Features:**
-- ✅ On-demand activation (only lagged states consume memory)
-- ✅ O(1) circular buffer access (Numba-compatible)
-- ✅ Counted after successful committed steps (immune to buffer growth, early breaks, resume)
-- ✅ Works with both ODE and map models
-- ✅ Dedicated runtime workspace (stepper ABI extended with runtime_ws parameter)
+- On-demand activation (only lagged states consume memory)
+- O(1) circular buffer access (Numba-compatible)
+- Counted after successful committed steps (immune to buffer growth, early breaks, resume)
+- Works with both ODE and map models
+- Dedicated runtime workspace (stepper ABI extended with runtime_ws parameter)
 
 ---
 
@@ -61,20 +61,20 @@ x = 0.1
 a = 2.0
 
 [equations.rhs]
-x = "lag_x(1)"   # ✅ Valid - x is a state
-x = "lag_a(1)"   # ❌ ERROR - a is a parameter, not a state
+x = "lag_x(1)"   # Valid - x is a state
+x = "lag_a(1)"   # Error - a is a parameter, not a state
 ```
 
 **Lag argument must be integer literal:**
 ```toml
-x = "lag_x(2)"       # ✅ Valid
-x = "lag_x(k)"       # ❌ ERROR - k is not a literal
-x = "lag_x(2 + 1)"   # ❌ ERROR - expression not allowed
+ x = "lag_x(2)"       # Valid
+ x = "lag_x(k)"       # Error - k is not a literal
+ x = "lag_x(2 + 1)"   # Error - expression not allowed
 ```
 
 **Sanity limit:**
 ```toml
-x = "lag_x(1000)"    # ❌ ERROR - exceeds sanity limit (1000)
+x = "lag_x(1000)"    # Error - exceeds sanity limit (1000)
 ```
 
 ---
@@ -83,7 +83,7 @@ x = "lag_x(1000)"    # ❌ ERROR - exceeds sanity limit (1000)
 
 **Auxiliary variables CANNOT be lagged directly.** Instead, use lagged states in expressions:
 
-### ❌ **NOT Supported:**
+### Not Supported:
 ```toml
 [aux]
 energy = "0.5 * v^2 + 0.5 * k * x^2"
@@ -92,7 +92,7 @@ energy = "0.5 * v^2 + 0.5 * k * x^2"
 v = "-x - 0.1 * lag_energy(1)"  # ERROR: energy is aux, not state
 ```
 
-### ✅ **Correct Approach:**
+### Correct Approach:
 ```toml
 [aux]
 energy = "0.5 * v^2 + 0.5 * k * x^2"  # Current energy (optional)
@@ -260,54 +260,6 @@ lag_ring[0 + ((2 - 2) % 3)] = lag_ring[0] = 0.2 ✓ (step 1 value)
 
 ---
 
-## Implementation Status
-
-### ✅ Completed
-
-1. **Detection & Validation** (`dsl/astcheck.py`)
-   - `collect_lag_requests()` scans all expressions
-   - Validates lag depths, state existence, integer literals
-
-2. **Metadata** (`dsl/spec.py`)
-   - `ModelSpec.lag_map`: {state_name -> (depth, offset, head_index)}
-   - Tracks which states need lagging and their maximum depths
-
-3. **Runtime Workspace** (`runtime/workspace.py`)
-   - `RuntimeWorkspace` NamedTuple with `lag_ring`, `lag_head`, `lag_info`
-   - `make_runtime_workspace()` allocates lag buffers
-   - `initialize_lag_runtime_workspace()` seeds with initial conditions
-   - `snapshot_workspace()`/`restore_workspace()` support
-
-4. **Allocation** (`compiler/build.py`)
-   - `_compute_lag_state_info()` converts lag_map to runtime metadata
-   - Runtime workspace allocated with proper lag buffer sizes
-
-5. **Expression Lowering** (`compiler/codegen/rewrite.py`)
-   - `_make_lag_access()` generates runtime workspace access
-   - `runtime_ws.lag_ring[offset + ((runtime_ws.lag_head[idx] - k) % depth)]`
-
-6. **Function Signatures** (`compiler/codegen/emitter.py`)
-   - RHS: `def rhs(t, y_vec, dy_out, params, runtime_ws)`
-   - Events: `def events_pre(t, y_vec, params, evt_log_scratch, runtime_ws)`
-
-7. **Runner Updates** (`compiler/codegen/runner.py`, `runner_discrete.py`)
-   - Lag buffer updates after successful step commits
-   - Both continuous and discrete runners supported
-
-8. **Stepper ABI** (`steppers/base.py`, implementations)
-   - All steppers use new workspace-based ABI
-   - `StepperSpec.workspace_type()` declares workspace structure
-   - `StepperSpec.make_workspace()` allocates stepper-specific workspace
-
-### ✅ Tested
-
-- Unit tests for lag detection and validation
-- Integration tests for lag buffer mechanics
-- Resume/snapshot functionality with lag buffers
-- Both ODE and map models with lagging
-
----
-
 ## Example: Logistic Map with Delay
 
 ```toml
@@ -362,45 +314,6 @@ Per lagged state with depth `k`:
 - **Lag access:** O(1) modulo + array index
   - Numba optimizes `(x - k) % depth` to bitwise AND if depth is power-of-2
 
-### Optimization: Power-of-2 Depths
-
-Round up lag depths to next power-of-2 for faster modulo:
-
-```python
-depth_requested = 7
-depth_allocated = 8  # 2^3
-
-# Access becomes:
-index = (head - k) & 7  # bitwise AND (faster than %)
-```
-
-**Trade-off:** Up to 2x memory for ~3x speedup. **Not yet implemented.**
-
----
-
-## Future Enhancements
-
-1. **Fractional Lags** (interpolation)
-   ```toml
-   x = "lag_x(1.5)"  # Interpolate between lag_x(1) and lag_x(2)
-   ```
-   Requires dense output or Hermite interpolation.
-
-2. **Time-Based Lags** (delay differential equations)
-   ```toml
-   x = "lag_x(t - tau)"  # Lag by time delay tau, not steps
-   ```
-   Requires time-indexed history with interpolation.
-
-3. **Multi-Step Method Integration**
-   Share lag buffers with Adams-Bashforth f-history in stepper workspace.
-
-4. **Diagnostic API**
-   ```python
-   res.lag_buffer_usage()  # Memory statistics
-   res.lag_history(state="x", k=5)  # Retrieve full lag buffer
-   ```
-
 ---
 
 ## References
@@ -413,4 +326,3 @@ index = (head - k) & 7  # bitwise AND (faster than %)
 
 ---
 
-**Status:** Fully implemented with workspace-based architecture.

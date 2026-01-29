@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dynlib"
-version = "0.35.8"
+version = "0.37.0"
 description = "A dynamical systems simulation library."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 authors = [{ name = "İsmail Öztürk", email = "ismail.ozturk@amasya.edu.tr" }]
 license = { file = "LICENSE" }
 keywords = ["ODE", "dynamical-systems", "simulation"]
@@ -17,8 +17,8 @@ dependencies = [
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
-  "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.10 :: Only",
   "Topic :: Scientific/Engineering :: Mathematics",
 ]
 

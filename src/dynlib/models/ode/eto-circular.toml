@@ -19,7 +19,6 @@ mu = 0.8
 x = "-x*(x**2+y**2-a) + mu*(x+y)*(x**2+y**2-a) + a*y"
 y = "-y*(x**2+y**2-a) + mu*(y-x)*(x**2+y**2-a) - a*x"
 
-# TODO: Manually calculate and verify the Jacobian
 [equations.jacobian]
 expr = [
     ["(mu-1)*(x**2 + y**2 - a) + 2*x*((mu-1)*x + mu*y)", "mu*(x**2 + y**2 - a) + 2*y*((mu-1)*x + mu*y) + a"],

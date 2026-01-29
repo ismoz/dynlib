@@ -70,5 +70,3 @@ n = "(n_inf - n) / tau_n"
 m = "(m_inf - m) / tau_m"
 h = "(h_inf - h) / tau_h"
 
-[meta]
-title = "Classic Hodgkin-Huxley Neuron (Izhikevich-style gating functions)"

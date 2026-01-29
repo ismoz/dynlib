@@ -27,9 +27,9 @@ def setup(
     model, *,
     stepper=None,
     mods=None,
-    jit=True,
+    jit=False,
     dtype=None,
-    disk_cache=True,
+    disk_cache=False,
     config=None,
     validate_stepper=True,
 ) -> Sim:
@@ -51,9 +51,9 @@ def setup(
         stepper: The stepper to use for the simulation (e.g., "euler", "rk4", "rk45").
             If None, uses the model's sim.stepper default.
         mods: Optional list of mod URIs to apply during compilation.
-        jit: Whether to use JIT compilation (default True).
+        jit: Whether to use JIT compilation (default False).
         dtype: The data type for computations. If None (default), uses the dtype from the model spec.
-        disk_cache: Whether to use disk caching for compiled models (default True).
+        disk_cache: Whether to use disk caching for compiled models (default False).
         config: Optional PathConfig for URI resolution.
         validate_stepper: Whether to validate the stepper against the model (default True).
 

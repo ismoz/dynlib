@@ -20,5 +20,3 @@ expr = [
     ["1.0", "1.0 + K * cos(theta)"]
 ]
 
-[meta]
-title = "Standard Map (Chirikov–Taylor, unwrapped)"

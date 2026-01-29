@@ -20,5 +20,3 @@ theta  = "a - b / (1.0 + r2)"
 x = "1.0 + u * (x * cos(theta) - y * sin(theta))"
 y = "u * (x * sin(theta) + y * cos(theta))"
 
-[meta]
-title = "Ikeda Map (dissipative 2D chaotic map)"

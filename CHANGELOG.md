@@ -2,6 +2,19 @@
 
 ---
 
+## [0.37.0] – 2026-01-29
+### Added
+- `mkdocs` compatible documentation in docs folder with multiple language support. Only English docs are available
+  in this version.
+- Added auto-generation scripts `gen_model_docs.py` and `mkdocs_helpers.py` for mkdocs. `tools/gen_model_docs.py`
+  is a single wrapper; so it should be run to generate docs locally. 
+
+### Changed
+- Made `jit=False` and `disk_cache=False` defaults in `setup()` and `build()`.
+- Removed unnecessary [meta] tables from built-in models.
+
+---
+
 ## [0.36.13] – 2026-01-27
 ### Changed
 - Renamed `label` key in [model] DSL table with `name` key. Replaced all occurrences throughout the package.

@@ -18,5 +18,3 @@ expr = [
     ["r * pi * cos(pi * x)"]
 ]
 
-[meta]
-title = "Sine Map (1D chaotic map)"

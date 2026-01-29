@@ -1,0 +1,197 @@
+# mkdocs.yml
+site_name: dynlib
+site_description: "A Python library for simulating dynamical systems."
+site_author: "ismail"
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - toc.integrate
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+    - content.code.annotation
+    - content.code.copy
+    - content.code.math
+  language: en # Default language
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/toggle-switch-off-outline
+        name: Switch to dark mode
+      primary: teal
+      accent: purple
+    - scheme: slate
+      toggle:
+        icon: material/toggle-switch
+        name: Switch to light mode
+      primary: teal
+      accent: lime
+
+# This adds the language switcher to the header
+extra:
+  alternate:
+    - name: English
+      link: /
+      lang: en
+    - name: Türkçe
+      link: /tr/
+      lang: tr
+  social:
+    - icon: fontawesome/brands/github-alt
+      link: https://github.com/your-username/dynlib # Please change this to your repo
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/dynlib/
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Overview: getting-started/overview.md
+    - Quickstart: getting-started/quickstart.md
+    - Your First Model: getting-started/first-model.md
+  - Guides:
+    - CLI: guides/cli/cli.md
+    - Modeling:
+      - Modeling guide: guides/modeling/index.md
+      - DSL basics: guides/modeling/dsl-basics.md
+      - Equations: guides/modeling/equations.md
+      - Math & macros: guides/modeling/math-and-macros.md
+      - Ternary if: guides/modeling/ternary-if.md
+      - Model registry: guides/modeling/model-registry.md
+      - Auxiliary variables: guides/modeling/aux.md
+      - DSL functions: guides/modeling/functions.md
+      - Events: guides/modeling/events.md
+      - Lagging: guides/modeling/lagging.md
+      - Inline models: guides/modeling/inline-models.md
+      - Config file: guides/modeling/config-file.md
+      - Mods: guides/modeling/mods.md
+      - Presets: guides/modeling/presets.md
+      - Simulation defaults: guides/modeling/sim.md
+    - Simulation:
+      - Simulation guide: guides/simulation/index.md
+      - Basics: guides/simulation/basics.md
+      - Configuration: guides/simulation/configuration.md
+      - Just-In-Time compilation: guides/simulation/jit.md
+      - Presets: guides/simulation/presets.md
+      - Runner variants: guides/simulation/runner-variants.md
+      - Session introspection: guides/simulation/session-introspection.md
+      - Results: guides/simulation/results.md
+      - Steppers: guides/simulation/steppers.md
+      - Snapshots & resume: guides/simulation/snapshots-and-resume.md
+      - Wrapper & runner: guides/simulation/wrapper-and-runner.md
+      - Exporting sources: guides/simulation/export-sources.md
+    - Plotting:
+      - Plotting guide: guides/plotting/index.md
+      - Plotting basics: guides/plotting/basics.md
+      - Decorations: guides/plotting/decorations.md
+      - Exporting plots: guides/plotting/export.md
+      - Cobweb plots: guides/plotting/cobweb.md
+      - Basin plots: guides/plotting/basin-plot.md
+      - Vector fields: guides/plotting/vectorfields.md
+      - Manifold plots: guides/plotting/manifold-plot.md
+      - Themes & facets: guides/plotting/themes-and-facets.md
+      - Bifurcation diagrams: guides/plotting/bifurcation-diagrams.md
+    - Analysis:
+      - Analysis guide: guides/analysis/index.md
+      - Runtime observers: guides/analysis/observers.md
+      - Lyapunov analysis: guides/analysis/lyapunov.md
+      - Sweep utilities: guides/analysis/sweep.md
+      - Post-analysis: guides/analysis/post-analysis.md
+      - Fixed points: guides/analysis/fixed-points.md
+      - Basin analysis: guides/analysis/basin.md
+      - Bifurcation diagrams: guides/analysis/bifurcation.md
+      - Manifold analysis: guides/analysis/manifold.md
+  - Examples:
+    - Overview: examples/index.md
+    - Analysis catalog: examples/analysis.md
+    - Plotting catalog: examples/plotting.md
+    - Runtime catalog: examples/runtime.md
+    - State management: examples/state-management.md
+    - Bifurcation logistic map: examples/bifurcation.md
+    - Collatz conjecture: examples/integer-map.md
+    - Izhikevich neuron: examples/izhikevich.md
+  - Reference:
+    - Overview: reference/index.md
+    - Built-in models: reference/models/
+  - Project:
+    - Changelog: project/changelog.md
+    - Issues: project/issues.md
+    - TODO: project/todo.md
+
+plugins:
+  - search
+  - gen-files:
+      scripts:
+        - tools/gen_model_docs.py
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_root_heading: yes
+            show_source: no
+  - i18n:
+      docs_structure: folder
+      languages:
+        - locale: en
+          default: true
+          name: English
+          build: true
+        - locale: tr
+          name: Türkçe
+          build: true
+          nav_translations:
+            'Home': 'Ana Sayfa'
+            'Getting Started': 'Başlarken'
+            'Guides': 'Kılavuzlar'
+            'Features': 'Özellikler'
+            'Analysis': 'Analiz'
+            'Examples': 'Örnekler'
+            'Reference': 'Referans'
+            'Built-in Models': 'Yerleşik Modeller'
+            'Project': 'Proje'
+            'Overview': 'Genel Bakış'
+            'Quickstart': 'Hızlı Başlangıç'
+            'Your First Model': 'İlk Modeliniz'
+            'Modeling': 'Modelleme'
+            'Simulation': 'Simülasyon'
+            'Steppers': 'Adımlayıcılar'
+            'Results': 'Sonuçlar'
+            'Lag Systems': 'Gecikme Sistemleri'
+            'Compilation': 'Derleme'
+            'Exporting': 'Dışa Aktarma'
+            'Analysis Tools': 'Analiz Araçları'
+            'Bifurcation Logistic Map': 'Bifurkasyon Lojistik Haritası'
+            'Collatz Conjecture': 'Collatz Sanısı'
+            'Izhikevich Neuron': 'Izhikevich Nöronu'
+            'API': 'API'
+            'CLI': 'CLI'
+            'Changelog': 'Değişiklik Günlüğü'
+            'Roadmap': 'Yol Haritası'
+            'FAQ': 'SSS'
+            'Compiler': 'Derleyici'
+            'DSL': 'DSL'
+            'Plotting': 'Çizim'
+            'Runtime': 'Çalışma Zamanı'
+  - literate-nav:
+      nav_file: SUMMARY.md
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      base_path: .
+      check_paths: true
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed
+
+  - pymdownx.arithmatex:
+      generic: true
+
+extra_javascript:
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
