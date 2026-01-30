@@ -2,6 +2,15 @@
 
 ---
 
+## [0.37.10] – 2026-01-30
+### Fixed
+- Stepper sources were not being attached to sources with `export_model_sources()` when `disk_cache=False` is chosen.
+  This was causing some tests of `test_export_sources.py` to fail. Fixed this process in `build.py` so that stepper 
+  sources are always attached regardless of `disk_cache`.
+- Fixed failing test `test_runner_diskcache.py` by removing a hard-coded python path. 
+
+---
+
 ## [0.37.9] – 2026-01-30
 ### Fixed
 - Mkdocs mkdocs-gen-files plugin for generating doc files was not playing well with multi-language support. 

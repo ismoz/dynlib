@@ -1,7 +1,7 @@
 """Tests for disk-backed runner caching."""
 from __future__ import annotations
 
-import os
+import os, sys
 import stat
 import subprocess
 from pathlib import Path
@@ -10,7 +10,7 @@ import pytest
 
 pytest.importorskip("numba")
 
-PYTHON_BIN = os.path.expanduser("~/.virtualenvs/pydefault/bin/python3")
+PYTHON_BIN = sys.executable
 
 from dynlib.compiler.build import build
 from dynlib.compiler.paths import load_config, resolve_cache_root

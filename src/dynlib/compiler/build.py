@@ -559,6 +559,14 @@ def _render_stepper_source(stepper_fn: Callable) -> str:
     return f"{source}\n"
 
 
+def _render_stepper_source_plain(stepper_fn: Callable) -> str:
+    """Render stepper source for inspection/export (not for disk cache)."""
+    import inspect
+    import textwrap
+
+    return textwrap.dedent(inspect.getsource(stepper_fn)).strip() + "\n"
+
+
 def build_callables(
     spec: ModelSpec,
     *,
@@ -1248,18 +1256,22 @@ def build(
         
         freevars = stepper_py.__code__.co_freevars
         has_closure = bool(freevars)
-        stepper_source = None
+        # Always keep source for export/inspection regardless of disk_cache.
+        # (Disk cache below is more restrictive.)
+        stepper_source = _render_stepper_source_plain(stepper_py)
+
         # Disable disk cache when the stepper closes over non-serializable objects
         stepper_disk_cache = bool(jit and disk_cache and cache_root_path is not None and not has_closure)
         if stepper_disk_cache:
-            stepper_source = _render_stepper_source(stepper_py)
+            # For disk cache we can keep the richer rendering (closure-safe path is already gated).
+            stepper_source_disk = _render_stepper_source(stepper_py)
             runner_cache_codegen.configure_stepper_disk_cache(
                 spec_hash=pieces.spec_hash,
                 stepper_name=stepper_name,
                 structsig=stepper_sig,
                 dtype=dtype_str,
                 cache_root=cache_root_path,
-                source=stepper_source,
+                source=stepper_source_disk,
                 function_name=stepper_py.__name__,
             )
         compiled = jit_compile(stepper_py, jit=jit, cache=stepper_disk_cache)
