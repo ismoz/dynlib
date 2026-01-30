@@ -2,6 +2,12 @@
 
 ---
 
+## [0.37.5] – 2026-01-30
+### Changed
+- Updated github links in documentation.
+
+---
+
 ## [0.37.4] – 2026-01-30
 ### Changed
 - pyproject.toml was still incompatible with PYPI. Removed the incorrect line.

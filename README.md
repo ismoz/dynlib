@@ -55,8 +55,8 @@ The CLI is not required for the Python API.
   - `python -m pip install numba`
 
 ## Installation
-- `pip install dynlib` (when published), or
-- `pip install -e .` for editable installs from source
+- `python -m pip install dynlib` or
+- `python -m pip install -e .` for editable installs from source
 
 ## Quickstart
 

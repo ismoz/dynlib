@@ -55,8 +55,8 @@ Python API’sini kullanmak için CLI zorunlu değildir.
   - `python -m pip install numba`
 
 ## Kurulum
-- `pip install dynlib` (yayınlandığında), veya
-- Kaynaktan düzenlenebilir kurulum için: `pip install -e .`
+- `python -m pip install dynlib` veya
+- Kaynaktan düzenlenebilir kurulum için: `python -m pip install -e .`
 
 ## Hızlı başlangıç
 

@@ -13,7 +13,7 @@ python -m pip install dynlib
 Eğer kaynak kodu değiştirip geliştirmeye katkıda bulunmak isterseniz paketi github üzerinden indirip kurabilirsiniz:
 
 ```bash
-git clone https://github.com/your-username/dynlib.git
+git clone https://github.com/ismoz/dynlib.git
 cd dynlib
 python -m pip install -e .
 ```

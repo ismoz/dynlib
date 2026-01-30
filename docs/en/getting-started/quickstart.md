@@ -13,7 +13,7 @@ python -m pip install dynlib
 For active development, install from source so you can tweak the code, run tests, and immediately see your changes in the CLI:
 
 ```bash
-git clone https://github.com/your-username/dynlib.git
+git clone https://github.com/ismoz/dynlib.git
 cd dynlib
 python -m pip install -e .
 ```

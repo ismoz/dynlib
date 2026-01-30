@@ -1,7 +1,8 @@
 # mkdocs.yml
 site_name: dynlib
 site_description: "A Python library for simulating dynamical systems."
-site_author: "ismail"
+site_author: "İsmail Öztürk"
+site_url: "https://ismoz.github.io/dynlib/"
 
 theme:
   name: material
@@ -42,7 +43,7 @@ extra:
       lang: tr
   social:
     - icon: fontawesome/brands/github-alt
-      link: https://github.com/your-username/dynlib # Please change this to your repo
+      link: https://github.com/ismoz/dynlib
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/dynlib/
 
