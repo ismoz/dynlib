@@ -1,7 +1,7 @@
 # dynlib
 
 Dynlib is a Python library for **modeling, simulating, and analyzing dynamical systems**.  
-Models are described in a TOML-based DSL (Domain-Specific Language) and then executed through a unified runtime—so you can iterate on solvers, parameters, and analyses without rewriting the same NumPy/Matplotlib plumbing for every experiment.
+Models are described in a TOML-based DSL (Domain-Specific Language) and then executed through a unified runtime—so you can iterate on solvers, parameters, and analyses without rewriting the same Numpy/Matplotlib plumbing for every experiment.
 
 With dynlib, you can define or tweak a model, try different solvers/settings, and visualize behavior quickly. It can be used with notebooks for teaching and demonstration purposes. Created models can be kept in an organized manner and can be shared easily.
 
@@ -50,6 +50,7 @@ The CLI is not required for the Python API.
 ## Prerequisites
 - Python 3.10+
 - Matplotlib for plots.
+- Numpy for numerical calculations.
 - **Numba** is highly recommended for JIT execution:
   - `python -m pip install numba`
 
@@ -57,31 +58,36 @@ The CLI is not required for the Python API.
 - `pip install dynlib` (when published), or
 - `pip install -e .` for editable installs from source
 
+## Quickstart
+
+Sanity-check the CLI and validate a bundled model:
+
+```bash
+dynlib --version
+dynlib model validate builtin://ode/lorenz.toml
+```
+
+Run a built-in model from Python (Lorenz system):
+
+```python
+from dynlib import setup
+from dynlib.plot import fig, series, export
+
+sim = setup("builtin://ode/lorenz.toml", stepper="rk4")
+
+sim.run(T=15.0, dt=0.01)
+res = sim.results()
+
+print("States:", res.state_names)
+print("Final z:", res["z"][-1])
+
+ax = fig.single()
+series.plot(x=res.t, y=res["x"], ax=ax, label="x")
+series.plot(x=res.t, y=res["z"], ax=ax, label="z", xlabel="time")
+export.show()
+```
+
+Next: see the docs for defining your own TOML models, URI tags (`proj://...`), recording options, and analysis workflows (basins, bifurcation, Lyapunov, fixed points).
+
 ## Documentation
-- The documentation relies on `mkdocs`. To regenerate or serve the documentation locally:
-
-1. Install MkDocs and required plugins:
-   ```bash
-   pip install mkdocs mkdocs-material mkdocs-gen-files mkdocs-literate-nav "mkdocstrings[python]" mkdocstrings mkdocs-static-i18n
-   ```
-
-2. Install additional Markdown extensions:
-   ```bash
-   pip install pymdown-extensions
-   ```
-
-3. From the project root, serve the docs:
-   ```bash
-   mkdocs serve
-   ```
-   Or build them:
-   ```bash
-   mkdocs build
-   ```
-
-4. To manually update the auto-generated doc files run:
-   ```bash
-   python tools/gen_model_docs.py
-   ```
-
-The generated site will be in the `site/` directory.
+The documentation can be accessed via (#TODO: Add a link ...)
