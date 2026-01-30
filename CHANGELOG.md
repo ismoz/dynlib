@@ -2,6 +2,12 @@
 
 ---
 
+## [0.37.8] – 2026-01-30
+### Fixed
+- Performed package install in docs.yml for Github pages deployment.
+
+---
+
 ## [0.37.7] – 2026-01-30
 ### Fixed
 - Fixed missing dependency for Github pages deployment.
