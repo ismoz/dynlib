@@ -1,0 +1,1221 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+    <url>
+        <loc>https://ismoz.github.io/dynlib/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/examples/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/examples/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/examples/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/examples/analysis/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/examples/analysis/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/examples/analysis/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/examples/bifurcation/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/examples/bifurcation/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/examples/bifurcation/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/examples/integer-map/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/examples/integer-map/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/examples/integer-map/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/examples/izhikevich/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/examples/izhikevich/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/examples/izhikevich/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/examples/plotting/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/examples/plotting/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/examples/plotting/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/examples/runtime/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/examples/runtime/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/examples/runtime/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/examples/state-management/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/examples/state-management/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/examples/state-management/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/getting-started/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/getting-started/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/getting-started/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/getting-started/first-model/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/getting-started/first-model/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/getting-started/first-model/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/getting-started/overview/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/getting-started/overview/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/getting-started/overview/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/getting-started/quickstart/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/getting-started/quickstart/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/getting-started/quickstart/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/analysis/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/analysis/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/analysis/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/analysis/basin/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/analysis/basin/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/analysis/basin/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/analysis/bifurcation/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/analysis/bifurcation/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/analysis/bifurcation/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/analysis/fixed-points/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/analysis/fixed-points/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/analysis/fixed-points/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/analysis/lyapunov/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/analysis/lyapunov/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/analysis/lyapunov/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/analysis/manifold/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/analysis/manifold/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/analysis/manifold/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/analysis/observers/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/analysis/observers/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/analysis/observers/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/analysis/post-analysis/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/analysis/post-analysis/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/analysis/post-analysis/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/analysis/sweep/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/analysis/sweep/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/analysis/sweep/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/cli/cli/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/cli/cli/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/cli/cli/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/modeling/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/modeling/aux/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/aux/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/aux/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/modeling/config-file/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/config-file/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/config-file/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/modeling/dsl-basics/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/dsl-basics/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/dsl-basics/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/modeling/equations/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/equations/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/equations/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/modeling/events/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/events/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/events/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/modeling/functions/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/functions/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/functions/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/modeling/inline-models/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/inline-models/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/inline-models/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/modeling/lagging/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/lagging/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/lagging/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/modeling/math-and-macros/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/math-and-macros/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/math-and-macros/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/modeling/model-registry/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/model-registry/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/model-registry/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/modeling/mods/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/mods/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/mods/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/modeling/presets/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/presets/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/presets/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/modeling/sim/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/sim/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/sim/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/modeling/ternary-if/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/ternary-if/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/ternary-if/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/plotting/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/plotting/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/plotting/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/plotting/basics/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/plotting/basics/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/plotting/basics/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/plotting/basin-plot/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/plotting/basin-plot/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/plotting/basin-plot/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/plotting/bifurcation-diagrams/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/plotting/bifurcation-diagrams/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/plotting/bifurcation-diagrams/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/plotting/cobweb/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/plotting/cobweb/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/plotting/cobweb/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/plotting/decorations/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/plotting/decorations/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/plotting/decorations/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/plotting/export/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/plotting/export/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/plotting/export/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/plotting/manifold-plot/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/plotting/manifold-plot/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/plotting/manifold-plot/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/plotting/themes-and-facets/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/plotting/themes-and-facets/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/plotting/themes-and-facets/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/plotting/vectorfields/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/plotting/vectorfields/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/plotting/vectorfields/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/simulation/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/simulation/basics/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/basics/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/basics/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/simulation/configuration/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/configuration/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/configuration/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/simulation/export-sources/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/export-sources/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/export-sources/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/simulation/jit/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/jit/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/jit/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/simulation/presets/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/presets/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/presets/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/simulation/results/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/results/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/results/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/simulation/runner-variants/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/runner-variants/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/runner-variants/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/simulation/session-introspection/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/session-introspection/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/session-introspection/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/simulation/snapshots-and-resume/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/snapshots-and-resume/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/snapshots-and-resume/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/simulation/steppers/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/steppers/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/steppers/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/guides/simulation/wrapper-and-runner/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/wrapper-and-runner/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/wrapper-and-runner/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/project/changelog/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/project/changelog/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/project/changelog/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/project/issues/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/project/issues/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/project/issues/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/project/todo/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/project/todo/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/project/todo/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/reference/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/reference/models/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/reference/models/map/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/map/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/map/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/reference/models/map/henon/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/map/henon/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/map/henon/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/reference/models/map/henon2/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/map/henon2/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/map/henon2/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/reference/models/map/ikeda/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/map/ikeda/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/map/ikeda/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/reference/models/map/logistic/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/map/logistic/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/map/logistic/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/reference/models/map/lozi/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/map/lozi/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/map/lozi/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/reference/models/map/sine/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/map/sine/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/map/sine/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/reference/models/map/standard/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/map/standard/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/map/standard/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/reference/models/ode/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/reference/models/ode/duffing/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/duffing/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/duffing/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/reference/models/ode/eto-circular/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/eto-circular/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/eto-circular/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/reference/models/ode/exp-if/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/exp-if/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/exp-if/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/reference/models/ode/expdecay/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/expdecay/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/expdecay/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/reference/models/ode/fitzhugh-nagumo/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/fitzhugh-nagumo/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/fitzhugh-nagumo/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/reference/models/ode/hodgkin-huxley/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/hodgkin-huxley/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/hodgkin-huxley/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/reference/models/ode/izhikevich/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/izhikevich/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/izhikevich/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/reference/models/ode/leaky-if/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/leaky-if/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/leaky-if/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/reference/models/ode/lorenz/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/lorenz/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/lorenz/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/reference/models/ode/quadratic-if/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/quadratic-if/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/quadratic-if/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/reference/models/ode/resonate-if/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/resonate-if/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/resonate-if/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/reference/models/ode/vanderpol/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/vanderpol/"/>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/vanderpol/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/examples/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/examples/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/examples/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/examples/analysis/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/examples/analysis/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/examples/analysis/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/examples/bifurcation/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/examples/bifurcation/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/examples/bifurcation/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/examples/integer-map/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/examples/integer-map/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/examples/integer-map/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/examples/izhikevich/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/examples/izhikevich/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/examples/izhikevich/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/examples/plotting/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/examples/plotting/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/examples/plotting/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/examples/runtime/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/examples/runtime/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/examples/runtime/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/examples/state-management/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/examples/state-management/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/examples/state-management/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/getting-started/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/getting-started/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/getting-started/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/getting-started/first-model/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/getting-started/first-model/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/getting-started/first-model/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/getting-started/overview/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/getting-started/overview/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/getting-started/overview/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/getting-started/quickstart/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/getting-started/quickstart/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/getting-started/quickstart/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/analysis/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/analysis/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/analysis/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/analysis/basin/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/analysis/basin/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/analysis/basin/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/analysis/bifurcation/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/analysis/bifurcation/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/analysis/bifurcation/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/analysis/fixed-points/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/analysis/fixed-points/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/analysis/fixed-points/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/analysis/lyapunov/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/analysis/lyapunov/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/analysis/lyapunov/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/analysis/manifold/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/analysis/manifold/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/analysis/manifold/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/analysis/observers/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/analysis/observers/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/analysis/observers/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/analysis/post-analysis/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/analysis/post-analysis/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/analysis/post-analysis/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/analysis/sweep/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/analysis/sweep/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/analysis/sweep/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/cli/cli/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/cli/cli/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/cli/cli/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/modeling/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/modeling/aux/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/aux/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/aux/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/modeling/config-file/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/config-file/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/config-file/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/modeling/dsl-basics/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/dsl-basics/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/dsl-basics/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/modeling/equations/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/equations/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/equations/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/modeling/events/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/events/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/events/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/modeling/functions/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/functions/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/functions/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/modeling/inline-models/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/inline-models/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/inline-models/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/modeling/lagging/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/lagging/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/lagging/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/modeling/math-and-macros/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/math-and-macros/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/math-and-macros/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/modeling/model-registry/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/model-registry/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/model-registry/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/modeling/mods/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/mods/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/mods/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/modeling/presets/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/presets/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/presets/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/modeling/sim/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/sim/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/sim/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/modeling/ternary-if/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/modeling/ternary-if/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/modeling/ternary-if/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/plotting/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/plotting/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/plotting/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/plotting/basics/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/plotting/basics/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/plotting/basics/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/plotting/basin-plot/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/plotting/basin-plot/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/plotting/basin-plot/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/plotting/bifurcation-diagrams/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/plotting/bifurcation-diagrams/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/plotting/bifurcation-diagrams/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/plotting/cobweb/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/plotting/cobweb/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/plotting/cobweb/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/plotting/decorations/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/plotting/decorations/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/plotting/decorations/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/plotting/export/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/plotting/export/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/plotting/export/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/plotting/manifold-plot/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/plotting/manifold-plot/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/plotting/manifold-plot/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/plotting/themes-and-facets/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/plotting/themes-and-facets/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/plotting/themes-and-facets/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/plotting/vectorfields/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/plotting/vectorfields/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/plotting/vectorfields/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/simulation/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/simulation/basics/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/basics/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/basics/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/simulation/configuration/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/configuration/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/configuration/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/simulation/export-sources/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/export-sources/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/export-sources/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/simulation/jit/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/jit/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/jit/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/simulation/presets/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/presets/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/presets/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/simulation/results/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/results/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/results/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/simulation/runner-variants/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/runner-variants/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/runner-variants/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/simulation/session-introspection/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/session-introspection/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/session-introspection/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/simulation/snapshots-and-resume/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/snapshots-and-resume/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/snapshots-and-resume/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/simulation/steppers/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/steppers/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/steppers/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/guides/simulation/wrapper-and-runner/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/guides/simulation/wrapper-and-runner/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/guides/simulation/wrapper-and-runner/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/project/changelog/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/project/changelog/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/project/changelog/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/project/issues/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/project/issues/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/project/issues/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/project/todo/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/project/todo/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/project/todo/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/reference/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/reference/models/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/reference/models/map/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/map/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/map/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/reference/models/map/henon/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/map/henon/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/map/henon/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/reference/models/map/henon2/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/map/henon2/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/map/henon2/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/reference/models/map/ikeda/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/map/ikeda/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/map/ikeda/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/reference/models/map/logistic/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/map/logistic/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/map/logistic/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/reference/models/map/lozi/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/map/lozi/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/map/lozi/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/reference/models/map/sine/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/map/sine/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/map/sine/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/reference/models/map/standard/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/map/standard/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/map/standard/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/reference/models/ode/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/reference/models/ode/duffing/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/duffing/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/duffing/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/reference/models/ode/eto-circular/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/eto-circular/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/eto-circular/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/reference/models/ode/exp-if/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/exp-if/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/exp-if/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/reference/models/ode/expdecay/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/expdecay/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/expdecay/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/reference/models/ode/fitzhugh-nagumo/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/fitzhugh-nagumo/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/fitzhugh-nagumo/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/reference/models/ode/hodgkin-huxley/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/hodgkin-huxley/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/hodgkin-huxley/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/reference/models/ode/izhikevich/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/izhikevich/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/izhikevich/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/reference/models/ode/leaky-if/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/leaky-if/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/leaky-if/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/reference/models/ode/lorenz/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/lorenz/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/lorenz/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/reference/models/ode/quadratic-if/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/quadratic-if/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/quadratic-if/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/reference/models/ode/resonate-if/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/resonate-if/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/resonate-if/"/>
+    </url>
+    <url>
+        <loc>https://ismoz.github.io/dynlib/tr/reference/models/ode/vanderpol/</loc>
+        <lastmod>2026-01-30</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="tr" href="https://ismoz.github.io/dynlib/tr/reference/models/ode/vanderpol/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://ismoz.github.io/dynlib/reference/models/ode/vanderpol/"/>
+    </url>
+</urlset>
