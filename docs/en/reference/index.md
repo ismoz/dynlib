@@ -1,6 +1,6 @@
 # Reference
 
-The reference section collects generated artifacts and registry helpers that complement the conceptual guides. Most of the reference content is produced automatically when you run `mkdocs build` so it always matches the stepper/model implementations in the source tree.
+The reference section collects generated artifacts and registry helpers that complement the conceptual guides. To produce these references `tools/gen_model_docs.py` should be run manually.
 
 ## Built-in models
 
@@ -14,7 +14,7 @@ The `reference/models` subfolder is populated by `tools/gen_model_docs.py` via `
 
 1. Install MkDocs and required plugins:
    ```bash
-   pip install mkdocs mkdocs-material mkdocs-gen-files mkdocs-literate-nav "mkdocstrings[python]" mkdocstrings mkdocs-static-i18n
+   pip install mkdocs mkdocs-material mkdocs-literate-nav "mkdocstrings[python]" mkdocs-static-i18n
    ```
 
 2. Install additional Markdown extensions:

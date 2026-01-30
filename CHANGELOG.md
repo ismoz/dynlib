@@ -2,6 +2,20 @@
 
 ---
 
+## [0.37.9] – 2026-01-30
+### Fixed
+- Mkdocs mkdocs-gen-files plugin for generating doc files was not playing well with multi-language support. 
+  Removed this plugin. For displaying built-in model references, changelog, todo, issues in docs, the script 
+  `tools/gen_model_docs.py` should be run manually. `.github/workflows/docs.yml` will run this script with every
+  commit, so Github pages will always display the up-to-date version.
+- Fixed broken `mkdocs.yml` path prefixes due to the deployment.
+
+### Changed
+- Updated documentation links.
+- Updated `tools/gen_model_docs.py` and `mkdocs_helpers.py` for manual doc generation.
+
+---
+
 ## [0.37.8] – 2026-01-30
 ### Fixed
 - Performed package install in docs.yml for Github pages deployment.

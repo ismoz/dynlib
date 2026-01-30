@@ -1,6 +1,6 @@
 # Referans
 
-Referans bölümü, dynlib içerisinde tanımlı yerleşik modelleri listeler. Bu liste `mkdocs-gen-files` eklentisi yardımıyla otomatik olarak oluşturulmaktadır. Kaynak kodlarına sahipseniz bu referansı `tools/gen_model_docs.py` betiğini çalıştırarak yerel olarak üretebilirsiniz.
+Referans bölümü, dynlib içerisinde tanımlı yerleşik modelleri listeler. Kaynak kodlarına sahipseniz bu referansı `tools/gen_model_docs.py` betiğini çalıştırarak yerel olarak üretebilirsiniz.
 
 ## Yerleşik modeller
 
@@ -13,7 +13,7 @@ Yerleşik modeller kaynak kodlarında `src/dynlib/models/{map,ode}` kalsörleri 
 
 1. MkDocs ve eklentilerini kurun (sanal ortam ile):
    ```bash
-   pip install mkdocs mkdocs-material mkdocs-gen-files mkdocs-literate-nav "mkdocstrings[python]" mkdocstrings mkdocs-static-i18n
+   pip install mkdocs mkdocs-material mkdocs-literate-nav "mkdocstrings[python]" mkdocs-static-i18n
    ```
 
 2. İlave Markdown eklentilerini kurun:

@@ -90,4 +90,4 @@ export.show()
 Sonraki adım: Kendi TOML modellerinizi tanımlamayı, URI etiketlerini (`proj://...`), kayıt (recording) seçeneklerini ve analiz iş akışlarını (basins, bifurcation, Lyapunov, fixed points) dokümantasyondan inceleyin.
 
 ## Dokümantasyon
-Dokümantasyona şu adresten erişebilirsiniz: (#TODO: Bir bağlantı eklenecek ...)
+Dokümantasyon için linke tıklayın: [Dökümantasyon](https://ismoz.github.io/dynlib/)

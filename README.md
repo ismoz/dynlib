@@ -90,4 +90,4 @@ export.show()
 Next: see the docs for defining your own TOML models, URI tags (`proj://...`), recording options, and analysis workflows (basins, bifurcation, Lyapunov, fixed points).
 
 ## Documentation
-The documentation can be accessed via (#TODO: Add a link ...)
+Check this link for the project documentation:[Documentation](https://ismoz.github.io/dynlib/)
