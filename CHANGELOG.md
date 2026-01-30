@@ -2,8 +2,14 @@
 
 ---
 
+## [0.37.4] – 2026-01-30
+### Changed
+- pyproject.toml was still incompatible with PYPI. Removed the incorrect line.
+
+---
+
 ## [0.37.3] – 2026-01-30
-### Added
+### Changed
 - Fixed license statement in pyproject.toml.
 
 ---

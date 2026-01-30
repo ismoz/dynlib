@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dynlib"
-version = "0.37.3"
+version = "0.37.4"
 description = "A dynamical systems simulation library."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,7 +19,6 @@ classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
   "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.10 :: Only",
   "Topic :: Scientific/Engineering :: Mathematics",
 ]
 
