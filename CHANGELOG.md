@@ -4,7 +4,7 @@
 
 ## [0.37.2] – 2026-01-30
 ### Added
-- BSD 3-Clause Licence.
+- BSD 3-Clause License.
 - Turkish README file.
 
 ### Changed
