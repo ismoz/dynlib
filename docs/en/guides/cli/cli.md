@@ -31,7 +31,7 @@ Use this command as a quick sanity check before running a simulation, sharing a 
 
 ## Cache management
 
-All cache commands delegate to `resolve_cache_root()` so they respect your `[cache]` overrides, `DYN_MODEL_PATH` tag map extensions, or `DYNLIB_CONFIG` environment variable described in [docs/guides/modeling/config-file.md](../modeling/config-file.md).
+All cache commands delegate to `resolve_cache_root()` so they respect your `[cache]` overrides, `DYN_MODEL_PATH` tag map extensions, or `DYNLIB_CONFIG` environment variable described in [the config file](../modeling/config-file.md).
 
 ### `dynlib cache path`
 

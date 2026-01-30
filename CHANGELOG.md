@@ -2,6 +2,12 @@
 
 ---
 
+## [0.37.1] – 2026-01-30
+### Added
+- Added Turkish documentation and improved existing English documentation.
+
+---
+
 ## [0.37.0] – 2026-01-29
 ### Added
 - `mkdocs` compatible documentation in docs folder with multiple language support. Only English docs are available

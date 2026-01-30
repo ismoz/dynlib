@@ -1,6 +1,6 @@
 # Manifold analysis
 
-Dynlib currently supports **1D manifold tracing** for both discrete maps and ODEs, plus **search/trace utilities for heteroclinic and homoclinic orbits** of ODE models. Once you extract the manifolds (stable/unstable branches or connecting orbits) you can feed the results directly into `dynlib.plot.manifold` or the plotting guide in [docs/guides/plotting/manifold-plot.md](../plotting/manifold-plot.md).
+Dynlib currently supports **1D manifold tracing** for both discrete maps and ODEs, plus **search/trace utilities for heteroclinic and homoclinic orbits** of ODE models. Once you extract the manifolds (stable/unstable branches or connecting orbits) you can feed the results directly into `dynlib.plot.manifold` or the plotting guide in [manifold plots](../plotting/manifold-plot.md).
 
 ## 1D manifold tracing
 
@@ -111,5 +111,5 @@ Both finders/tracers log `diag` metadata in their result `meta` objects so you c
 
 ## Next steps
 
-- Use `trace_manifold_1d_map` or `trace_manifold_1d_ode` once you know the target equilibrium and want to visualize its stable/unstable branches. Combine their `ManifoldTraceResult` with reference plots in `docs/guides/plotting/manifold-plot.md`.
+- Use `trace_manifold_1d_map` or `trace_manifold_1d_ode` once you know the target equilibrium and want to visualize its stable/unstable branches. Combine their `ManifoldTraceResult` with reference plots in [manifold plots](../plotting/manifold-plot.md).
 - Run the heteroclinic/homoclinic finder scripts from `examples/analysis/{heteroclinic_,homoclinic_}finder_tracer.py` to hunt for parameter values, then trace the orbit at the discovered parameter to create publication-ready visuals.

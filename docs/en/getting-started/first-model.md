@@ -1,6 +1,6 @@
 # Your First Model
 
-This guide walks through defining a simple model both as a standalone TOML file and as an inline string that Dynlib can consume without ever touching disk. Refer to the Modeling guides for deeper DSL coverage (`dsl-basics.md` for the TOML structure, `inline-models.md` for the inline keyword, and `config-file.md` if you want to register the file in the model registry).
+This guide walks through defining a simple model both as a standalone TOML file and as an inline string that Dynlib can consume without ever touching disk. Refer to the Modeling guides for deeper DSL coverage ([DSL basics](../guides/modeling/dsl-basics.md) for the TOML structure, [inline models](../guides/modeling/inline-models.md) for the inline keyword, and [config file](../guides/modeling/config-file.md) if you want to register the file in the model registry).
 
 ## 1. Create a TOML spec
 
@@ -92,5 +92,5 @@ sim.run(T=30)
 
 Once the TOML file validates, point Dynlib at it via `setup("first-model.toml", ...)`, wire it into a runner, or register the directory using the config file so you can call it with a tag (`proj://first-model.toml`). For more options, see:
 
-- `docs/guides/modeling/config-file.md` for customizing the tag map and cache roots.
-- `docs/guides/modeling/sim.md` for runtime settings (steppers, recorders, persistence).
+- [Customizing the tag map and cache roots](../guides/modeling/config-file.md)
+- [Runtime settings (steppers, recorders, persistence)](../guides/modeling/sim.md)
