@@ -2,6 +2,13 @@
 
 ---
 
+## [0.37.6] – 2026-01-30
+### Changed
+- Introduced docs.yml for Github pages deployment.
+
+
+---
+
 ## [0.37.5] – 2026-01-30
 ### Changed
 - Updated github links in documentation.
