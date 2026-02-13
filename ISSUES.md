@@ -5,8 +5,8 @@ This file lists the known issues in the project. Each issue includes a brief des
 ## Issues
 
 1. **Name**
-   - **Description**: 
-   - **Status**: CLOSED.
+   - **Description**:
+   - **Status**: CLOSED
    - **Notes**:
 
 

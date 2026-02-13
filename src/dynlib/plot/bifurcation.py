@@ -28,8 +28,6 @@ def _coerce_bifurcation_inputs(res: Any, *, xlabel: str | None, ylabel: str | No
             xlabel = getattr(res, "param_name", None)
         if ylabel is None and getattr(res, "meta", None):
             ylabel = res.meta.get("var")
-        if title is None and getattr(res, "mode", None):
-            title = f"mode={res.mode}"
         return p_vals, y_vals, xlabel, ylabel, title
 
     if not isinstance(res, (tuple, list)) or len(res) != 2:

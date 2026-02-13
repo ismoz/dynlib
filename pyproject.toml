@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dynlib"
-version = "0.37.10"
+version = "0.37.11"
 description = "A dynamical systems simulation library."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11" # Python >=3.11 is strictly necessary for tomllib module
 authors = [{ name = "İsmail Öztürk", email = "ismail.ozturk@amasya.edu.tr" }]
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
@@ -18,7 +18,7 @@ dependencies = [
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
-  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
   "Topic :: Scientific/Engineering :: Mathematics",
 ]
 

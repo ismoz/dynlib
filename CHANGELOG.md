@@ -2,6 +2,15 @@
 
 ---
 
+## [0.37.11] – 2026-02-13
+### Fixed
+- Made `python>=3.11` the minimum python requirement because tomllib is essential and it is not available in prior
+  versions.
+- `bifurcation_diagram` plot tool was displaying extraction mode in the title by default. Now no title will be 
+  displayed if the title is not provided.
+
+---
+
 ## [0.37.10] – 2026-01-30
 ### Fixed
 - Stepper sources were not being attached to sources with `export_model_sources()` when `disk_cache=False` is chosen.
