@@ -1,5 +1,7 @@
+#! dynlib
 [model]
 type = "ode"
+name = "Van der Pol Oscillator"
 
 [states]
 x = 2.0

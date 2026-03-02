@@ -1,4 +1,4 @@
-
+#! dynlib
 [model]
 type = "ode"
 name = "Lorenz System"

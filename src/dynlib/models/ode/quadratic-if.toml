@@ -1,3 +1,4 @@
+#! dynlib
 [model]
 type = "ode"
 name = "Quadratic Integrate-and-Fire Neuron Model"

@@ -192,6 +192,55 @@ stepper = "euler"
     assert get_state_value(model.spec, "z") == 1.5
 
 
+def test_build_accepts_dynlib_model_shebang(tmp_path):
+    """File-backed models may declare a dynlib shebang."""
+    model_file = tmp_path / "shebang_model.toml"
+    model_file.write_text("""#!dynlib:0.13
+[model]
+type = "ode"
+
+[states]
+x = 1.0
+
+[params]
+a = 1.0
+
+[equations.rhs]
+x = "-a * x"
+
+[sim]
+stepper = "euler"
+""")
+
+    model = build(str(model_file), jit=False)
+
+    assert get_state_value(model.spec, "x") == 1.0
+
+
+def test_build_rejects_non_dynlib_model_shebang(tmp_path):
+    """File-backed models reject shebangs for other packages."""
+    model_file = tmp_path / "wrong_package.toml"
+    model_file.write_text("""#! snnlib:1.0
+[model]
+type = "ode"
+
+[states]
+x = 1.0
+
+[params]
+a = 1.0
+
+[equations.rhs]
+x = "-a * x"
+
+[sim]
+stepper = "euler"
+""")
+
+    with pytest.raises(ModelLoadError, match="This is not a dynlib model"):
+        build(str(model_file), jit=False)
+
+
 # ---- TAG:// resolution ------------------------------------------------------
 
 def test_build_from_tag_uri(tmp_path):
@@ -451,6 +500,30 @@ def test_malformed_inline_model():
     
     with pytest.raises(ModelLoadError, match="Failed to parse inline model"):
         build(bad_toml, jit=False)
+
+
+def test_inline_model_ignores_shebang_comment():
+    """Inline models are not subject to file shebang validation."""
+    inline_model = """inline: #!snnlib:1.0
+[model]
+type = "ode"
+
+[states]
+x = 1.0
+
+[params]
+a = 1.0
+
+[equations.rhs]
+x = "-a * x"
+
+[sim]
+stepper = "euler"
+"""
+
+    model = build(inline_model, jit=False)
+
+    assert get_state_value(model.spec, "x") == 1.0
 
 
 # ---- Backward compatibility -------------------------------------------------

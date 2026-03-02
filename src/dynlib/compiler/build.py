@@ -5,6 +5,7 @@ from typing import Tuple, Callable, Dict, Any, Union, List, Optional, Mapping, S
 from pathlib import Path
 import inspect
 import sys
+import re
 import numpy as np
 import tomllib
 
@@ -104,6 +105,22 @@ def _format_toml_parse_error(toml_content: str, error: Exception, source_desc: s
         context_lines.append("Hint: Check for typos or invalid TOML syntax")
     
     return "\n".join(context_lines)
+
+
+_MODEL_SHEBANG_RE = re.compile(
+    r"^\#\!\s*(?P<package>[A-Za-z0-9_.-]+)(?:\s*:\s*(?P<version>[A-Za-z0-9_.+-]+))?\s*$"
+)
+
+
+def _validate_model_file_shebang(content: str, source: str) -> None:
+    first_line = content.splitlines()[0] if content.splitlines() else ""
+    match = _MODEL_SHEBANG_RE.match(first_line)
+    if not match:
+        return
+
+    package = match.group("package")
+    if package != "dynlib":
+        raise ModelLoadError(f"This is not a dynlib model: {source} declares '#!{package}'")
 
 
 __all__ = ["CompiledPieces", "build_callables", "FullModel", "build", "load_model_from_uri", "export_model_sources"]
@@ -908,6 +925,7 @@ def load_model_from_uri(
         try:
             with open(resolved_model, "rb") as f:
                 content = f.read().decode('utf-8')
+                _validate_model_file_shebang(content, resolved_model)
                 model_data = tomllib.loads(content)
         except tomllib.TOMLDecodeError as e:
             # For TOML parse errors, show context

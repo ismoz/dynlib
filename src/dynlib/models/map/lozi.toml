@@ -1,3 +1,4 @@
+#! dynlib
 [model]
 type = "map"
 name = "Lozi Map"

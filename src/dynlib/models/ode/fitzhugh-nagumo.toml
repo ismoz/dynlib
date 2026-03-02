@@ -1,3 +1,4 @@
+#! dynlib
 [model]
 type = "ode"
 name = "FitzHugh-Nagumo Neuron"

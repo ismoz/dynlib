@@ -2,6 +2,13 @@
 
 ---
 
+## [0.37.12] – 2026-03-02
+### Added
+- Shebang support to toml model files. First line of toml model files can optionally have the info about intended 
+  package and its version. For example: `#! dynlib` or `#! dynlib:0.37`.
+
+---
+
 ## [0.37.11] – 2026-02-13
 ### Fixed
 - Made `python>=3.11` the minimum python requirement because tomllib is essential and it is not available in prior

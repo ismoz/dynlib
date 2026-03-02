@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dynlib"
-version = "0.37.11"
+version = "0.37.12"
 description = "A dynamical systems simulation library."
 readme = "README.md"
 requires-python = ">=3.11" # Python >=3.11 is strictly necessary for tomllib module

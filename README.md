@@ -48,7 +48,7 @@ Dynlib ships a small CLI (Command Line Interface) for convenience tasks such as 
 The CLI is not required for the Python API.
 
 ## Prerequisites
-- Python 3.10+
+- Python 3.11+
 - Matplotlib for plots.
 - Numpy for numerical calculations.
 - **Numba** is highly recommended for JIT execution:
@@ -90,4 +90,4 @@ export.show()
 Next: see the docs for defining your own TOML models, URI tags (`proj://...`), recording options, and analysis workflows (basins, bifurcation, Lyapunov, fixed points).
 
 ## Documentation
-Check this link for the project documentation:[Documentation](https://ismoz.github.io/dynlib/)
+Check this link for the project documentation: [Documentation](https://ismoz.github.io/dynlib/)

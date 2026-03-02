@@ -1,3 +1,4 @@
+#! dynlib
 [model]
 type = "ode"
 name = "Exponential Integrate-and-Fire Neuron Model"

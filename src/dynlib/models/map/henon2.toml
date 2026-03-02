@@ -1,3 +1,4 @@
+#! dynlib
 # Henon map version used in Kathleen Alligood's book
 [model]
 type = "map"

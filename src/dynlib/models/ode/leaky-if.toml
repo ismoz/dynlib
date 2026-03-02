@@ -1,3 +1,4 @@
+#! dynlib
 [model]
 type = "ode"
 name = "Leaky Integrate-and-Fire Neuron Model"

@@ -1,3 +1,4 @@
+#! dynlib
 [model]
 type = "ode"
 name = "Hodgkin-Huxley Neuron (activation-function form)"

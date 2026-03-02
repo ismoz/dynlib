@@ -48,7 +48,7 @@ Dynlib, model doğrulama, stepper listeleme ve önbellekleri inceleme gibi prati
 Python API’sini kullanmak için CLI zorunlu değildir.
 
 ## Gereksinimler
-- Python 3.10+
+- Python 3.11+
 - Çizimler için Matplotlib
 - Sayısal hesaplamalar için Numpy
 - JIT yürütme için **Numba** şiddetle önerilir:

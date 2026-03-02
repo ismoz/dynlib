@@ -1,3 +1,4 @@
+#! dynlib
 # Simple exponential decay model: dx/dt = -a*x
 # Analytic solution: x(t) = x0 * exp(-a*t)
 
