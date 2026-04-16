@@ -16,7 +16,7 @@ threshold = 0.5
 x = "-a * x"
 
 [events.reset]
-phase = "post"
+phase = "end"
 cond = "x < threshold"
 action.x = "1.0"
 log = ["t", "x"]

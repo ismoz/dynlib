@@ -5,6 +5,7 @@ dene3.py
 run_test.py
 create_zip.sh
 compile_all.sh
+.codex
 
 # Folders
 .snn_kernel_cache/

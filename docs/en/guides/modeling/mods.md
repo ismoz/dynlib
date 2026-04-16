@@ -21,7 +21,7 @@ exclusive = false
 names = ["event_to_remove"]
 
 [mod.add.events.new_event]
-phase = "post"
+phase = "end"
 cond = "x > threshold"
 action = "x = 0"
 
@@ -77,7 +77,7 @@ name = "update_logic"
 
 # Replace an event
 [mod.replace.events.existing_event]
-phase = "post"
+phase = "end"
 cond = "x > new_threshold"
 action = "x = 0; counter = counter + 1"
 
@@ -104,12 +104,12 @@ name = "add_features"
 
 # Add new events
 [mod.add.events.reset_mechanism]
-phase = "post"
+phase = "end"
 cond = "x > 10"
 action = "x = 0"
 
 [mod.add.events.spike_detector]
-phase = "pre"
+phase = "start"
 cond = "v > threshold"
 action = "spike_count = spike_count + 1"
 log = ["t"]  # Log spike times
@@ -179,14 +179,14 @@ Events in mods use the same TOML table format as model definitions:
 
 ```toml
 [mod.add.events.event_name]
-phase = "pre" | "post"        # When to check condition
+phase = "start" | "end"       # When to check condition
 cond = "expression"           # Condition to trigger
 action = "code"               # Action to perform (string)
 log = ["var1", "var2"]        # Variables to log when triggered (optional)
 
 # Alternative: keyed action assignments
 [mod.add.events.event_name]
-phase = "post"
+phase = "end"
 cond = "x > 5"
 action.dx = 1.0
 action.dy = -0.5
@@ -253,7 +253,7 @@ alpha = 0.5
 beta = 2.0
 
 [mod.add.events.monitor]
-phase = "post"
+phase = "end"
 cond = "t % 1.0 == 0"
 action = ""
 log = ["x", "y"]
@@ -275,7 +275,7 @@ name = "variant2"
 gain = 2.0
 
 [mods.variant2.add.events.noise]
-phase = "pre"
+phase = "start"
 cond = "true"
 action = "x = x + 0.1 * randn()"
 ```
@@ -436,7 +436,7 @@ debug_x = "x"
 debug_dx = "dx_dt"
 
 [mod.debug.add.events.log_state]
-phase = "post"
+phase = "end"
 cond = "t % 1.0 == 0"  # Log every second
 action = ""  # No action, just logging
 log = ["debug_t", "debug_x", "debug_dx"]

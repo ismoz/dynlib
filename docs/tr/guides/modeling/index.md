@@ -14,7 +14,7 @@ Bu rehber; TOML DSL'ini ve spesifikasyonları yapılandırılmış, okunabilir v
 
 - [Auxiliary (Yardımcı) değişkenler](aux.md) — türetilmiş ifadeleri isimlendirin, böylece matematiği tekrarlamadan denklemler, olaylar veya Jacobian'lar arasında paylaşabilirsiniz.
 - [DSL fonksiyonları](functions.md) — argümanları, ifade gövdeleri ve DSL'i bildirimsel tutan temiz çağrı yerleri olan yeniden kullanılabilir fonksiyonlar tanımlayın.
-- [Olaylar (Events)](events.md) — `cond` (koşul), `action` (eylem) ve günlükleme meta verilerini `pre`/`post` aşamalarına bağlayın, olay makrolarını kullanın ve hızlı yol çalıştırıcılarını kararsızlaştırmadan olay günlüklerini yönetin.
+- [Olaylar (Events)](events.md) — `cond` (koşul), `action` (eylem) ve günlükleme meta verilerini `start`/`end` aşamalarına bağlayın, olay makrolarını kullanın ve hızlı yol çalıştırıcılarını kararsızlaştırmadan olay günlüklerini yönetin.
 - [Gecikme (Lagging)](lagging.md) — `lag_<state>(k)` yardımcılarını etkinleştirin, tampon derinliğini kontrol edin ve gecikmeli durumların ODE'ler, haritalar ve NumPy uyumlu çalışma zamanları ile nasıl etkileşime girdiğini anlayın.
 - [Satır içi (Inline) modeller](inline-models.md) — modelleri tamamen testlerin veya not defterlerinin (notebooks) içinde prototiplemek için bir Python dizesine bir TOML parçası gömün.
 

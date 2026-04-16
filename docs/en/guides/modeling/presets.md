@@ -89,7 +89,7 @@ du = a * (b * v - u)
 
 [events.reset]
 cond = "v >= v_th"
-phase = "post"
+phase = "end"
 action = """
 v = c
 u = u + d

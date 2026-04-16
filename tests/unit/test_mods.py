@@ -15,7 +15,7 @@ def base_normal():
         "aux": {},
         "functions": {},
         "events": {
-            "tick": {"phase": "post", "cond": "1", "action": "x = x", "log": []}
+            "tick": {"phase": "end", "cond": "1", "action": "x = x", "log": []}
         },
         "sim": {},
     }
@@ -28,10 +28,10 @@ def test_mods_remove_replace_add_set_and_ordering():
         # remove existing event
         ModSpec(name="rm", remove={"events": {"names": ["tick"]}}),
         # add two events
-        ModSpec(name="add1", add={"events": {"e1": {"phase": "pre", "cond": "1", "action": "x = 0"}}}),
-        ModSpec(name="add2", add={"events": {"e2": {"phase": "post", "cond": "1", "action.dx": "1"}}}),
+        ModSpec(name="add1", add={"events": {"e1": {"phase": "start", "cond": "1", "action": "x = 0"}}}),
+        ModSpec(name="add2", add={"events": {"e2": {"phase": "end", "cond": "1", "action.dx": "1"}}}),
         # replace e2
-        ModSpec(name="repl", replace={"events": {"e2": {"phase": "post", "cond": "x>0", "action.dx": "2"}}}),
+        ModSpec(name="repl", replace={"events": {"e2": {"phase": "end", "cond": "x>0", "action.dx": "2"}}}),
         # set values
         ModSpec(name="setv", set={"states": {"x": 5.0}, "params": {"a": 3.0}}),
     ]
@@ -44,7 +44,7 @@ def test_mods_remove_replace_add_set_and_ordering():
     # added e1, e2, and e2 replaced
     assert set(names) == {"e1", "e2"}
     e2 = next(e for e in out["events"] if e["name"] == "e2")
-    assert e2["phase"] == "post" and e2["cond"] == "x>0"
+    assert e2["phase"] == "end" and e2["cond"] == "x>0"
     assert e2["action_keyed"] == {"dx": "2"} and e2["action_block"] is None
     # set applied
     assert out["states"]["x"] == 5.0
@@ -53,13 +53,13 @@ def test_mods_remove_replace_add_set_and_ordering():
 def test_mods_replace_nonexistent_raises():
     normal = base_normal()
     with pytest.raises(ModelLoadError):
-        apply_mods_v2(normal, [ModSpec(name="bad", replace={"events": {"nope": {"phase": "pre", "cond": "1", "action": "x=0"}}})])
+        apply_mods_v2(normal, [ModSpec(name="bad", replace={"events": {"nope": {"phase": "start", "cond": "1", "action": "x=0"}}})])
 
 def test_mods_add_duplicate_raises():
     normal = base_normal()
     mods = [
-        ModSpec(name="add1", add={"events": {"e": {"phase": "pre", "cond": "1", "action": "x=0"}}}),
-        ModSpec(name="add2", add={"events": {"e": {"phase": "post", "cond": "1", "action.dx": "1"}}}),
+        ModSpec(name="add1", add={"events": {"e": {"phase": "start", "cond": "1", "action": "x=0"}}}),
+        ModSpec(name="add2", add={"events": {"e": {"phase": "end", "cond": "1", "action.dx": "1"}}}),
     ]
     with pytest.raises(ModelLoadError):
         apply_mods_v2(normal, mods)
@@ -71,8 +71,8 @@ def test_mods_remove_nonexistent_event_raises():
 
 def test_mods_group_exclusive_conflict_raises():
     normal = base_normal()
-    m1 = ModSpec(name="B", group="G", exclusive=True, add={"events": {"eB": {"phase": "pre", "cond": "1", "action": "x=0"}}})
-    m2 = ModSpec(name="A", group="G", exclusive=True, add={"events": {"eA": {"phase": "pre", "cond": "1", "action": "x=0"}}})
+    m1 = ModSpec(name="B", group="G", exclusive=True, add={"events": {"eB": {"phase": "start", "cond": "1", "action": "x=0"}}})
+    m2 = ModSpec(name="A", group="G", exclusive=True, add={"events": {"eA": {"phase": "start", "cond": "1", "action": "x=0"}}})
 
     with pytest.raises(ModelLoadError, match="group 'G' allows only one active mod"):
         apply_mods_v2(normal, [m1, m2])
@@ -80,8 +80,8 @@ def test_mods_group_exclusive_conflict_raises():
 
 def test_mods_group_exclusive_blocked_even_with_non_exclusive_partner():
     normal = base_normal()
-    exclusive = ModSpec(name="solo", group="G", exclusive=True, add={"events": {"eB": {"phase": "pre", "cond": "1", "action": "x=0"}}})
-    non_exclusive = ModSpec(name="helper", group="G", exclusive=False, add={"events": {"eA": {"phase": "pre", "cond": "1", "action": "x=0"}}})
+    exclusive = ModSpec(name="solo", group="G", exclusive=True, add={"events": {"eB": {"phase": "start", "cond": "1", "action": "x=0"}}})
+    non_exclusive = ModSpec(name="helper", group="G", exclusive=False, add={"events": {"eA": {"phase": "start", "cond": "1", "action": "x=0"}}})
 
     with pytest.raises(ModelLoadError, match="group 'G' allows only one active mod"):
         apply_mods_v2(normal, [exclusive, non_exclusive])
@@ -89,12 +89,19 @@ def test_mods_group_exclusive_blocked_even_with_non_exclusive_partner():
 
 def test_mods_group_single_exclusive_preserves_order():
     normal = base_normal()
-    exclusive = ModSpec(name="solo", group="G", exclusive=True, add={"events": {"e1": {"phase": "pre", "cond": "1", "action": "x=0"}}})
-    passthrough = ModSpec(name="P0", add={"events": {"p": {"phase": "pre", "cond": "1", "action": "x=0"}}})
+    exclusive = ModSpec(name="solo", group="G", exclusive=True, add={"events": {"e1": {"phase": "start", "cond": "1", "action": "x=0"}}})
+    passthrough = ModSpec(name="P0", add={"events": {"p": {"phase": "start", "cond": "1", "action": "x=0"}}})
     out = apply_mods_v2(normal, [passthrough, exclusive])
 
     names = [e["name"] for e in out["events"]]
     assert "p" in names and "e1" in names
+
+
+def test_mods_deprecated_event_phase_raises():
+    normal = base_normal()
+    mod = ModSpec(name="bad", add={"events": {"e": {"phase": "pre", "cond": "1", "action": "x=0"}}})
+    with pytest.raises(ModelLoadError, match=r"pre is deprecated\. Use start for event phase\."):
+        apply_mods_v2(normal, [mod])
 
 
 def test_mods_add_params():

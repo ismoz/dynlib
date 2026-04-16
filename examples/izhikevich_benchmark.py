@@ -27,7 +27,7 @@ du = a * (b * v - u)
 
 [events.reset]
 cond = "v >= 30.0"
-phase = "post"
+phase = "end"
 action = """
 v = c
 u = u + d

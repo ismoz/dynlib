@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Dict, Any, List, Tuple
 
 from dynlib.errors import ModelLoadError
+from dynlib.dsl.parser import normalize_event_phase
 
 __all__ = [
     "ModSpec",
@@ -85,7 +86,7 @@ def _apply_remove(normal: Dict[str, Any], payload: Dict[str, Any]) -> None:
 
 def _normalize_event(name: str, body: Dict[str, Any]) -> Dict[str, Any]:
     # Minimal normalization identical to parser output
-    phase = body["phase"]
+    phase = normalize_event_phase(body.get("phase"), f"events.{name}.phase")
     cond = body["cond"]
     action_keyed = None
     action_block = None

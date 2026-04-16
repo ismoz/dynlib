@@ -43,7 +43,7 @@ Mevcut tüm tabloları ve anahtarlarını listeler.
 - `expr = "expression"
 
 ### [events.event_name]
-- `phase` (isteğe bağlı): "pre" | "post" | "both" (varsayılan "post")
+- `phase` (isteğe bağlı): "start" | "end" | "both" (varsayılan "end")
 - `cond = "expression"
 - `action = "expression"` veya `action.state_name = "expression"
 - `tags` (isteğe bağlı): ["tag1", "tag2", ...]

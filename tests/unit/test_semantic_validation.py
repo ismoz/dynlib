@@ -163,7 +163,7 @@ def test_illegal_event_mutation_aux():
     my_aux = "x * 2"
     
     [events.reset]
-    phase = "post"
+    phase = "end"
     cond = "x < 0.1"
     action.my_aux = "1.0"
     """
@@ -192,7 +192,7 @@ def test_illegal_event_mutation_function():
     expr = "y * 2"
     
     [events.reset]
-    phase = "post"
+    phase = "end"
     cond = "x < 0.1"
     action.f = "1.0"
     """
@@ -381,7 +381,7 @@ def test_valid_event_mutations_allowed():
     y = "-b*y"
     
     [events.reset]
-    phase = "post"
+    phase = "end"
     cond = "x < 0.1"
     action.x = "1.0"
     action.y = "2.0"

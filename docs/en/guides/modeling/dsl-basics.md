@@ -43,7 +43,7 @@ It lists all available tables and their keys.
 - `expr = "expression"
 
 ### [events.event_name]
-- `phase` (optional): "pre" | "post" | "both" (default "post")
+- `phase` (optional): "start" | "end" | "both" (default "end")
 - `cond = "expression"
 - `action = "expression"` or `action.state_name = "expression"
 - `tags` (optional): ["tag1", "tag2", ...]

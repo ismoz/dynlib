@@ -44,7 +44,7 @@ v = "0.04*v*v + 5*v + 140 - u + I"
 u = "a*(b*v - u)"
 
 [events.spike]
-phase = "post"
+phase = "end"
 cond = "v >= 30"
 log = ["t"]
 

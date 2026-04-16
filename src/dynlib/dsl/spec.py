@@ -74,7 +74,7 @@ class StopSpec:
 @dataclass(frozen=True)
 class EventSpec:
     name: str
-    phase: str  # "pre" | "post" | "both"
+    phase: str  # "start" | "end" | "both"
     cond: str
     action_keyed: Dict[str, str] | None
     action_block: str | None

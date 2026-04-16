@@ -124,7 +124,7 @@ def test_parse_model_v2_functions_reject_duplicate_args_via_astcheck():
 def test_parse_model_v2_events_keyed_and_block_forms():
     d1 = minimal_doc(events={
         "tick": {
-            "phase": "post", "cond": "1",
+            "phase": "end", "cond": "1",
             "action.dx": "1", "action.u": "0",
             "log": ["t", "x", "u"]
         }
@@ -137,7 +137,7 @@ def test_parse_model_v2_events_keyed_and_block_forms():
 
     d2 = minimal_doc(events={
         "tick": {
-            "phase": "pre", "cond": "x>0",
+            "phase": "start", "cond": "x>0",
             "action": "u = 0\nx = x",
         }
     })
@@ -153,18 +153,24 @@ def test_parse_model_v2_events_default_phase():
         }
     })
     n = parse_model_v2(d)
-    assert n["events"][0]["phase"] == "post"
+    assert n["events"][0]["phase"] == "end"
 
 def test_parse_model_v2_events_validation_errors():
     # bad phase
     d = minimal_doc(events={"e": {"phase": "now", "cond": "1", "action": "x=0"}})
-    with pytest.raises(ModelLoadError):
+    with pytest.raises(ModelLoadError, match=r"must be 'start'\|'end'\|'both'"):
+        parse_model_v2(d)
+    d = minimal_doc(events={"e": {"phase": "pre", "cond": "1", "action": "x=0"}})
+    with pytest.raises(ModelLoadError, match=r"pre is deprecated\. Use start for event phase\."):
+        parse_model_v2(d)
+    d = minimal_doc(events={"e": {"phase": "post", "cond": "1", "action": "x=0"}})
+    with pytest.raises(ModelLoadError, match=r"post is deprecated\. Use end for event phase\."):
         parse_model_v2(d)
     # bad cond
-    d = minimal_doc(events={"e": {"phase": "pre", "cond": 3.14, "action": "x=0"}})
+    d = minimal_doc(events={"e": {"phase": "start", "cond": 3.14, "action": "x=0"}})
     with pytest.raises(ModelLoadError):
         parse_model_v2(d)
     # bad log
-    d = minimal_doc(events={"e": {"phase": "pre", "cond": "1", "action": "x=0", "log": [1, 2]}})
+    d = minimal_doc(events={"e": {"phase": "start", "cond": "1", "action": "x=0", "log": [1, 2]}})
     with pytest.raises(ModelLoadError):
         parse_model_v2(d)

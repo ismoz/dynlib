@@ -8,8 +8,15 @@ from .schema import validate_tables, validate_name_collisions
 from .constants import BUILTIN_CONSTS
 
 __all__ = [
+    "normalize_event_phase",
     "parse_model_v2",
 ]
+
+_VALID_EVENT_PHASES = frozenset({"start", "end", "both"})
+_DEPRECATED_EVENT_PHASES = {
+    "pre": "start",
+    "post": "end",
+}
 
 _BIN_OPS = {
     ast.Add: lambda a, b: a + b,
@@ -30,6 +37,20 @@ _UNARY_OPS = {
 def _sanitize_literal_expr(expr: str) -> str:
     """Normalize caret power `^` to Python's `**` for literal math."""
     return expr.replace("^", "**")
+
+
+def normalize_event_phase(phase: Any, context: str) -> str:
+    phase_value = "end" if phase is None else phase
+    if not isinstance(phase_value, str):
+        raise ModelLoadError(f"{context} must be 'start'|'end'|'both'")
+    replacement = _DEPRECATED_EVENT_PHASES.get(phase_value)
+    if replacement is not None:
+        raise ModelLoadError(
+            f"{phase_value} is deprecated. Use {replacement} for event phase."
+        )
+    if phase_value not in _VALID_EVENT_PHASES:
+        raise ModelLoadError(f"{context} must be 'start'|'end'|'both'")
+    return phase_value
 
 
 def _allowed_numeric_names(extra: Dict[str, float | int] | None = None) -> Dict[str, float | int]:
@@ -177,9 +198,7 @@ def _read_events(ev_tbl: Dict[str, Any]) -> List[Dict[str, Any]]:
     for name, body in ev_tbl.items():
         if not isinstance(body, dict):
             raise ModelLoadError(f"[events.{name}] must be a table")
-        phase = body.get("phase", "post")
-        if phase not in {"pre", "post", "both"}:
-            raise ModelLoadError(f"[events.{name}].phase must be 'pre'|'post'|'both'")
+        phase = normalize_event_phase(body.get("phase"), f"[events.{name}].phase")
         cond = body.get("cond")
         if not isinstance(cond, str):
             raise ModelLoadError(f"[events.{name}].cond must be a string expression")

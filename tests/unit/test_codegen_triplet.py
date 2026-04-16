@@ -25,7 +25,7 @@ a = 2.0
 x = "-a*x"
 
 [events.bump]
-phase = "post"
+phase = "end"
 cond  = "t >= 0.0"
 action.x = "x + 1.0"
 
@@ -74,7 +74,7 @@ def test_events_only_mutate_states_params_and_effect_is_visible():
     scratch = np.zeros(1, dtype=np.float64)  # event log scratch buffer
     runtime_ws = make_runtime_workspace(lag_state_info=None, dtype=np.float64)
 
-    # pre does nothing; post adds +1.0 to x
+    # start-phase handler does nothing; end-phase handler adds +1.0 to x
     pre_code, pre_log = cp.events_pre(0.0, y, p, scratch, runtime_ws)
     assert pre_code == -1  # no event fired
     assert y[0] == pytest.approx(1.0)

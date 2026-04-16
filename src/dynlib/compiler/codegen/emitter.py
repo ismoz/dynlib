@@ -494,10 +494,17 @@ def _emit_events_function(spec: ModelSpec, phase: str, nmap: NameMaps):
     import ast
     body: List[ast.stmt] = []
     
+    # Map runtime pre/post hooks to the DSL event phases.
+    phase_aliases = {
+        "pre": ("start", "both"),
+        "post": ("end", "both"),
+    }
+    allowed_phases = phase_aliases[phase]
+
     # Assign unique event codes to events in this phase
     event_code_counter = 0
     for ev_idx, ev in enumerate(spec.events):
-        if ev.phase not in ("both", phase):
+        if ev.phase not in allowed_phases:
             continue
         
         cond_preamble, cond_node = lower_expr_with_preamble(ev.cond or "1", nmap, aux_defs=_aux_defs(spec), fn_defs=nmap.functions)

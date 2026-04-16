@@ -25,7 +25,7 @@ def test_event_tags_basic_parsing():
         "equations": {"rhs": {"x": "-a * x"}},
         "events": {
             "reset": {
-                "phase": "post",
+                "phase": "end",
                 "cond": "x < 0.5",
                 "action": {"x": "1.0"},
                 "tags": ["important", "reset"],
@@ -54,7 +54,7 @@ def test_event_tags_normalization():
         "equations": {"rhs": {"x": "-a * x"}},
         "events": {
             "reset": {
-                "phase": "post",
+                "phase": "end",
                 "cond": "x < 0.5",
                 "action": {"x": "1.0"},
                 "tags": ["zebra", "alpha", "alpha", "beta"],  # duplicates and unsorted
@@ -79,7 +79,7 @@ def test_event_tags_empty():
         "equations": {"rhs": {"x": "-a * x"}},
         "events": {
             "reset": {
-                "phase": "post",
+                "phase": "end",
                 "cond": "x < 0.5",
                 "action": {"x": "1.0"},
                 "tags": [],
@@ -103,7 +103,7 @@ def test_event_tags_absent():
         "equations": {"rhs": {"x": "-a * x"}},
         "events": {
             "reset": {
-                "phase": "post",
+                "phase": "end",
                 "cond": "x < 0.5",
                 "action": {"x": "1.0"},
                 # No tags field
@@ -128,7 +128,7 @@ def test_event_tags_validation_invalid_format():
         "equations": {"rhs": {"x": "-a * x"}},
         "events": {
             "reset": {
-                "phase": "post",
+                "phase": "end",
                 "cond": "x < 0.5",
                 "action": {"x": "1.0"},
                 "tags": ["123invalid"],
@@ -150,7 +150,7 @@ def test_event_tags_validation_special_chars():
         "equations": {"rhs": {"x": "-a * x"}},
         "events": {
             "reset": {
-                "phase": "post",
+                "phase": "end",
                 "cond": "x < 0.5",
                 "action": {"x": "1.0"},
                 "tags": ["tag@invalid"],
@@ -172,7 +172,7 @@ def test_event_tags_validation_valid_formats():
         "equations": {"rhs": {"x": "-a * x"}},
         "events": {
             "reset": {
-                "phase": "post",
+                "phase": "end",
                 "cond": "x < 0.5",
                 "action": {"x": "1.0"},
                 "tags": ["valid_tag", "also-valid", "_underscore", "CamelCase123"],
@@ -200,7 +200,7 @@ def test_event_tags_validation_empty_tag():
         "equations": {"rhs": {"x": "-a * x"}},
         "events": {
             "reset": {
-                "phase": "post",
+                "phase": "end",
                 "cond": "x < 0.5",
                 "action": {"x": "1.0"},
                 "tags": [""],
@@ -222,7 +222,7 @@ def test_event_tags_validation_non_string():
         "equations": {"rhs": {"x": "-a * x"}},
         "events": {
             "reset": {
-                "phase": "post",
+                "phase": "end",
                 "cond": "x < 0.5",
                 "action": {"x": "1.0"},
                 "tags": ["valid", 123],  # int instead of string
@@ -244,7 +244,7 @@ def test_event_tags_validation_duplicate_detection():
         "equations": {"rhs": {"x": "-a * x"}},
         "events": {
             "reset": {
-                "phase": "post",
+                "phase": "end",
                 "cond": "x < 0.5",
                 "action": {"x": "1.0"},
                 "tags": ["reset", "important", "reset"],
@@ -269,13 +269,13 @@ def test_tag_index_single_tag():
         "equations": {"rhs": {"x": "-a * x", "y": "a * y"}},
         "events": {
             "reset_x": {
-                "phase": "post",
+                "phase": "end",
                 "cond": "x < 0.5",
                 "action": {"x": "1.0"},
                 "tags": ["reset"],
             },
             "reset_y": {
-                "phase": "post",
+                "phase": "end",
                 "cond": "y > 1.5",
                 "action": {"y": "0.5"},
                 "tags": ["reset"],
@@ -300,19 +300,19 @@ def test_tag_index_multiple_tags():
         "equations": {"rhs": {"x": "-a * x", "y": "a * y"}},
         "events": {
             "event_a": {
-                "phase": "post",
+                "phase": "end",
                 "cond": "x < 0.5",
                 "action": {"x": "1.0"},
                 "tags": ["tag1", "tag2"],
             },
             "event_b": {
-                "phase": "post",
+                "phase": "end",
                 "cond": "y > 1.5",
                 "action": {"y": "0.5"},
                 "tags": ["tag2", "tag3"],
             },
             "event_c": {
-                "phase": "pre",
+                "phase": "start",
                 "cond": "x + y > 2.0",
                 "tags": ["tag1"],
             },
@@ -344,7 +344,7 @@ def test_tag_index_empty_when_no_tags():
         "equations": {"rhs": {"x": "-a * x"}},
         "events": {
             "reset": {
-                "phase": "post",
+                "phase": "end",
                 "cond": "x < 0.5",
                 "action": {"x": "1.0"},
             }
@@ -366,19 +366,19 @@ def test_tag_index_preserves_event_order():
         "equations": {"rhs": {"x": "-a * x"}},
         "events": {
             "third": {
-                "phase": "post",
+                "phase": "end",
                 "cond": "x < 0.3",
                 "action": {"x": "1.0"},
                 "tags": ["common"],
             },
             "first": {
-                "phase": "post",
+                "phase": "end",
                 "cond": "x < 0.1",
                 "action": {"x": "1.0"},
                 "tags": ["common"],
             },
             "second": {
-                "phase": "post",
+                "phase": "end",
                 "cond": "x < 0.2",
                 "action": {"x": "1.0"},
                 "tags": ["common"],
@@ -450,7 +450,7 @@ def test_spec_hash_includes_tags():
         "equations": {"rhs": {"x": "-a * x"}},
         "events": {
             "reset": {
-                "phase": "post",
+                "phase": "end",
                 "cond": "x < 0.5",
                 "action": {"x": "1.0"},
                 "tags": ["tag1"],
@@ -465,7 +465,7 @@ def test_spec_hash_includes_tags():
         "equations": {"rhs": {"x": "-a * x"}},
         "events": {
             "reset": {
-                "phase": "post",
+                "phase": "end",
                 "cond": "x < 0.5",
                 "action": {"x": "1.0"},
                 "tags": ["tag2"],  # Different tag
@@ -491,7 +491,7 @@ def test_spec_hash_stable_with_empty_tags():
         "equations": {"rhs": {"x": "-a * x"}},
         "events": {
             "reset": {
-                "phase": "post",
+                "phase": "end",
                 "cond": "x < 0.5",
                 "action": {"x": "1.0"},
                 "tags": [],
@@ -506,7 +506,7 @@ def test_spec_hash_stable_with_empty_tags():
         "equations": {"rhs": {"x": "-a * x"}},
         "events": {
             "reset": {
-                "phase": "post",
+                "phase": "end",
                 "cond": "x < 0.5",
                 "action": {"x": "1.0"},
                 # No tags field

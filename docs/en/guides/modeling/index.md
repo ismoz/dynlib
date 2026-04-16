@@ -14,7 +14,7 @@ This guide explains how to declare, extend, and tune dynlib models using the TOM
 
 - [Auxiliary variables](aux.md) — name derived expressions so you can share them between equations, events, or Jacobians without repeating the math.
 - [DSL functions](functions.md) — define reusable functions with arguments, expression bodies, and clean callsites that keep the DSL declarative.
-- [Events](events.md) — wire `cond`, `action`, and logging metadata to `pre`/`post` phases, use the event macros, and manage event logs without destabilizing fast-path runners.
+- [Events](events.md) — wire `cond`, `action`, and logging metadata to `start`/`end` phases, use the event macros, and manage event logs without destabilizing fast-path runners.
 - [Lagging](lagging.md) — enable `lag_<state>(k)` helpers, control the buffer depth, and understand how lagged states interact with ODEs, maps, and NumPy-friendly runtimes.
 - [Inline models](inline-models.md) — embed a TOML snippet in a Python string so you can prototype models entirely inside tests or notebooks.
 

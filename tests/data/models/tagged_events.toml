@@ -20,7 +20,7 @@ y = "a * (1.0 - y)"
 
 # Event with multiple tags
 [events.reset_x]
-phase = "post"
+phase = "end"
 cond = "x < threshold_x"
 action.x = "1.0"
 log = ["t", "x"]
@@ -28,7 +28,7 @@ tags = ["reset", "critical", "state-x"]
 
 # Event with single tag
 [events.reset_y]
-phase = "post"
+phase = "end"
 cond = "y > threshold_y"
 action.y = "0.0"
 log = ["t", "y"]
@@ -43,7 +43,7 @@ tags = []
 
 # Event without tags field at all (implicit empty)
 [events.boundary]
-phase = "pre"
+phase = "start"
 cond = "x < 0.01"
 action.x = "0.01"
 

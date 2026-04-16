@@ -2,6 +2,12 @@
 
 ---
 
+## [0.38.0] – 2026-04-16
+### Changed
+- Renamed DSL event phase `pre` as `start` and `post` as `end`. This is a breaking change with parser errors.
+
+---
+
 ## [0.37.12] – 2026-03-02
 ### Added
 - Shebang support to toml model files. First line of toml model files can optionally have the info about intended 

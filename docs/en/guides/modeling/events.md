@@ -1,6 +1,6 @@
 # Event Handling
 
-Events let you react to model conditions during simulation by executing actions and logging whenever the `cond` expression becomes true. They run either before the step (`phase = "pre"`), after (`phase = "post"`), or both, and you can attach logging to capture diagnostics for debugging or analysis. 
+Events let you react to model conditions during simulation by executing actions and logging whenever the `cond` expression becomes true. They run either at the start of a step (`phase = "start"`), at the end (`phase = "end"`), or both, and you can attach logging to capture diagnostics for debugging or analysis.
 
 NOTE: Some fast-path runners for analysis prefer models without events.
 
@@ -8,13 +8,13 @@ NOTE: Some fast-path runners for analysis prefer models without events.
 
 ```toml
 [events.reset_on_threshold]
-phase = "post"
+phase = "end"
 cond = "x > threshold"
 action = "x = 0; spike_count = spike_count + 1"
 log = ["t", "x", "spike_count"]
 ```
 
-- `phase` controls when the condition is evaluated (default is `post`).
+- `phase` controls when the condition is evaluated (default is `end`).
 - `cond` must be a string returning a boolean. It is re-evaluated every timestep.
 - `action` is a string of assignment statements; you can also scope assignments as `action.var = "expr"` for clarity.
 - `log` is optional and lists variables whose values are recorded when the event fires.
@@ -34,7 +34,7 @@ log = ["t", "x", "spike_count"]
 
 ```toml
 [events.detect_spike]
-phase = "pre"
+phase = "start"
 cond = "cross_up(v, 1.0)"
 action = "spike_count += 1"
 ```

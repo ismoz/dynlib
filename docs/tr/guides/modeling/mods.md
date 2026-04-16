@@ -21,7 +21,7 @@ exclusive = false
 names = ["silinecek_olay"]
 
 [mod.add.events.yeni_olay]
-phase = "post"
+phase = "end"
 cond = "x > threshold"
 action = "x = 0"
 
@@ -77,7 +77,7 @@ name = "mantik_guncelleme"
 
 # Bir olayı (event) değiştir
 [mod.replace.events.mevcut_olay]
-phase = "post"
+phase = "end"
 cond = "x > yeni_esik"
 action = "x = 0; counter = counter + 1"
 
@@ -104,12 +104,12 @@ name = "ozellik_ekle"
 
 # Yeni olaylar ekle
 [mod.add.events.reset_mechanism]
-phase = "post"
+phase = "end"
 cond = "x > 10"
 action = "x = 0"
 
 [mod.add.events.spike_detector]
-phase = "pre"
+phase = "start"
 cond = "v > threshold"
 action = "spike_count = spike_count + 1"
 log = ["t"]  # Spike zamanlarını kaydet
@@ -179,14 +179,14 @@ Modlardaki olaylar, model tanımlarıyla aynı TOML tablo formatını kullanır:
 
 ```toml
 [mod.add.events.event_name]
-phase = "pre" | "post"        # Koşulun ne zaman kontrol edileceği
+phase = "start" | "end"       # Koşulun ne zaman kontrol edileceği
 cond = "expression"           # Tetiklenecek koşul
 action = "code"               # Gerçekleştirilecek eylem (string)
 log = ["var1", "var2"]        # Tetiklendiğinde kaydedilecek değişkenler (opsiyonel)
 
 # Alternatif: anahtarlı eylem atamaları
 [mod.add.events.event_name]
-phase = "post"
+phase = "end"
 cond = "x > 5"
 action.dx = 1.0
 action.dy = -0.5
@@ -253,7 +253,7 @@ alpha = 0.5
 beta = 2.0
 
 [mod.add.events.monitor]
-phase = "post"
+phase = "end"
 cond = "t % 1.0 == 0"
 action = ""
 log = ["x", "y"]
@@ -275,7 +275,7 @@ name = "variant2"
 gain = 2.0
 
 [mods.variant2.add.events.noise]
-phase = "pre"
+phase = "start"
 cond = "true"
 action = "x = x + 0.1 * randn()"
 ```
@@ -436,7 +436,7 @@ debug_x = "x"
 debug_dx = "dx_dt"
 
 [mod.debug.add.events.log_state]
-phase = "post"
+phase = "end"
 cond = "t % 1.0 == 0"  # Saniyede bir kaydet
 action = ""  # Eylem yok, sadece kayıt
 log = ["debug_t", "debug_x", "debug_dx"]

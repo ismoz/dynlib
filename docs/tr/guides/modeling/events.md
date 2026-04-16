@@ -1,6 +1,6 @@
 # Olay Yönetimi (Event Handling)
 
-Olaylar (events), simülasyon sırasında `cond` (koşul) ifadesi doğru olduğunda eylemleri çalıştırarak ve günlük (log) tutarak model koşullarına tepki vermenizi sağlar. Olaylar adımdan önce (`phase = "pre"`), sonra (`phase = "post"`) veya her ikisinde de çalışır ve hata ayıklama veya analiz için teşhisleri yakalamak üzere günlük kaydı ekleyebilirsiniz.
+Olaylar (events), simülasyon sırasında `cond` (koşul) ifadesi doğru olduğunda eylemleri çalıştırarak ve günlük (log) tutarak model koşullarına tepki vermenizi sağlar. Olaylar adımın başlangıcında (`phase = "start"`), sonunda (`phase = "end"`) veya her ikisinde de çalışır ve hata ayıklama veya analiz için teşhisleri yakalamak üzere günlük kaydı ekleyebilirsiniz.
 
 NOT: Analiz için bazı hızlı yol (fast-path) çalıştırıcıları, olayı olmayan modelleri tercih eder.
 
@@ -8,13 +8,13 @@ NOT: Analiz için bazı hızlı yol (fast-path) çalıştırıcıları, olayı o
 
 ```toml
 [events.reset_on_threshold]
-phase = "post"
+phase = "end"
 cond = "x > threshold"
 action = "x = 0; spike_count = spike_count + 1"
 log = ["t", "x", "spike_count"]
 ```
 
-- `phase`, koşulun ne zaman değerlendirileceğini kontrol eder (varsayılan `post`).
+- `phase`, koşulun ne zaman değerlendirileceğini kontrol eder (varsayılan `end`).
 - `cond`, boolean döndüren bir dize olmalıdır. Her zaman adımında yeniden değerlendirilir.
 - `action`, atama ifadelerinden oluşan bir dizedir; netlik için atamaları `action.var = "expr"` şeklinde de kapsamlandırabilirsiniz.
 - `log` isteğe bağlıdır ve olay tetiklendiğinde değerleri kaydedilen değişkenleri listeler.
@@ -34,7 +34,7 @@ log = ["t", "x", "spike_count"]
 
 ```toml
 [events.detect_spike]
-phase = "pre"
+phase = "start"
 cond = "cross_up(v, 1.0)"
 action = "spike_count += 1"
 ```

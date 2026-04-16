@@ -23,7 +23,7 @@ def test_scalar_macros_available_in_all_sections():
         "functions": {},
         "events": {
             "nudge": {
-                "phase": "post",
+                "phase": "end",
                 "cond": "approx(t, 0.0, 1e-9)",
                 "action.x": "clip(x + relu(-x), -1.0, 1.0)",
             }

@@ -17,7 +17,7 @@ def minimal_doc():
         "equations": {"rhs": {"x": "-a*x", "u": "x - u"}, "expr": None},
         "aux": {"z": "x+u"},
         "functions": {"f": {"args": ["q"], "expr": "q+1"}},
-        "events": {"tick": {"phase": "post", "cond": "1", "action": "u = 0", "log": ["t", "x"]}},
+        "events": {"tick": {"phase": "end", "cond": "1", "action": "u = 0", "log": ["t", "x"]}},
         "sim": {"t0": 0.0, "t_end": 2.0, "dt": 0.1, "stepper": "rk4", "record": False},
     }
 
@@ -177,7 +177,7 @@ def test_builtin_constants_are_inlined_in_codegen():
     n["equations"]["rhs"]["x"] = "pi * x + e"
     n["aux"]["extra"] = "2 * pi"
     n["events"] = {
-        "tick": {"phase": "post", "cond": "x > pi", "action.x": "e"}
+        "tick": {"phase": "end", "cond": "x > pi", "action.x": "e"}
     }
     parsed = parse_model_v2(n)
     spec = build_spec(parsed)

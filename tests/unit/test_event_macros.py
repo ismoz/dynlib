@@ -17,7 +17,7 @@ def _model_doc(cond: str):
         "functions": {},
         "events": {
             "watch": {
-                "phase": "post",
+                "phase": "end",
                 "cond": cond,
                 "action.x": "x",
             }

@@ -77,8 +77,8 @@ def test_validate_equation_targets_unknown_and_duplicate():
 def test_validate_event_legality_only_states_or_params():
     d = base_doc()
     d["events"] = {
-        "ok": {"phase": "post", "cond": "1", "action.x": "0"},
-        "bad": {"phase": "post", "cond": "1", "action.zz": "0"},
+        "ok": {"phase": "end", "cond": "1", "action.x": "0"},
+        "bad": {"phase": "end", "cond": "1", "action.zz": "0"},
     }
     n = parse_model_v2(d)
     # first passes, second fails
@@ -112,7 +112,7 @@ def test_collect_lag_requests_accumulates_max_depths_across_sections():
     d["aux"] = {"z": "lag_u(5) - lag_x()"}
     d["events"] = {
         "kick": {
-            "phase": "post",
+            "phase": "end",
             "cond": "lag_x(4) > 0",
             "action.x": "x",
         }
@@ -134,7 +134,7 @@ def test_collect_lag_requests_detects_macro_usage():
     d = base_doc()
     d["events"] = {
         "edge": {
-            "phase": "post",
+            "phase": "end",
             "cond": "cross_up(x, 0.0)",
             "action.x": "x",
         }
@@ -147,7 +147,7 @@ def test_collect_lag_requests_macro_requires_state():
     d = base_doc()
     d["events"] = {
         "edge": {
-            "phase": "post",
+            "phase": "end",
             "cond": "cross_up(a, 0.0)",
             "action.x": "x",
         }

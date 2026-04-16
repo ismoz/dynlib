@@ -14,7 +14,7 @@ name = "detect_transition"
 
 [mod.add.events.detect]
 cond = "cross_up(x, 0)"
-phase = "post"
+phase = "end"
 log = ["t"]
 '''
 
