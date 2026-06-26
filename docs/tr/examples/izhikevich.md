@@ -9,7 +9,7 @@ Bu örnek, Izhikevich nöron modelinin nasıl simüle edileceğini ve farklı gi
 - **Kademeli Akım Simülasyonu**: Simülasyonun durumunu koruyarak ve enjekte edilen akımı güncelleyerek tek bir simülasyonu çalıştırma. Bu yöntem, hem geçici dinamikleri hem de yeni çekerleri (attractors) yakalamayı sağlar.
 - **Ön Ayarları Uygulama**: `sim.apply_preset("bursting")` komutu ile nöronun uyarılabilirliğini belirleyen `c`, `d` gibi içsel parametreleri değiştirme.
 - **Anlık Görüntü (Snapshot) Araçları**: Farklı rejimlerden geçtikten sonra kaydedilen yapılandırmayı incelemek için `sim.list_snapshots()` komutu ve `source="snapshot"` parametresi ile `sim.param_vector` / `param_dict` kullanma.
-- **Açıklamalı Zaman Serisi Grafikleri**: `series.plot`, enjekte edilen akımın değiştiği rejimleri etiketlemek için `vbands` (dikey şeritler) ve `vlines` (dikey çizgiler) gibi görsel elemanları destekler.
+- **Açıklamalı Zaman Serisi Grafikleri**: `series.line`, enjekte edilen akımın değiştiği rejimleri etiketlemek için `vbands` (dikey şeritler) ve `vlines` (dikey çizgiler) gibi görsel elemanları destekler.
 
 ## Izhikevich Modeli
 
@@ -36,6 +36,6 @@ Aşağıdaki kod, farklı akım seviyelerinde simülasyonu çalıştırır ve "b
 --8<-- "examples/izhikevich.py"
 ```
 
-Kodda `series.plot` fonksiyonu, her bir akım adımını işaretlemek için dikey şeritler ve çizgiler ekler. `run` fonksiyonundaki `resume=True` parametresi, akım değeri değiştikçe simülasyonun durumunu koruyarak kesintisiz devam etmesini sağlar. Grafik çizdirildikten sonra, anlık görüntü (snapshot) yardımcı fonksiyonları, daha sonraki analizler için kaydedilen parametre setlerini yazdırır.
+Kodda `series.line` fonksiyonu, her bir akım adımını işaretlemek için dikey şeritler ve çizgiler ekler. `run` fonksiyonundaki `resume=True` parametresi, akım değeri değiştikçe simülasyonun durumunu koruyarak kesintisiz devam etmesini sağlar. Grafik çizdirildikten sonra, anlık görüntü (snapshot) yardımcı fonksiyonları, daha sonraki analizler için kaydedilen parametre setlerini yazdırır.
 
 ```

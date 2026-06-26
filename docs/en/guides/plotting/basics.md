@@ -19,7 +19,7 @@ Here's a quick example that demonstrates creating a grid of subplots and plottin
 axes = fig.grid(rows=2, cols=2, size=(10, 8))
 
 # Plot a time series
-series.plot(x=t, y=x_traj, label="x(t)", ax=axes[0, 0])
+series.line(x=t, y=x_traj, label="x(t)", ax=axes[0, 0])
 
 # Plot discrete data as stems
 series.stem(x=k, y=impulse_response, ax=axes[0, 1])
@@ -51,12 +51,12 @@ Example:
 ```python
 # Create a single subplot
 ax = fig.single(size=(8, 6))
-series.plot(x=t, y=data, ax=ax)
+series.line(x=t, y=data, ax=ax)
 
 # Create a grid for multiple plots
 axes = fig.grid(rows=1, cols=3)
 for i, dataset in enumerate(datasets):
-    series.plot(x=t, y=dataset, ax=axes[i])
+    series.line(x=t, y=dataset, ax=axes[i])
 ```
 
 ## Styling and Decorations
@@ -71,10 +71,10 @@ Example:
 
 ```python
 # Use a preset
-series.plot(x=t, y=data, style="continuous", ax=ax)
+series.line(x=t, y=data, style="continuous", ax=ax)
 
 # Customize with overrides
-series.plot(x=t, y=data, style={"ls": "--", "marker": "x"}, color="red", ax=ax)
+series.line(x=t, y=data, style={"ls": "--", "marker": "x"}, color="red", ax=ax)
 ```
 
 ### Decorations
@@ -91,7 +91,7 @@ Labels are positioned automatically and respect axis limits.
 Example:
 
 ```python
-series.plot(x=t, y=data, vlines=[(5, "start"), 10], hbands=[(0, 1, "region")], ax=ax)
+series.line(x=t, y=data, vlines=[(5, "start"), 10], hbands=[(0, 1, "region")], ax=ax)
 ```
 
 ### Axis Control
@@ -102,10 +102,12 @@ Control axis limits with `xlim`, `ylim`, and `zlim` (for 3D). Helpers automatica
 
 Use `series` helpers for time-based plots:
 
-- `series.plot(x, y, ...)`: Standard line plot for continuous or discrete data.
+- `series.line(x, y, ...)`: Standard line plot for continuous or discrete data.
 - `series.stem(x, y, ...)`: Stem plot for discrete samples.
 - `series.step(x, y, ...)`: Step plot for piecewise-constant data.
 - `series.multi(data, ...)`: Plot multiple series at once.
+
+For the common single-trace case, `plot.trace(...)` is a top-level shortcut for `series.line(...)`.
 
 These helpers support all styling and decoration options.
 
@@ -113,7 +115,7 @@ Examples:
 
 ```python
 # Simple time series
-series.plot(x=t, y=x_traj, label="Position", ax=ax)
+series.line(x=t, y=x_traj, label="Position", ax=ax)
 
 # Multiple series
 data = {"x": x_traj, "y": y_traj}

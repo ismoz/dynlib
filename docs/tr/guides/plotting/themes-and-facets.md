@@ -123,7 +123,7 @@ Oluşturulan eksenleri çizim fonksiyonlarına iletin:
 from dynlib.plot import fig, series
 
 ax = fig.single()
-series.plot(x=time, y=signal, ax=ax, label="Sinyal")
+series.line(x=time, y=signal, ax=ax, label="Sinyal")
 ```
 
 ## Çok Panelli Figürler için Facetleme (Faceting)
@@ -145,7 +145,7 @@ data = {
 # Facet'lenmiş çizim oluştur
 for ax, param in facet.wrap(data.keys(), cols=2, title="Bifurkasyon Analizi"):
     traj = data[param]
-    series.plot(x=time, y=traj, ax=ax, title=param)
+    series.line(x=time, y=traj, ax=ax, title=param)
 ```
 
 `facet.wrap` fonksiyonu:
@@ -180,7 +180,7 @@ for ax, r in facet.wrap(r_values, cols=4, title="Lojistik Harita Bifurkasyonlar�
         x = r * x * (1 - x)
         traj.append(x)
     
-    series.plot(x=range(len(traj)), y=traj, ax=ax, title=f"r={r:.1f}")
+    series.line(x=range(len(traj)), y=traj, ax=ax, title=f"r={r:.1f}")
 ```
 
 ## En İyi Uygulamalar

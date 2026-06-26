@@ -1298,7 +1298,7 @@ def lyapunov_mle_sweep(
         >>> r_vals = np.linspace(3.0, 4.0, 100)
         >>> res = sweep.lyapunov_mle_sweep(sim, param="r", values=r_vals, 
         ...                          N=5000, transient=1000, record_interval=10)
-        >>> series.plot(x=res.values, y=res.mle, xlabel="r", ylabel="λ")
+        >>> series.line(x=res.values, y=res.mle, xlabel="r", ylabel="λ")
         >>> # λ transitions from negative (stable) to positive (chaotic)
     """
     from dynlib.runtime.observers import lyapunov_mle_observer as lyapunov_mle_module

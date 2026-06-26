@@ -97,7 +97,7 @@ bifurcation_diagram(
 )
 
 # Bottom panel: MLE vs parameter (sharing same x-axis)
-series.plot(
+series.line(
     x=res.values,
     y=res.mle,
     style="continuous",

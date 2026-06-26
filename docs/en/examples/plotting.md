@@ -27,7 +27,7 @@ Runs the stiff `builtin://ode/vanderpol` model with the `tr-bdf2a` stepper, time
 ```python
 --8<-- "examples/plot/plot_demo.py"
 ```
-Presents one figure with six subplots to showcase `series.stem`, `series.step`, `utils.hist`, `phase.xy`, and the `series.plot` styles `map` and `mixed`. This is a quick reference for how each helper handles line, stem, histogram, and map-style data.
+Presents one figure with six subplots to showcase `series.stem`, `series.step`, `utils.hist`, `phase.xy`, and the `series.line` styles `map` and `mixed`. This is a quick reference for how each helper handles line, stem, histogram, and map-style data.
 
 ### Theme presets
 

@@ -14,4 +14,4 @@ The `dynlib.plot.bifurcation_diagram` helper is demonstrated in `examples/bifurc
 
 - The extractor works with trajectories of different lengths—the helper normalizes the data so you can stack or iterate over runs safely.
 - Many sweep helpers fill `meta` with stepper settings, so you can see whether each point used the same `dt`, `record_interval`, etc.
-- When building publication figures, combine bifurcation extractors with `series.plot`, `phase.xy`, or `fig.grid` for custom layouts.
+- When building publication figures, combine bifurcation extractors with `series.line`, `phase.xy`, or `fig.grid` for custom layouts.

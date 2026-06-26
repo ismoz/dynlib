@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 __all__ = [
     "theme",
     "fig",
+    "trace",
     "series",
     "phase",
     "utils",
@@ -65,3 +66,7 @@ facet = _FacetModule()
 
 def return_map(*args, **kwargs):
     return phase.return_map(*args, **kwargs)
+
+
+def trace(*args, **kwargs):
+    return series.line(*args, **kwargs)

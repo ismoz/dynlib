@@ -23,4 +23,4 @@ Bifürkasyon diyagramı hesaplama ve çizdirme için aşağıdaki örneklere bak
 - Tarama sırasında bazı parametre noktalarında hiç örnek kaydedilmediyse, `.tail()`/`.final()` gibi modlar hata verir (ör. `No samples recorded; ...`). Böyle bir durumda `T/N` değerlerini artırın veya `record_interval` ayarını gözden geçirin.
 - Çıkarıcı, parametre noktaları arasında **farklı uzunlukta** yörüngeler olsa bile çalışacak şekilde tasarlanmıştır; her parametre değeri için ilgili seriyi ayrı işler ve sonuçları birleştirir.
 - Birçok tarama yardımcısı `meta` içine stepper ayarlarını (`dt`, `record_interval` vb.) ekler. Bu sayede diyagramdaki noktaların aynı koşullarda üretilip üretilmediğini sonradan denetleyebilirsiniz.
-- Yayın kalitesinde figürler için, çatallanma çıktısını kendi düzeninizde kullanmak üzere `p`/`y` dizilerini alıp `series.plot`, `phase.xy` veya `fig.grid` gibi çizim yardımcılarıyla birleştirmek genellikle daha esnektir.
+- Yayın kalitesinde figürler için, çatallanma çıktısını kendi düzeninizde kullanmak üzere `p`/`y` dizilerini alıp `series.line`, `phase.xy` veya `fig.grid` gibi çizim yardımcılarıyla birleştirmek genellikle daha esnektir.

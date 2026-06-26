@@ -123,7 +123,7 @@ Pass created axes to plotting functions:
 from dynlib.plot import fig, series
 
 ax = fig.single()
-series.plot(x=time, y=signal, ax=ax, label="Signal")
+series.line(x=time, y=signal, ax=ax, label="Signal")
 ```
 
 ## Faceting for Multi-Panel Figures
@@ -145,7 +145,7 @@ data = {
 # Create faceted plot
 for ax, param in facet.wrap(data.keys(), cols=2, title="Bifurcation Analysis"):
     traj = data[param]
-    series.plot(x=time, y=traj, ax=ax, title=param)
+    series.line(x=time, y=traj, ax=ax, title=param)
 ```
 
 The `facet.wrap` function:
@@ -180,7 +180,7 @@ for ax, r in facet.wrap(r_values, cols=4, title="Logistic Map Bifurcations"):
         x = r * x * (1 - x)
         traj.append(x)
     
-    series.plot(x=range(len(traj)), y=traj, ax=ax, title=f"r={r:.1f}")
+    series.line(x=range(len(traj)), y=traj, ax=ax, title=f"r={r:.1f}")
 ```
 
 ## Best Practices

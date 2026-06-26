@@ -117,7 +117,7 @@ phase.xy(
 # Use explicit trace_time from analysis result
 t_mle = mle_analysis.trace_time
 mle_trace = mle_analysis["mle"]
-series.plot(
+series.line(
     x=t_mle,
     y=mle_trace,
     ax=ax_mle,

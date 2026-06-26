@@ -35,7 +35,7 @@ res = sweep.scalar_sweep(
     N=2000,
     transient=1000,
 )
-series.plot(x=res.values, y=res.y, xlabel="r", ylabel="x*")
+series.line(x=res.values, y=res.y, xlabel="r", ylabel="x*")
 ```
 
 ### `traj_sweep`
@@ -75,7 +75,7 @@ res = sweep.lyapunov_mle_sweep(
     transient=1000,
     record_interval=10,
 )
-series.plot(x=res.values, y=res.mle, xlabel="r", ylabel="λ_max")
+series.line(x=res.values, y=res.mle, xlabel="r", ylabel="λ_max")
 ```
 
 ### `lyapunov_spectrum_sweep`

@@ -21,15 +21,15 @@ def create_sample_figure():
     ax = fig.grid(rows=2, cols=2, size=(8, 6))
 
     # Line plot
-    series.plot(x=t, y=y1, ax=ax[0, 0], label="sin(t)", xlabel="Time", ylabel="Amplitude", title="Line Plot")
+    series.line(x=t, y=y1, ax=ax[0, 0], label="sin(t)", xlabel="Time", ylabel="Amplitude", title="Line Plot")
 
     # Scatter plot
-    series.plot(x=t[::5], y=y2[::5], ax=ax[0, 1], style="scatter", label="cos(t) samples", xlabel="Time", ylabel="Amplitude", title="Scatter Plot")
+    series.line(x=t[::5], y=y2[::5], ax=ax[0, 1], style="scatter", label="cos(t) samples", xlabel="Time", ylabel="Amplitude", title="Scatter Plot")
 
     # Multiple lines
-    series.plot(x=t, y=y1, ax=ax[1, 0], label="sin(t)", color="C0")
-    series.plot(x=t, y=y2, ax=ax[1, 0], label="cos(t)", color="C1")
-    series.plot(x=t, y=y3, ax=ax[1, 0], label="damped sin(t)", color="C2")
+    series.line(x=t, y=y1, ax=ax[1, 0], label="sin(t)", color="C0")
+    series.line(x=t, y=y2, ax=ax[1, 0], label="cos(t)", color="C1")
+    series.line(x=t, y=y3, ax=ax[1, 0], label="damped sin(t)", color="C2")
     ax[1, 0].set_xlabel("Time")
     ax[1, 0].set_ylabel("Amplitude")
     ax[1, 0].set_title("Multiple Lines")

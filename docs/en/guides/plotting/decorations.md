@@ -1,6 +1,6 @@
 # Plot Decorations
 
-Dynlib plotting helpers expose a single set of decoration arguments that every high-level renderer forwards through `_apply_decor()` in `src/dynlib/plot/_primitives.py`. The helper accepts the same parameters from `series.plot()`, `series.step()` and similar entry points, so decorations behave identically everywhere.
+Dynlib plotting helpers expose a single set of decoration arguments that every high-level renderer forwards through `_apply_decor()` in `src/dynlib/plot/_primitives.py`. The helper accepts the same parameters from `series.line()`, `series.step()` and similar entry points, so decorations behave identically everywhere.
 
 ## Vertical lines (`vlines`)
 
@@ -14,7 +14,7 @@ Dynlib plotting helpers expose a single set of decoration arguments that every h
 
 Example:
 ```python
-series.plot(
+series.line(
     x=t,
     y=x_traj,
     vlines=[(3.0, "period-2"), 3.57],
@@ -41,7 +41,7 @@ series.plot(
 
 Example:
 ```python
-series.plot(
+series.line(
     x=t,
     y=x_traj,
     hlines=[(0.25, "low"), (0.75, "high")],
@@ -63,7 +63,7 @@ series.plot(
 
 Example:
 ```python
-series.plot(
+series.line(
     x=t,
     y=x_traj,
     vbands=[(2.5, 2.9, "gold"), (3.4, 3.6)],
@@ -77,7 +77,7 @@ series.plot(
 
 Example:
 ```python
-series.plot(
+series.line(
     x=t,
     y=x_traj,
     hbands=[(0, 0.2), (0.8, 1.0, "lightcoral")],

@@ -29,7 +29,7 @@ sim.run(T=T4, resume=True)
 res = sim.results()
 
 ax = fig.single(size=(8, 4))
-series.plot(x=res.t, y=res["v"],
+series.line(x=res.t, y=res["v"],
             ax=ax,
             ylim=(-80, 50),
             title="Membrane Potential (v)",

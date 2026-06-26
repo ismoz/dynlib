@@ -9,7 +9,7 @@ This example walks through simulating the Izhikevich spiking neuron and visualiz
 - **Current stepping**: run a single simulation while updating the injected current and resuming state, capturing both transients and new attractors.
 - **Apply presets**: call `sim.apply_preset("bursting")` to switch the intrinsic parameters (`c`, `d`, etc.) that reshape the neuron's excitability.
 - **Snapshot tooling**: use `sim.list_snapshots()` plus `sim.param_vector`/`param_dict` with `source="snapshot"` to inspect the stored configuration after running through different regimes.
-- **Annotated time series**: `series.plot` supports `vbands` and `vlines` so you can label regimes where the injected current changes.
+- **Annotated time series**: `series.line` supports `vbands` and `vlines` so you can label regimes where the injected current changes.
 
 ## The Izhikevich Model
 
@@ -54,7 +54,7 @@ sim.run(T=T4, resume=True)
 res = sim.results()
 
 ax = fig.single(size=(8, 4))
-series.plot(
+series.line(
     x=res.t,
     y=res["v"],
     ax=ax,
@@ -71,7 +71,7 @@ print("Snapshot Parameter Vector: ", sim.param_vector(source="snapshot"))
 print("Snapshot Parameter Dictionary: ", sim.param_dict(source="snapshot"))
 ```
 
-`series.plot` overlays vertical bands/lines to flag each current step, while the run/profile calls demonstrate how `resume=True` keeps the stateful simulation continuous as current changes. After plotting the membrane potential, the snapshot helpers summarize the stored parameter sets for later analysis.
+`series.line` overlays vertical bands/lines to flag each current step, while the run/profile calls demonstrate how `resume=True` keeps the stateful simulation continuous as current changes. After plotting the membrane potential, the snapshot helpers summarize the stored parameter sets for later analysis.
 
 ## Complete Examples in Repository
 
@@ -82,7 +82,7 @@ print("Snapshot Parameter Dictionary: ", sim.param_dict(source="snapshot"))
 ```
 
 - Full driving-current sequence with five regimes and the `bursting` preset applied just before the largest steps.
-- Demonstrates how to configure `vbands`/`vlines` on a `series.plot` trace.
+- Demonstrates how to configure `vbands`/`vlines` on a `series.line` trace.
 - Prints the snapshots, parameter vector, and dictionary so you can audit the recorded presets.
 
 ### 2. **Izhikevich Benchmark**

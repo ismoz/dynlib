@@ -82,8 +82,8 @@ print("States:", res.state_names)
 print("Final z:", res["z"][-1])
 
 ax = fig.single()
-series.plot(x=res.t, y=res["x"], ax=ax, label="x")
-series.plot(x=res.t, y=res["z"], ax=ax, label="z", xlabel="time")
+series.line(x=res.t, y=res["x"], ax=ax, label="x")
+series.line(x=res.t, y=res["z"], ax=ax, label="z", xlabel="time")
 export.show()
 ```
 

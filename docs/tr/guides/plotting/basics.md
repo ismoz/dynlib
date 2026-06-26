@@ -19,7 +19,7 @@ from dynlib.plot import fig, series, phase, utils
 axes = fig.grid(rows=2, cols=2, size=(10, 8))
 
 # Bir zaman serisi çiz
-series.plot(x=t, y=x_traj, label="x(t)", ax=axes[0, 0])
+series.line(x=t, y=x_traj, label="x(t)", ax=axes[0, 0])
 
 # Ayrık verileri stem (çubuk) olarak çiz
 series.stem(x=k, y=impulse_response, ax=axes[0, 1])
@@ -51,12 +51,12 @@ Bu fonksiyonlar, özelleştirme için `title`, `size`, `scale`, `sharex` ve `sha
 ```python
 # Tek bir alt çizim oluştur
 ax = fig.single(size=(8, 6))
-series.plot(x=t, y=data, ax=ax)
+series.line(x=t, y=data, ax=ax)
 
 # Birden fazla çizim için bir ızgara oluştur
 axes = fig.grid(rows=1, cols=3)
 for i, dataset in enumerate(datasets):
-    series.plot(x=t, y=dataset, ax=axes[i])
+    series.line(x=t, y=dataset, ax=axes[i])
 ```
 
 ## Stillendirme ve Süslemeler
@@ -71,10 +71,10 @@ Stil ön ayarları, verilerin nasıl görselleştirileceğini tanımlar (örneğ
 
 ```python
 # Bir ön ayar kullan
-series.plot(x=t, y=data, style="continuous", ax=ax)
+series.line(x=t, y=data, style="continuous", ax=ax)
 
 # Geçersiz kılmalarla özelleştir
-series.plot(x=t, y=data, style={"ls": "--", "marker": "x"}, color="red", ax=ax)
+series.line(x=t, y=data, style={"ls": "--", "marker": "x"}, color="red", ax=ax)
 ```
 
 ### Süslemeler (Decorations)
@@ -91,7 +91,7 @@ Etiketler otomatik olarak konumlandırılır ve eksen sınırlarına uyar.
 Örnek:
 
 ```python
-series.plot(x=t, y=data, vlines=[(5, "başlangıç"), 10], hbands=[(0, 1, "bölge")], ax=ax)
+series.line(x=t, y=data, vlines=[(5, "başlangıç"), 10], hbands=[(0, 1, "bölge")], ax=ax)
 ```
 
 ### Eksen Kontrolü
@@ -102,10 +102,12 @@ series.plot(x=t, y=data, vlines=[(5, "başlangıç"), 10], hbands=[(0, 1, "bölg
 
 Zaman tabanlı çizimler için `series` yardımcılarını kullanın:
 
-- `series.plot(x, y, ...)`: Sürekli veya ayrık veriler için standart çizgi grafiği.
+- `series.line(x, y, ...)`: Sürekli veya ayrık veriler için standart çizgi grafiği.
 - `series.stem(x, y, ...)`: Ayrık örnekler için "stem" (çubuk) grafiği.
 - `series.step(x, y, ...)`: Parçalı sabit veriler için basamak grafiği.
 - `series.multi(data, ...)`: Aynı anda birden fazla seriyi çizer.
+
+Yaygın tek iz çizimi için `plot.trace(...)`, `series.line(...)` fonksiyonunun üst düzey kısayoludur.
 
 Bu yardımcılar tüm stillendirme ve süsleme seçeneklerini destekler.
 
@@ -113,7 +115,7 @@ Bu yardımcılar tüm stillendirme ve süsleme seçeneklerini destekler.
 
 ```python
 # Basit zaman serisi
-series.plot(x=t, y=x_traj, label="Konum", ax=ax)
+series.line(x=t, y=x_traj, label="Konum", ax=ax)
 
 # Çoklu seriler
 data = {"x": x_traj, "y": y_traj}

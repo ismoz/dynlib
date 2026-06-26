@@ -30,7 +30,7 @@ n = "n//2 if n % 2 == 0 else 3*n + 1"
 
 ## Simülasyonun Çalıştırılması
 
-Betik, `setup(..., stepper="map")` fonksiyonu ile modeli oluşturur ve `len(expected) - 1` adım kadar simülasyonu çalıştırır. Simülasyon sonuçları `sim.results()` ile alınır. `series.plot` fonksiyonu, `n`'nin adımlara göre değişimini gösteren bir grafik çizer. Betik ayrıca, elde edilen dizinin, 27 ile başlayıp 1-4-2-1 döngüsüyle biten bilinen `expected` dizisiyle tam olarak eşleşip eşleşmediğini kontrol eder. Son olarak, yörüngenin son kısmı ve durum değişkeninin veri tipi ekrana yazdırılarak döngünün ve veri tipinin korunduğu doğrulanır.
+Betik, `setup(..., stepper="map")` fonksiyonu ile modeli oluşturur ve `len(expected) - 1` adım kadar simülasyonu çalıştırır. Simülasyon sonuçları `sim.results()` ile alınır. `series.line` fonksiyonu, `n`'nin adımlara göre değişimini gösteren bir grafik çizer. Betik ayrıca, elde edilen dizinin, 27 ile başlayıp 1-4-2-1 döngüsüyle biten bilinen `expected` dizisiyle tam olarak eşleşip eşleşmediğini kontrol eder. Son olarak, yörüngenin son kısmı ve durum değişkeninin veri tipi ekrana yazdırılarak döngünün ve veri tipinin korunduğu doğrulanır.
 
 ## Grafik ve Görselleştirme
 

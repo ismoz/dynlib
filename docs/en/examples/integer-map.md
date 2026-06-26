@@ -30,7 +30,7 @@ n = "n//2 if n % 2 == 0 else 3*n + 1"
 
 ## Running the Simulation
 
-The script instantiates the model with `setup(..., stepper="map")`, runs `len(expected) - 1` iterations, and reads the results table via `sim.results()`. The plot uses `series.plot` to show `n` vs. iteration and checks that the recorded values match the prepared `expected` array (the known sequence starting at 27 and terminating in the 1-4-2-1 loop). The example also prints the tail of the trajectory and the state dtype so you can confirm that the cycle and datatype are preserved.
+The script instantiates the model with `setup(..., stepper="map")`, runs `len(expected) - 1` iterations, and reads the results table via `sim.results()`. The plot uses `series.line` to show `n` vs. iteration and checks that the recorded values match the prepared `expected` array (the known sequence starting at 27 and terminating in the 1-4-2-1 loop). The example also prints the tail of the trajectory and the state dtype so you can confirm that the cycle and datatype are preserved.
 
 ## Plotting and Export
 

@@ -94,7 +94,7 @@ theme.update(grid=True)
 fig_obj = fig.grid(rows=3, cols=1, size=(10, 12))
 
 # Plot trajectory (first 500 iterations)
-series.plot(
+series.line(
     x=iterations[:500],
     y=x_trajectory[:500],
     style="line",
@@ -107,7 +107,7 @@ series.plot(
 )
 
 # Plot Lyapunov exponent convergence
-series.plot(
+series.line(
     x=iterations,
     y=lyap_trace[:n_points],
     style="line",
@@ -133,7 +133,7 @@ fig_obj[1, 0].text(
 )
 
 # Plot Lyapunov spectrum convergence
-series.plot(
+series.line(
     x=iterations,
     y=spectrum_trace[:n_points],
     style="line",

@@ -34,7 +34,7 @@ theme.update(grid=False)
 ax = fig.grid(rows=1, cols=2, size=(12, 5))
 
 # Time series plot
-series.plot(
+series.line(
     x=res.t,
     y=res["x"],
     style="line",

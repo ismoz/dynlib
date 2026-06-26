@@ -27,7 +27,7 @@ ev = res.event("detect")
 
 theme.use("paper")
 
-series.plot(x=res.t,
+series.line(x=res.t,
             y=res["x"],
             vlines=ev.t,
             xlabel='Time',

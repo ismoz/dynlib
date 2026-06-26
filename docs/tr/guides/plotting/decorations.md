@@ -1,6 +1,6 @@
 # Grafik Süslemeleri
 
-Dynlib çizim yardımcıları, her üst düzey görselleştiricinin `src/dynlib/plot/_primitives.py` içindeki `_apply_decor()` aracılığıyla ilettiği tek bir süsleme argümanları setini kullanıma sunar. Bu yardımcı, `series.plot()`, `series.step()` ve benzeri giriş noktalarından gelen aynı parametreleri kabul eder, böylece süslemeler her yerde aynı şekilde davranır.
+Dynlib çizim yardımcıları, her üst düzey görselleştiricinin `src/dynlib/plot/_primitives.py` içindeki `_apply_decor()` aracılığıyla ilettiği tek bir süsleme argümanları setini kullanıma sunar. Bu yardımcı, `series.line()`, `series.step()` ve benzeri giriş noktalarından gelen aynı parametreleri kabul eder, böylece süslemeler her yerde aynı şekilde davranır.
 
 ## Dikey Çizgiler (`vlines`)
 
@@ -14,7 +14,7 @@ Dynlib çizim yardımcıları, her üst düzey görselleştiricinin `src/dynlib/
 
 Örnek:
 ```python
-series.plot(
+series.line(
     x=t,
     y=x_traj,
     vlines=[(3.0, "period-2"), 3.57],
@@ -41,7 +41,7 @@ series.plot(
 
 Örnek:
 ```python
-series.plot(
+series.line(
     x=t,
     y=x_traj,
     hlines=[(0.25, "low"), (0.75, "high")],
@@ -63,7 +63,7 @@ series.plot(
 
 Örnek:
 ```python
-series.plot(
+series.line(
     x=t,
     y=x_traj,
     vbands=[(2.5, 2.9, "gold"), (3.4, 3.6)],
@@ -77,7 +77,7 @@ series.plot(
 
 Örnek:
 ```python
-series.plot(
+series.line(
     x=t,
     y=x_traj,
     hbands=[(0, 0.2), (0.8, 1.0, "lightcoral")],

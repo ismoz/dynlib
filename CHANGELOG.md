@@ -2,6 +2,14 @@
 
 ---
 
+## [0.39.0] – 2026-06-26
+### Changed
+- Renamed the single-series plotting helper from `plot.series.plot(...)` to `plot.series.line(...)` and added 
+  `plot.trace(...)` as the top-level shortcut. This is a breaking plotting API change; the previous single-series 
+  method name has been removed.
+
+---
+
 ## [0.38.0] – 2026-04-16
 ### Changed
 - Renamed DSL event phase `pre` as `start` and `post` as `end`. This is a breaking change with parser errors.

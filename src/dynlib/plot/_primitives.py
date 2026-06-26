@@ -983,7 +983,7 @@ def manifold(
 
 
 class _SeriesPlot:
-    def plot(
+    def line(
         self,
         *,
         x,

@@ -52,8 +52,8 @@ print("Recorded steps:", len(res))
 print("Final z value:", res["z"][-1])
 
 ax = fig.single()
-series.plot(x=res.t, y=res["x"], ax=ax, label="x")
-series.plot(x=res.t, y=res["z"], ax=ax, label="z", xlabel="time")
+series.line(x=res.t, y=res["x"], ax=ax, label="x")
+series.line(x=res.t, y=res["z"], ax=ax, label="z", xlabel="time")
 export.show()
 ```
 

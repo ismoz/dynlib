@@ -85,25 +85,25 @@ def main() -> None:
     )
 
     # Row 2, Col 0: series with discrete/map style (stem-like effect)
-    series.plot(
+    series.line(
         x=ks,
         y=xs,
         style="map",
         ax=ax[2, 0],
         color="C4",
-        title="series.plot: logistic iterations (map style)",
+        title="series.line: logistic iterations (map style)",
         xlabel="n",
         ylabel="$x_n$",
     )
 
     # Row 2, Col 1: series with mixed style (line + markers)
-    series.plot(
+    series.line(
         x=ks,
         y=xs,
         style="mixed",
         ax=ax[2, 1],
         color="C5",
-        title="series.plot: logistic iterations (mixed style)",
+        title="series.line: logistic iterations (mixed style)",
         xlabel="n",
         ylabel="$x_n$",
     )

@@ -8,7 +8,7 @@ Bu sayfada, `dynlib`'in çizim araçlarının nasıl kullanılacağını göster
 
 ### Lojistik Harita Tanılamaları
 
-Aşağıdaki örnek, yerleşik lojistik harita modelini oluşturur, bir başlangıç geçiş sürecini (transient) atladıktan sonra simülasyonu çalıştırır. Sonrasında `series.plot`, `return_map` ve `cobweb` yardımcı fonksiyonlarını kullanarak zaman serisini, dönüş haritasını ve örümcek ağı diyagramını (cobweb diagram) çizer. Ayrıca, analitik tahminleri sayısal olarak bulunan çekerlerle (attractors) karşılaştırmak için `sim.model.fixed_points(seeds=...)` ile bulunan sabit noktaları da ekrana yazar.
+Aşağıdaki örnek, yerleşik lojistik harita modelini oluşturur, bir başlangıç geçiş sürecini (transient) atladıktan sonra simülasyonu çalıştırır. Sonrasında `series.line`, `return_map` ve `cobweb` yardımcı fonksiyonlarını kullanarak zaman serisini, dönüş haritasını ve örümcek ağı diyagramını (cobweb diagram) çizer. Ayrıca, analitik tahminleri sayısal olarak bulunan çekerlerle (attractors) karşılaştırmak için `sim.model.fixed_points(seeds=...)` ile bulunan sabit noktaları da ekrana yazar.
 
 ```python
 --8<-- "examples/logistic_map.py"
@@ -26,7 +26,7 @@ Bu örnek, `builtin://ode/vanderpol` gibi katı (stiff) bir diferansiyel denklem
 
 ### Temel Çizim Fonksiyonları
 
-Bu örnek, `series.stem`, `series.step`, `utils.hist`, `phase.xy` ve `series.plot`'un `map` ve `mixed` stilleri gibi daha az kullanılan çizim fonksiyonlarını altı farklı alt grafikte gösterir. Her bir fonksiyonun farklı veri türlerini (sürekli, ayrık, dağılım) nasıl işlediğini hızlıca görmek için bir referans niteliğindedir.
+Bu örnek, `series.stem`, `series.step`, `utils.hist`, `phase.xy` ve `series.line`'un `map` ve `mixed` stilleri gibi daha az kullanılan çizim fonksiyonlarını altı farklı alt grafikte gösterir. Her bir fonksiyonun farklı veri türlerini (sürekli, ayrık, dağılım) nasıl işlediğini hızlıca görmek için bir referans niteliğindedir.
 
 ```python
 --8<-- "examples/plot/plot_demo.py"

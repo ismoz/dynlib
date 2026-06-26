@@ -36,7 +36,7 @@ res = sim.results()
 
 theme.use("paper")
 
-series.plot(x=res.step, y=res["n"], xlabel="iteration", ylabel="n", ylabel_rot=0, title="Collatz Conjecture")
+series.line(x=res.step, y=res["n"], xlabel="iteration", ylabel="n", ylabel_rot=0, title="Collatz Conjecture")
 print("1-4-2-1 cycle: ", res["n"][-6:])
 print("dtype for n  : ", res["n"].dtype)
 

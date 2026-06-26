@@ -16,7 +16,7 @@ with Timer("run simulation"):
     sim.run(T=3000.0)
 res = sim.results()
 
-series.plot(x=res.t, y=res["x"],
+series.line(x=res.t, y=res["x"],
             title=f"Van der Pol Oscillator (μ={mu})",
             xlabel="Time",
             ylabel="x",
