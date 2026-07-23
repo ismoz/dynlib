@@ -39,7 +39,7 @@ series.line(x=res.values, y=res.y, xlabel="r", ylabel="x*")
 ```
 
 ### `traj_sweep`
-`traj_sweep`, herhangi bir `record_vars` kombinasyonu (ör. `"x"`, `"y"`, `"z"`) için tam yörüngeleri kaydeder. Her çalıştırmanın zaman serisi bir `TrajectoryPayload` içinde yaşar, böylece parametre başına çizim yapmak için `res["x"]`, `res.series(["x","y"])`, `res.stack()` çağırabilir veya `res.runs` üzerinde gezinebilirsiniz. Tarama, hem hızlı toplu çalıştırmayı hem de `values` > 1000 olduğunda `ProcessPoolExecutor`'ı destekler. `parallel_mode` argümanı, bu toplu çalıştırmanın nasıl yürütüleceğini kontrol eder (`"auto"`, `"threads"`, `"process"`, `"none"`); `max_workers` işçi (worker) havuzu boyutunu ayarlar. İşçi sayısı bir olduğunda veya `process` modu verimli olmadığında, yardımcı şeffaf bir şekilde sıralı yürütmeye düşer.
+`traj_sweep`, herhangi bir `record_vars` kombinasyonu (ör. `"x"`, `"y"`, `"z"`) için tam yörüngeleri kaydeder. Her çalıştırmanın zaman serisi bir `TrajectoryPayload` içinde yaşar, böylece parametre başına çizim yapmak için `res["x"]`, `res.series(["x","y"])`, `res.stack()` çağırabilir veya `res.runs` üzerinde gezinebilirsiniz. Tarama, hem hızlı toplu çalıştırmayı hem de açıkça istenen `ProcessPoolExecutor` hızlandırmasını destekler. `parallel_mode` argümanı, bu toplu çalıştırmanın nasıl yürütüleceğini kontrol eder (`"auto"`, `"threads"`, `"process"`, `"none"`); `max_workers` işçi (worker) havuzu boyutunu ayarlar. `auto`, platforma uygun güvenli modu seçer: Windows üzerinde hızlı yol/JIT thread paralelliği etkiliyse thread kullanır, değilse sıralı yürütmeye geçer. `process`, multiprocessing gereksinimlerini açıkça kabul eder.
 
 `record_interval`, bellek tasarrufu için kaydı seyreltmenize (decimate) olanak tanır ve tarama bu aralığı `meta` içinde hatırlar. Ayrıca sabit bir `dt`, `t0`, `T` veya ayrık iterasyon sayısı `N` (haritalar/maps için kullanışlıdır) talep edebilirsiniz.
 
@@ -62,7 +62,20 @@ for run in res.runs:
 ### `lyapunov_mle_sweep`
 Bu yardımcı, maksimum Lyapunov üssü (MLE) gözlemcisi ile bir parametre taramasını birleştirir. Hızlı toplu çalıştırma (ve Lyapunov gözlemcilerinin kendileri) için, sabit adımlı bir stepper ve açık bir `dt` ile JIT-derlenmiş bir simülasyon kullanmalısınız, ancak hızlı yol desteği yoksa yardımcı, gözlemciler eklenmiş sıralı `Sim.run()` işlemine nazikçe geri döner. Fonksiyon, `mle`, `log_growth` ve `steps` için `outputs` döndürür ve eğer `record_interval` sağladıysanız, her üssün nasıl yakınsadığını inceleyebilmeniz için `traces['mle']` (yakınsama dizileri listesi) de döndürür. `analysis_kind`, algoritma varyantları arasında seçim yapmanızı sağlar.
 
-Tarama, isteğe bağlı `ProcessPoolExecutor` hızlandırmasıyla (değer listesinin parçaları halinde) hızlı toplu çalıştırmalar dener. Hızlı yol veya hızlı paralel işçi başlatma başarısız olursa, uyarır ve Lyapunov gözlemcisi eklenmiş sıralı `Sim.run()` çağrılarına geri döner.
+Tarama, isteğe bağlı ve açıkça seçilen `ProcessPoolExecutor` hızlandırmasıyla (değer listesinin parçaları halinde) hızlı toplu çalıştırmalar dener. Hızlı yol veya hızlı paralel işçi başlatma başarısız olursa, uyarır ve Lyapunov gözlemcisi eklenmiş sıralı `Sim.run()` çağrılarına geri döner.
+
+Windows üzerinde yalnızca `parallel_mode="process"` multiprocessing kullanır. Çağrıyı korumalı bir betik giriş noktasının içine koyun:
+
+```python
+def main():
+    # simülasyonu oluştur ve çalıştır
+    ...
+
+if __name__ == "__main__":
+    main()
+```
+
+Bu koruma, özyinelemeli process oluşturmayı engeller; multiprocessing yine de aktarılan işlerin ve nesnelerin pickle edilebilir olmasını gerektirir.
 
 ```python
 from dynlib.plot import series

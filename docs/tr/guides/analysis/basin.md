@@ -65,7 +65,7 @@ Aşağıdaki isimler **API’deki anahtarlar**dır; aynen kullanın:
   `b_max=None` ise yalnızca NaN/Inf denetimi ile taşma yakalanır.
 
 - `parallel_mode: {"auto","threads","process","none"}` ve `max_workers`  
-  Büyük grid’lerde process tabanlı paralellik devreye girebilir.
+  `auto`, platforma uygun güvenli modu seçer. Windows üzerinde multiprocessing kullanmaz; process tabanlı paralellik için `parallel_mode="process"` açıkça seçilmelidir.
 
 - **Coarse-to-fine iyileştirme (refinement)**:
   - `refine: bool`: önce kaba grid, sonra yalnızca sınır bölgelerinde tam çözünürlük.
@@ -167,7 +167,20 @@ result = basin_known(
   - `outside_limit`: art arda kaç örnek `obs_min/obs_max` dışında kalınca `OUTSIDE`
 
 - `parallel_mode`, `max_workers`  
-  Büyük batch’lerde process paralelliği kullanılabilir (`parallel_mode="process"` veya `"auto"`).
+  Büyük batch’lerde process paralelliği kullanılabilir. Windows üzerinde yalnızca `parallel_mode="process"` multiprocessing kullanır; `auto` thread paralelliği etkiliyse thread kullanır, değilse sıralı yürütmeye geçer.
+
+Windows üzerinde `parallel_mode="process"` kullanıyorsanız çağrıyı korumalı bir betik giriş noktasının içine koyun:
+
+```python
+def main():
+    # simülasyonu oluştur ve çalıştır
+    ...
+
+if __name__ == "__main__":
+    main()
+```
+
+Bu koruma, özyinelemeli process oluşturmayı engeller; multiprocessing yine de aktarılan işlerin ve nesnelerin pickle edilebilir olmasını gerektirir.
 
 - `post_detect_samples`  
   Tekrarlılık tespitinden sonra kanıt segmentine eklenecek ek örnek sayısı.

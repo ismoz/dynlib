@@ -2,6 +2,16 @@
 
 ---
 
+## [0.40.2] – 2026-07-23
+### Added
+- Introduced a shared parallelization handling module (`parallel.py`) for simulation and analysis tools.
+
+### Changed
+- `parallel_mode="auto"` now avoids multiprocessing on Windows; explicit `parallel_mode="process"` opts into
+  multiprocessing requirements and reports a clearer error when spawned workers re-enter without a guarded main.
+
+---
+
 ## [0.40.1] – 2026-07-23
 ### Changed
 - `print_basin_summary` / `basin_summary` now does not dump all ic axis values. These values can be accessed via 

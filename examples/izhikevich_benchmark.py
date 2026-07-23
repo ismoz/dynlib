@@ -36,17 +36,23 @@ u = u + d
 
 T = 1000
 
-with Timer("build model"):
-    model = build(DSL, stepper="euler", jit=False, dtype="float32")
+def main():
 
-with Timer("build model jit"):
-    model_jit = build(DSL, stepper="euler", jit=True, dtype="float32")
+    with Timer("build model"):
+        model = build(DSL, stepper="euler", jit=False, dtype="float32")
 
-sim = Sim(model)
-sim_jit = Sim(model_jit)
+    with Timer("build model jit"):
+        model_jit = build(DSL, stepper="euler", jit=True, dtype="float32")
 
-with Timer("jit False"):
-    sim.run(T=T, dt=0.01, cap_rec=10000, record=False)
+    sim = Sim(model)
+    sim_jit = Sim(model_jit)
 
-with Timer("jit True"):
-    sim_jit.run(T=T, dt=0.01, cap_rec=10000, record=False)
+    with Timer("jit False"):
+        sim.run(T=T, dt=0.01, cap_rec=10000, record=False)
+
+    with Timer("jit True"):
+        sim_jit.run(T=T, dt=0.01, cap_rec=10000, record=False)
+
+
+if __name__ == "__main__":
+    main()

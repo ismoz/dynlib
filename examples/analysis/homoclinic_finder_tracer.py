@@ -93,105 +93,109 @@ expr = [
 ]
 """
 
+def main():
+    sim = setup(MODEL, jit=True, disk_cache=False)
 
-sim = setup(MODEL, jit=True, disk_cache=False)
+    # ============================================================================
+    # SIMPLIFIED API: Using preset and flattened kwargs
+    # ============================================================================
 
-# ============================================================================
-# SIMPLIFIED API: Using preset and flattened kwargs
-# ============================================================================
-
-# Simple case: just specify essential parameters, uses "default" preset
-result = homoclinic_finder(
-    sim,
-    param="mu",
-    param_min=-1.2,
-    param_max=-0.6,
-    param_init=-1.0,
-    eq_guess=[0.0, 0.0],  # Lists work! No need for np.array
-    # Simplified kwargs:
-    preset="default",  # or "fast", "precise"
-    window=[(-3, 3), (-3, 3)],  # state-space bounds as (min, max) tuples
-    scan_n=61,
-    max_bisect=60,
-    gap_tol=1e-4,
-    x_tol=1e-4,
-    t_max=2000.0,
-    r_blow=200.0,
-)
-
-print("success:", result.success)
-print("mu_found:", result.param_found)
-print("fail:", result.info["fail"])
-print("best_by_abs_gap:", result.info["best_by_abs_gap"])
-print("best_by_q:", result.info["best_by_q"])
-if result.success and result.miss is not None:
-    print(
-        "gap_found:",
-        result.info["gap_found"],
-        "q_found:",
-        result.info["q_found"],
-        "t_cross:",
-        result.info["t_cross"],
+    # Simple case: just specify essential parameters, uses "default" preset
+    result = homoclinic_finder(
+        sim,
+        param="mu",
+        param_min=-1.2,
+        param_max=-0.6,
+        param_init=-1.0,
+        eq_guess=[0.0, 0.0],  # Lists work! No need for np.array
+        # Simplified kwargs:
+        preset="default",  # or "fast", "precise"
+        window=[(-3, 3), (-3, 3)],  # state-space bounds as (min, max) tuples
+        scan_n=61,
+        max_bisect=60,
+        gap_tol=1e-4,
+        x_tol=1e-4,
+        t_max=2000.0,
+        r_blow=200.0,
     )
 
-if (not result.success) or result.miss is None:
-    raise SystemExit("Homoclinic finder did not converge; see info above.")
+    print("success:", result.success)
+    print("mu_found:", result.param_found)
+    print("fail:", result.info["fail"])
+    print("best_by_abs_gap:", result.info["best_by_abs_gap"])
+    print("best_by_q:", result.info["best_by_q"])
+    if result.success and result.miss is not None:
+        print(
+            "gap_found:",
+            result.info["gap_found"],
+            "q_found:",
+            result.info["q_found"],
+            "t_cross:",
+            result.info["t_cross"],
+        )
 
-# Trace the orbit using the simplified API
-trace = homoclinic_tracer(
-    sim,
-    param="mu",
-    param_value=result.param_found,
-    eq=result.miss.eq,          # Can also use lists: [0.0, 0.0]
-    sign_u=result.miss.sign_u,
-    preset="default",  # Use same preset as finder for consistency
-    window=[(-3, 3), (-3, 3)],
-    t_max=2000.0,
-    r_blow=200.0,
-    r_sec=result.miss.r_sec,
-    t_min_event=result.miss.t_min,
-)
+    if (not result.success) or result.miss is None:
+        raise SystemExit("Homoclinic finder did not converge; see info above.")
 
-print("trace success: ", trace.success)
-print("status: ", trace.meta.status)
-print("event: ", None if trace.meta.event is None else trace.meta.event.kind)
-
-if not trace.success:
-    print(f"\nTracing failed with status '{trace.meta.status}'.")
-    print("Consider increasing t_max or loosening gap_tol/x_tol.")
-
-# Only plot if we have valid trajectory data
-traj = trace.branch_pos[0] if trace.branch_pos and len(trace.branch_pos) > 0 else None
-if traj is not None and len(traj) > 1:
-    theme.use("paper")
-    ax = fig.single()
-
-    title_suffix = "" if trace.success else " (partial, no return-section hit)"
-
-    manifold(
-        result=trace,
-        ax=ax,
-        color="C0",
-        lw=1.2,
-        label="Homoclinic excursion" + (" (closed)" if trace.success else " (incomplete)"),
-        xlim=(-1.6, 1.6),
-        ylim=(-1.0, 1.0),
-        xlabel="x",
-        ylabel="y",
-        title=f"Homoclinic orbit at mu={result.param_found:.10f}{title_suffix}",
-        aspect="equal",
+    # Trace the orbit using the simplified API
+    trace = homoclinic_tracer(
+        sim,
+        param="mu",
+        param_value=result.param_found,
+        eq=result.miss.eq,          # Can also use lists: [0.0, 0.0]
+        sign_u=result.miss.sign_u,
+        preset="default",  # Use same preset as finder for consistency
+        window=[(-3, 3), (-3, 3)],
+        t_max=2000.0,
+        r_blow=200.0,
+        r_sec=result.miss.r_sec,
+        t_min_event=result.miss.t_min,
     )
-    ax.scatter([result.miss.eq[0]], [result.miss.eq[1]], s=60, label="Equilibrium")
-    ax.scatter([trace.meta.x_cross[0]], [trace.meta.x_cross[1]], s=30, label="Section cross")
-    ax.legend(loc="best")
 
-    """
-    Section cross: This is the point where the unstable manifold trajectory
-    re-enters the return section defined by r_sec around the equilibrium.
-    When a homoclinic orbit exists, the crossing should align with the unstable
-    direction, making the signed return value g close to zero.
-    """
+    print("trace success: ", trace.success)
+    print("status: ", trace.meta.status)
+    print("event: ", None if trace.meta.event is None else trace.meta.event.kind)
 
-    export.show()
-else:
-    print("\nNo trajectory data to plot.")
+    if not trace.success:
+        print(f"\nTracing failed with status '{trace.meta.status}'.")
+        print("Consider increasing t_max or loosening gap_tol/x_tol.")
+
+    # Only plot if we have valid trajectory data
+    traj = trace.branch_pos[0] if trace.branch_pos and len(trace.branch_pos) > 0 else None
+    if traj is not None and len(traj) > 1:
+        theme.use("paper")
+        ax = fig.single()
+
+        title_suffix = "" if trace.success else " (partial, no return-section hit)"
+
+        manifold(
+            result=trace,
+            ax=ax,
+            color="C0",
+            lw=1.2,
+            label="Homoclinic excursion" + (" (closed)" if trace.success else " (incomplete)"),
+            xlim=(-1.6, 1.6),
+            ylim=(-1.0, 1.0),
+            xlabel="x",
+            ylabel="y",
+            title=f"Homoclinic orbit at mu={result.param_found:.10f}{title_suffix}",
+            aspect="equal",
+        )
+        ax.scatter([result.miss.eq[0]], [result.miss.eq[1]], s=60, label="Equilibrium")
+        ax.scatter([trace.meta.x_cross[0]], [trace.meta.x_cross[1]], s=30, label="Section cross")
+        ax.legend(loc="best")
+
+        """
+        Section cross: This is the point where the unstable manifold trajectory
+        re-enters the return section defined by r_sec around the equilibrium.
+        When a homoclinic orbit exists, the crossing should align with the unstable
+        direction, making the signed return value g close to zero.
+        """
+
+        export.show()
+    else:
+        print("\nNo trajectory data to plot.")
+
+
+if __name__ == "__main__":
+    main()

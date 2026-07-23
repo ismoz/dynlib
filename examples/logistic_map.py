@@ -17,65 +17,70 @@ r=4.0
 x = "r * x * (1 - x)"
 '''
 
-# stepper="map" is default and can be omitted for map models
-sim = setup(model, stepper="map", jit=True, disk_cache=True)
-sim.run(N=192, transient=40)
-sim.run(resume=True, N=400)
-res=sim.results()
+def main():
+    # stepper="map" is default and can be omitted for map models
+    sim = setup(model, stepper="map", jit=True, disk_cache=True)
+    sim.run(N=192, transient=40)
+    sim.run(resume=True, N=400)
+    res=sim.results()
 
-seeds = [[0.1], [0.7], [0.9]]
-fps = sim.model.fixed_points(seeds=seeds)
-print(fps.points)
+    seeds = [[0.1], [0.7], [0.9]]
+    fps = sim.model.fixed_points(seeds=seeds)
+    print(fps.points)
 
-theme.use("notebook")
-theme.update(grid=False)
+    theme.use("notebook")
+    theme.update(grid=False)
 
-# Create 1x2 grid for time series and return map
-ax = fig.grid(rows=1, cols=2, size=(12, 5))
+    # Create 1x2 grid for time series and return map
+    ax = fig.grid(rows=1, cols=2, size=(12, 5))
 
-# Time series plot
-series.line(
-    x=res.t,
-    y=res["x"],
-    style="line",
-    ax=ax[0, 0],
-    xlabel="n",
-    ylabel="$x_n$",
-    ylabel_rot=0,
-    title="Logistic Map (r=4)",
-    ypad=10,
-    xlabel_fs=13,
-    ylabel_fs=13,
-    title_fs=14,
-    xtick_fs=9,
-    ytick_fs=11,
-    lw=1.0
-)
+    # Time series plot
+    series.line(
+        x=res.t,
+        y=res["x"],
+        style="line",
+        ax=ax[0, 0],
+        xlabel="n",
+        ylabel="$x_n$",
+        ylabel_rot=0,
+        title="Logistic Map (r=4)",
+        ypad=10,
+        xlabel_fs=13,
+        ylabel_fs=13,
+        title_fs=14,
+        xtick_fs=9,
+        ytick_fs=11,
+        lw=1.0
+    )
 
-# Return map: x[n] vs x[n+1]
-return_map(
-    x=res["x"],
-    step=1,
-    style="scatter",
-    ax=ax[0, 1],
-    ms=2,
-    color="C1",
-    title="Return Map: $x[n]$ vs $x[n+1]$",
-    xlabel_fs=13,
-    ylabel_fs=13,
-    title_fs=14,
-    xtick_fs=9,
-    ytick_fs=11,
-)
+    # Return map: x[n] vs x[n+1]
+    return_map(
+        x=res["x"],
+        step=1,
+        style="scatter",
+        ax=ax[0, 1],
+        ms=2,
+        color="C1",
+        title="Return Map: $x[n]$ vs $x[n+1]$",
+        xlabel_fs=13,
+        ylabel_fs=13,
+        title_fs=14,
+        xtick_fs=9,
+        ytick_fs=11,
+    )
 
-cobweb(
-    f=sim.model,
-    x0=0.1,
-    xlim=(0, 1),
-    steps=50,
-    color="green",
-    stair_color="orange",
-    identity_color="red",
-)
+    cobweb(
+        f=sim.model,
+        x0=0.1,
+        xlim=(0, 1),
+        steps=50,
+        color="green",
+        stair_color="orange",
+        identity_color="red",
+    )
 
-export.show()
+    export.show()
+
+
+if __name__ == "__main__":
+    main()

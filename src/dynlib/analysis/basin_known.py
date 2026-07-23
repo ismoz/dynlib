@@ -28,6 +28,7 @@ from dynlib.analysis.basin import (
 from dynlib.runtime.observers import ObserverHooks, ObserverModule, ObserverRequirements
 from dynlib.runtime.fastpath.plans import FixedStridePlan
 from dynlib.runtime.fastpath.capability import assess_capability
+from dynlib.runtime.parallel import should_use_process_parallel
 from dynlib.runtime.results_api import ResultsView
 from dynlib.runtime.runner_api import NAN_DETECTED
 from dynlib.runtime.sim import Sim
@@ -1651,11 +1652,13 @@ def _classify_batch_core(
     """
     total = int(ic_arr.shape[0])
     
-    # Determine effective parallel mode
-    use_process_parallel = parallel_mode in ("process", "auto") and total > 1000
-    
     # Determine number of workers
     n_workers = _resolve_process_workers(max_workers)
+    use_process_parallel = should_use_process_parallel(
+        parallel_mode,
+        total=total,
+        n_workers=n_workers,
+    )
     
     # For small batches or explicit "none"/"threads", run sequentially
     if not use_process_parallel or n_workers == 1 or parallel_mode == "none":
@@ -1984,10 +1987,11 @@ def basin_known(
             # =========================================================
             refine_used = True
 
-            use_shared_pool = (
-                parallel_mode in ("process", "auto")
-                and _resolve_process_workers(max_workers) > 1
-                and int(np.prod(fine_shape)) > 1000
+            n_workers_refine = _resolve_process_workers(max_workers)
+            use_shared_pool = should_use_process_parallel(
+                parallel_mode,
+                total=int(np.prod(fine_shape)),
+                n_workers=n_workers_refine,
             )
             prepared = None
             if not use_shared_pool:
@@ -2019,7 +2023,7 @@ def basin_known(
             )
 
             if use_shared_pool:
-                n_workers = _resolve_process_workers(max_workers)
+                n_workers = n_workers_refine
                 init_config = _build_process_init_config(sim, known)
                 run_config = _build_process_run_config(
                     max_samples=max_samples,

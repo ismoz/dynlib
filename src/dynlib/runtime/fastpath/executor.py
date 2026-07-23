@@ -1,7 +1,7 @@
 # src/dynlib/runtime/fastpath/executor.py
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Iterable, Literal, NamedTuple, Optional, Sequence
 import math
@@ -23,6 +23,7 @@ from dynlib.runtime.sim import Segment, Sim
 from dynlib.runtime.results_api import ResultsView
 from dynlib.runtime.runner_api import DONE, EARLY_EXIT, NAN_DETECTED, TRACE_OVERFLOW
 from dynlib.compiler.codegen.runner_variants import RunnerVariant, get_runner
+from dynlib.runtime.parallel import resolve_thread_backend
 
 __all__ = [
     "run_single_fastpath",
@@ -98,6 +99,45 @@ def _is_jitted_runner(fn) -> bool:
     ``signatures`` when compiled; pure Python runners do not.
     """
     return bool(getattr(fn, "signatures", None))
+
+
+def _run_single_fastpath_process_worker(args: tuple[dict, int]) -> Results:
+    cfg, idx = args
+    return run_single_fastpath(
+        model=cfg["model"],
+        plan=cfg["plan"],
+        t0=cfg["t0"],
+        t_end=cfg["t_end"],
+        target_steps=cfg["target_steps"],
+        dt=cfg["dt"],
+        max_steps=cfg["max_steps"],
+        transient=cfg["transient"],
+        state_rec_indices=cfg["state_rec_indices"],
+        aux_rec_indices=cfg["aux_rec_indices"],
+        state_names=cfg["state_names"],
+        aux_names=cfg["aux_names"],
+        params=cfg["params_batch"][idx],
+        ic=cfg["ic_batch"][idx],
+        stepper_config=cfg["stepper_config"],
+        observers=cfg["analysis"],
+    )
+
+
+def _run_single_fastpath_process_chunk_worker(args: tuple[dict, int, int]) -> list[Results]:
+    cfg, start, stop = args
+    return [_run_single_fastpath_process_worker((cfg, idx)) for idx in range(start, stop)]
+
+
+def _raise_process_pickle_error(exc: Exception) -> None:
+    text = f"{type(exc).__name__}: {exc}".lower()
+    if "pickle" not in text and "pickl" not in text:
+        raise exc
+    raise RuntimeError(
+        'parallel_mode="process" uses multiprocessing and requires all '
+        "transferred work and objects to be pickleable. This fast-path call "
+        "could not be serialized; use a sweep/basin helper that initializes "
+        'workers from the model spec, or use parallel_mode="threads"/"none".'
+    ) from exc
 
 
 @dataclass(frozen=True)
@@ -810,7 +850,8 @@ def run_batch_fastpath(
     Batch fastpath execution across multiple IC/parameter sets.
 
     For JIT builds, threads will leverage the numba-compiled runner (GIL-free).
-    For pure Python builds, a thread pool is used unless ``parallel_mode="none"``.
+    For pure Python builds, ``parallel_mode="auto"`` resolves to sequential
+    execution because Python threads are not expected to speed up CPU-bound runs.
     """
     analysis = observers
     n_state = len(model.spec.states)
@@ -845,7 +886,10 @@ def run_batch_fastpath(
     backend = parallel_mode
     is_jit = _is_jitted_runner(model.runner)
     if backend == "auto":
-        backend = "threads" if is_jit else "threads"
+        backend = resolve_thread_backend(
+            backend,
+            threads_are_effective=is_jit,
+        )
 
     def _run(idx: int) -> Results:
         return run_single_fastpath(
@@ -871,10 +915,28 @@ def run_batch_fastpath(
         return [_run(i) for i in range(batch)]
 
     if backend == "process":
-        # ProcessPool can be brittle for compiled runners; fall back to threads.
-        backend = "threads"
+        from dynlib.runtime.parallel import require_windows_process_main_guard
 
-    if backend != "threads":
+        require_windows_process_main_guard(backend)
+        process_cfg = dict(
+            model=model,
+            plan=plan,
+            t0=t0,
+            t_end=t_end,
+            target_steps=target_steps,
+            dt=dt,
+            max_steps=max_steps,
+            transient=transient,
+            state_rec_indices=state_rec_indices,
+            aux_rec_indices=aux_rec_indices,
+            state_names=state_names,
+            aux_names=aux_names,
+            params_batch=params_batch,
+            ic_batch=ic_batch,
+            stepper_config=stepper_config,
+            analysis=analysis,
+        )
+    elif backend != "threads":
         raise ValueError(f"Unknown parallel_mode {parallel_mode!r}")
 
     if max_workers is None:
@@ -883,6 +945,17 @@ def run_batch_fastpath(
     max_workers = max(1, int(max_workers))
 
     if batch <= max_workers:
+        if backend == "process":
+            try:
+                with ProcessPoolExecutor(max_workers=max_workers) as ex:
+                    return list(
+                        ex.map(
+                            _run_single_fastpath_process_worker,
+                            ((process_cfg, i) for i in range(batch)),
+                        )
+                    )
+            except Exception as exc:
+                _raise_process_pickle_error(exc)
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
             return list(ex.map(_run, range(batch)))
 
@@ -895,12 +968,24 @@ def run_batch_fastpath(
     def _run_chunk(start: int, stop: int) -> list[Results]:
         return [_run(i) for i in range(start, stop)]
 
-    with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        futures = [ex.submit(_run_chunk, start, stop) for start, stop in chunks]
-        results: list[Results] = []
-        for fut in futures:
-            results.extend(fut.result())
-        return results
+    executor_cls = ProcessPoolExecutor if backend == "process" else ThreadPoolExecutor
+    try:
+        with executor_cls(max_workers=max_workers) as ex:
+            if backend == "process":
+                futures = [
+                    ex.submit(_run_single_fastpath_process_chunk_worker, (process_cfg, start, stop))
+                    for start, stop in chunks
+                ]
+            else:
+                futures = [ex.submit(_run_chunk, start, stop) for start, stop in chunks]
+            results: list[Results] = []
+            for fut in futures:
+                results.extend(fut.result())
+            return results
+    except Exception as exc:
+        if backend == "process":
+            _raise_process_pickle_error(exc)
+        raise
 
 
 def run_batch_fastpath_optimized(
@@ -980,10 +1065,20 @@ def run_batch_fastpath_optimized(
     backend = parallel_mode
     is_jit = _is_jitted_runner(model.runner)
     if backend == "auto":
-        backend = "threads" if is_jit else "threads"
+        backend = resolve_thread_backend(
+            backend,
+            threads_are_effective=is_jit,
+        )
 
     if backend == "process":
-        backend = "threads"
+        from dynlib.runtime.parallel import require_windows_process_main_guard
+
+        require_windows_process_main_guard(backend)
+        raise ValueError(
+            'analysis_only fast-path does not support parallel_mode="process"; '
+            'use an analysis sweep/basin helper for multiprocessing, or use '
+            'parallel_mode="threads".'
+        )
     if backend not in {"threads", "none"}:
         raise ValueError(f"Unknown parallel_mode {parallel_mode!r}")
 

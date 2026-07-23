@@ -17,7 +17,7 @@ Key knobs:
 - **Observation space**: `observe_vars` picks the variables to quantize, while `obs_min`/`obs_max` or the grid bounds define the detection region; `grid_res` controls spatial resolution.
 - **Dynamics mode**: use `mode="map"` for discrete maps, `mode="ode"` for flows (or `auto` to infer); ODE mode requires a fixed-step stepper and an explicit `dt_obs` sampling interval.
 - **Detection parameters**: `max_samples`, `window`, `u_th`, `recur_windows`, `post_detect_samples`, and `merge_downsample` tune the persistence scan and fingerprint merging. `transient_samples` lets you skip early transients, `b_max`/`blowup_vars` flag diverging trajectories, and `outside_limit` detects escapes from the observation region.
-- **Execution controls**: `online=True` (default) streams analysis to keep memory in check; set `online=False` for offline debugging, but watch the `max_memory_bytes` guard. `parallel_mode`, `max_workers`, `batch_size`, `online_max_attr`, and `online_max_cells` trade off throughput vs. memory.
+- **Execution controls**: `online=True` (default) streams analysis to keep memory in check; set `online=False` for offline debugging, but watch the `max_memory_bytes` guard. `parallel_mode`, `max_workers`, `batch_size`, `online_max_attr`, and `online_max_cells` trade off throughput vs. memory. `auto` chooses a safe platform-appropriate mode; on Windows it avoids multiprocessing unless you explicitly request `parallel_mode="process"`.
 
 The returned `BasinResult.meta` records everything a plotting helper needs (`mode`, `observe_vars`, `grid_res`, `ic_vars`, `ic_axis_values`, `dt_obs`, etc.), so you can pass the result straight to `dynlib.plot.basin_plot` (see the [basin plotting guide](../plotting/basin-plot.md)).
 
@@ -55,7 +55,20 @@ Workflow notes:
   - `ReferenceRun(name, ic, params, transient_samples=None, signature_samples=None)` captures a trajectory via `build_known_attractors_psc`, so matching is a similarity test (use `signature_samples`, `tolerance`, `min_match_ratio` to adjust strictness). Per-reference transient/signature values override the `basin_known` defaults for reference capture only.
 - **Grid handling**: as with `basin_auto`, pass a named `ic={...}` spec. With `basin_axis` grids you can enable `refine=True` to do a coarse-to-fine pass (controls `coarse_factor`, `boundary_dilation`). The refinement benchmark in `examples/analysis/basin_refine_benchmark.py` shows how refine can speed up large grids.
 - **Dynamics mode**: same `mode`/`dt_obs` rules apply (ODE mode requires fixed-step). `escape_bounds` guard against leaving the region, and `b_max`/`blowup_vars` detect blowups.
-- **Parallel/execution**: `parallel_mode`, `max_workers`, and `batch_size` control concurrency. The `refine` path may spawn process pools or shared classifiers depending on your configuration.
+- **Parallel/execution**: `parallel_mode`, `max_workers`, and `batch_size` control concurrency. The `refine` path may spawn process pools or shared classifiers when you explicitly choose process mode or when `auto` selects processes on platforms where that is safe.
+
+On Windows, only `parallel_mode="process"` uses multiprocessing. Put the call inside a guarded script entry point:
+
+```python
+def main():
+    # create and run simulation
+    ...
+
+if __name__ == "__main__":
+    main()
+```
+
+The guard prevents recursive process creation; multiprocessing still requires transferred work and objects to be pickleable.
 
 If you prefer to reuse the attractor fingerprints, call `build_known_attractors_psc(sim, attractor_specs, ...)` once (the helper also runs `ReferenceRun` specs) and feed the returned `KnownAttractorLibrary` to downstream utilities that live outside `dynlib.analysis`.
 

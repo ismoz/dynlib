@@ -31,6 +31,7 @@ from dynlib.runtime.observers import ObserverHooks, ObserverModule, ObserverRequ
 from dynlib.errors import JITUnavailableError
 from dynlib.runtime.fastpath.plans import FixedStridePlan, HitTracePlan
 from dynlib.runtime.fastpath.capability import assess_capability, FastpathSupport
+from dynlib.runtime.parallel import should_use_process_parallel
 from dynlib.runtime.results_api import ResultsView
 from dynlib.runtime.runner_api import NAN_DETECTED
 from dynlib.runtime.sim import Sim
@@ -1685,10 +1686,12 @@ def basin_auto(
                 raise ValueError("batch_size must be positive when provided")
             batch_size_use = min(batch_size_use, batch)
 
-        use_process_parallel = parallel_mode in ("process", "auto") and batch > 1000
         n_workers = _resolve_process_workers(max_workers)
-        if parallel_mode == "none" or n_workers == 1:
-            use_process_parallel = False
+        use_process_parallel = should_use_process_parallel(
+            parallel_mode,
+            total=batch,
+            n_workers=n_workers,
+        )
 
         effective_parallel_mode = parallel_mode
         if parallel_mode == "process" and not use_process_parallel:

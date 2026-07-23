@@ -39,7 +39,7 @@ series.line(x=res.values, y=res.y, xlabel="r", ylabel="x*")
 ```
 
 ### `traj_sweep`
-`traj_sweep` records full trajectories for any combination of `record_vars` (e.g., `"x"`, `"y"`, `"z"`). Each run’s time series lives in a `TrajectoryPayload`, so you can call `res["x"]`, `res.series(["x","y"])`, `res.stack()`, or iterate `res.runs` for per-parameter plotting. The sweep supports both fast-path batch execution and a `ProcessPoolExecutor` when `values` > 1000. The `parallel_mode` argument controls how that batch run is executed (`"auto"`, `"threads"`, `"process"`, `"none"`); `max_workers` tunes the worker pool size. When number of workers resolves to one or `process` mode isn’t efficient the helper transparently downgrades to sequential execution.
+`traj_sweep` records full trajectories for any combination of `record_vars` (e.g., `"x"`, `"y"`, `"z"`). Each run’s time series lives in a `TrajectoryPayload`, so you can call `res["x"]`, `res.series(["x","y"])`, `res.stack()`, or iterate `res.runs` for per-parameter plotting. The sweep supports both fast-path batch execution and explicit `ProcessPoolExecutor` acceleration. The `parallel_mode` argument controls how that batch run is executed (`"auto"`, `"threads"`, `"process"`, `"none"`); `max_workers` tunes the worker pool size. `auto` chooses a safe platform-appropriate mode: on Windows it uses threads when fast-path/JIT thread parallelism is effective, otherwise sequential execution. `process` explicitly opts into multiprocessing requirements.
 
 `record_interval` allows you to decimate logging for memory savings, and the sweep remembers that interval in `meta`. You can also request a fixed `dt`, `t0`, `T`, or discrete iteration count `N` (useful for maps).
 
@@ -62,7 +62,20 @@ for run in res.runs:
 ### `lyapunov_mle_sweep`
 This helper couples a parameter sweep with the maximum Lyapunov exponent (MLE) observer. For the fast-path batch execution (and the Lyapunov observers themselves) you should use a JIT-compiled sim with a fixed-step stepper and an explicit `dt`, but the helper gracefully falls back to sequential `Sim.run()` with observers attached if fast path support is unavailable. The function returns `outputs` for `mle`, `log_growth`, and `steps`, and if you provided `record_interval` it also returns `traces['mle']` (list of convergence arrays) so you can inspect how each exponent converged. `analysis_kind` lets you choose between algorithm variants.
 
-The sweep attempts fast-path batch runs with optional `ProcessPoolExecutor` acceleration (chunks of the values list). If the fast path or fast parallel worker initialization fails it warns and falls back to sequential `Sim.run()` calls with the Lyapunov observer attached.
+The sweep attempts fast-path batch runs with optional explicit `ProcessPoolExecutor` acceleration (chunks of the values list). If the fast path or fast parallel worker initialization fails it warns and falls back to sequential `Sim.run()` calls with the Lyapunov observer attached.
+
+On Windows, only `parallel_mode="process"` uses multiprocessing. Put the call inside a guarded script entry point:
+
+```python
+def main():
+    # create and run simulation
+    ...
+
+if __name__ == "__main__":
+    main()
+```
+
+The guard prevents recursive process creation; multiprocessing still requires transferred work and objects to be pickleable.
 
 ```python
 from dynlib.plot import series

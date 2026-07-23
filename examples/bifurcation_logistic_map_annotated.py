@@ -14,95 +14,100 @@ from dynlib.analysis import sweep
 from dynlib.plot import export, theme, fig, bifurcation_diagram
 
 
-# Setup the builtin logistic map model
-sim = setup("builtin://map/logistic", stepper="map", jit=True, disk_cache=True)
+def main():
+    # Setup the builtin logistic map model
+    sim = setup("builtin://map/logistic", stepper="map", jit=True, disk_cache=True)
 
-print("Computing full bifurcation diagram (r ∈ [2.5, 4])...")
+    print("Computing full bifurcation diagram (r ∈ [2.5, 4])...")
 
-# Full diagram
-r_full = np.linspace(2.5, 4.0, 2500)
-sweep_full = sweep.traj_sweep(
-    sim,
-    param="r",
-    values=r_full,
-    record_vars=["x"],
-    N=100,
-    transient=300,
-)
-result_full = sweep_full.bifurcation("x").tail(80)
+    # Full diagram
+    r_full = np.linspace(2.5, 4.0, 2500)
+    sweep_full = sweep.traj_sweep(
+        sim,
+        param="r",
+        values=r_full,
+        record_vars=["x"],
+        N=100,
+        transient=300,
+    )
+    result_full = sweep_full.bifurcation("x").tail(80)
 
-print("Computing zoomed diagram (period-doubling cascade region)...")
+    print("Computing zoomed diagram (period-doubling cascade region)...")
 
-# Zoomed region: period-doubling cascade
-r_zoom = np.linspace(3.4, 3.57, 2000)
-sweep_zoom = sweep.traj_sweep(
-    sim,
-    param="r",
-    values=r_zoom,
-    record_vars=["x"],
-    N=200,
-    transient=400,
-)
-result_zoom = sweep_zoom.bifurcation("x")
+    # Zoomed region: period-doubling cascade
+    r_zoom = np.linspace(3.4, 3.57, 2000)
+    sweep_zoom = sweep.traj_sweep(
+        sim,
+        param="r",
+        values=r_zoom,
+        record_vars=["x"],
+        N=200,
+        transient=400,
+    )
+    result_zoom = sweep_zoom.bifurcation("x")
 
-print("Creating visualization...")
+    print("Creating visualization...")
 
-# Configure plot theme
-theme.use("notebook")
-theme.update(grid=True)
+    # Configure plot theme
+    theme.use("notebook")
+    theme.update(grid=True)
 
-# Create 2-panel plot
-ax = fig.grid(rows=2, cols=1, size=(12, 10))
+    # Create 2-panel plot
+    ax = fig.grid(rows=2, cols=1, size=(12, 10))
 
-# Panel 1: Full diagram with annotations
-bifurcation_diagram(
-    result_full,
-    alpha=1.0,
-    color="black",
-    ax=ax[0, 0],
-    xlim=(2.5, 4),
-    ylim=(0, 1),
-    ylabel="x*",
-    title="Bifurcation Diagram: Logistic Map (Full Range)",
-    title_fs=14,
-    ylabel_fs=12,
-    vlines=[(1.0, 'r=1\n(transcritical)'), (3.0, 'r=3\n(period-2)'), (3.449, 'r≈3.45\n(period-4)'), (3.57, 'r≈3.57\n(chaos)')],
-    vlines_kwargs={'linestyle': '--', 'alpha': 0.3, 'linewidth': 1, 'label_rotation': 0, 'label_position': 'bottom', 'color': 'blue'},
-)
+    # Panel 1: Full diagram with annotations
+    bifurcation_diagram(
+        result_full,
+        alpha=1.0,
+        color="black",
+        ax=ax[0, 0],
+        xlim=(2.5, 4),
+        ylim=(0, 1),
+        ylabel="x*",
+        title="Bifurcation Diagram: Logistic Map (Full Range)",
+        title_fs=14,
+        ylabel_fs=12,
+        vlines=[(1.0, 'r=1\n(transcritical)'), (3.0, 'r=3\n(period-2)'), (3.449, 'r≈3.45\n(period-4)'), (3.57, 'r≈3.57\n(chaos)')],
+        vlines_kwargs={'linestyle': '--', 'alpha': 0.3, 'linewidth': 1, 'label_rotation': 0, 'label_position': 'bottom', 'color': 'blue'},
+    )
 
-# Add annotations for key bifurcation points
+    # Add annotations for key bifurcation points
 
-# Panel 2: Zoomed into cascade
-bifurcation_diagram(
-    result_zoom,
-    marker=".",
-    ms=1.0,
-    alpha=1.0,
-    color="darkblue",
-    ax=ax[1, 0],
-    xlim=(3.4, 3.57),
-    ylim=(0.3, 0.95),
-    xlabel="r",
-    ylabel="x*",
-    title="Period-Doubling Cascade (Zoomed)",
-    title_fs=14,
-    xlabel_fs=12,
-    ylabel_fs=12,
-)
+    # Panel 2: Zoomed into cascade
+    bifurcation_diagram(
+        result_zoom,
+        marker=".",
+        ms=1.0,
+        alpha=1.0,
+        color="darkblue",
+        ax=ax[1, 0],
+        xlim=(3.4, 3.57),
+        ylim=(0.3, 0.95),
+        xlabel="r",
+        ylabel="x*",
+        title="Period-Doubling Cascade (Zoomed)",
+        title_fs=14,
+        xlabel_fs=12,
+        ylabel_fs=12,
+    )
 
-# Highlight the Feigenbaum point
-ax[1, 0].axvline(x=3.5699, color='red', linestyle=':', alpha=0.5, linewidth=1.5)
-ax[1, 0].text(3.5699, 0.32, 'Feigenbaum point\nr∞≈3.5699', 
-              ha='center', fontsize=9, color='red',
-              bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    # Highlight the Feigenbaum point
+    ax[1, 0].axvline(x=3.5699, color='red', linestyle=':', alpha=0.5, linewidth=1.5)
+    ax[1, 0].text(3.5699, 0.32, 'Feigenbaum point\nr∞≈3.5699', 
+                ha='center', fontsize=9, color='red',
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
 
-export.show()
-# export.savefig(ax, "bifurcation_logistic_map_annotated.png", dpi=300)
+    export.show()
+    # export.savefig(ax, "bifurcation_logistic_map_annotated.png", dpi=300)
 
-print("\nKey bifurcation points:")
-print("  r = 1.0    : Transcritical bifurcation (fixed point emerges)")
-print("  r = 3.0    : First period-doubling (period-2 orbit)")
-print("  r ≈ 3.449  : Period-4 orbit")
-print("  r ≈ 3.544  : Period-8 orbit")
-print("  r∞ ≈ 3.5699: Feigenbaum point (accumulation of period-doublings)")
-print("  r > 3.57   : Chaotic regime with periodic windows")
+    print("\nKey bifurcation points:")
+    print("  r = 1.0    : Transcritical bifurcation (fixed point emerges)")
+    print("  r = 3.0    : First period-doubling (period-2 orbit)")
+    print("  r ≈ 3.449  : Period-4 orbit")
+    print("  r ≈ 3.544  : Period-8 orbit")
+    print("  r∞ ≈ 3.5699: Feigenbaum point (accumulation of period-doublings)")
+    print("  r > 3.57   : Chaotic regime with periodic windows")
+
+
+if __name__ == "__main__":
+    main()

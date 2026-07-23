@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 from dynlib.runtime.results_api import ResultsView
 from dynlib.runtime.fastpath import FixedStridePlan, fastpath_for_sim, fastpath_batch_for_sim
 from dynlib.runtime.fastpath.capability import FastpathSupport, assess_capability
+from dynlib.runtime.parallel import should_use_process_parallel
 
 
 class SweepRun:
@@ -1083,10 +1084,12 @@ def traj_sweep(
 
     record_vars_list = list(record_vars)
 
-    use_process_parallel = parallel_mode in ("process", "auto") and M > 1000
     n_workers = _resolve_process_workers(max_workers)
-    if n_workers == 1:
-        use_process_parallel = False
+    use_process_parallel = should_use_process_parallel(
+        parallel_mode,
+        total=M,
+        n_workers=n_workers,
+    )
     if use_process_parallel:
         stride = int(record_interval) if record_interval is not None else 1
         plan = FixedStridePlan(stride=stride)
@@ -1322,10 +1325,12 @@ def lyapunov_mle_sweep(
     steps_values = np.zeros(M, dtype=float)
     trace_list: list[np.ndarray] | None = [] if record_interval else None
 
-    use_process_parallel = parallel_mode in ("process", "auto") and M > 1000
     n_workers = _resolve_process_workers(max_workers)
-    if n_workers == 1:
-        use_process_parallel = False
+    use_process_parallel = should_use_process_parallel(
+        parallel_mode,
+        total=M,
+        n_workers=n_workers,
+    )
 
     # Try batch fast-path execution
     ic_stack = np.repeat(base_states[np.newaxis, :], values.size, axis=0)
@@ -1596,10 +1601,12 @@ def lyapunov_spectrum_sweep(
     spectrum_values = np.zeros((M, k_use), dtype=float)
     log_r_values = np.zeros((M, k_use), dtype=float)
     steps_values = np.zeros(M, dtype=float)
-    use_process_parallel = parallel_mode in ("process", "auto") and M > 1000
     n_workers = _resolve_process_workers(max_workers)
-    if n_workers == 1:
-        use_process_parallel = False
+    use_process_parallel = should_use_process_parallel(
+        parallel_mode,
+        total=M,
+        n_workers=n_workers,
+    )
 
     # Try batch fast-path execution
     ic_stack = np.repeat(base_states[np.newaxis, :], values.size, axis=0)
