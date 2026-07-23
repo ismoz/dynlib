@@ -29,7 +29,7 @@ def main():
                         values=np.linspace(0.1,10,300), 
                         xlim=(-10, 10), 
                         ylim=(-10, 10), 
-                        grid=(24, 24), 
+                        resolution=(24, 24), 
                         interval=130,
                         normalize=True,
                         title_func=lambda v, idx: f"Vector field: k={float(v):.2f}",

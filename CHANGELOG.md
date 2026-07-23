@@ -2,6 +2,17 @@
 
 ---
 
+## [0.40.3] – 2026-07-23
+### Changed
+- Renamed plotting API arguments named grid but described sampling or label shape instead of visible plot gridlines:
+  `plot.vectorfield(..., resolution=...)`, `plot.eval_vectorfield(..., resolution=...)`,
+  `plot.vectorfield_sweep(..., resolution=...)`, `plot.vectorfield_animate(..., resolution=...)`,
+  `nullcline_resolution=...`, and `plot.basin_plot(..., label_shape=...)` replace the previous `grid`/
+  `nullcline_grid` names.
+- Disabling colorbar in `basin_plot` now uses the entire figure area.
+
+---
+
 ## [0.40.2] – 2026-07-23
 ### Added
 - Introduced a shared parallelization handling module (`parallel.py`) for simulation and analysis tools.

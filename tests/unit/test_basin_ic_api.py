@@ -252,3 +252,37 @@ def test_basin_plot_uses_ic_metadata_for_axes(sim):
     assert ax.get_ylabel() == "z"
     assert tuple(ax.get_xlim()) == pytest.approx((-1.0, 1.0))
     assert tuple(ax.get_ylim()) == pytest.approx((2.5, 7.5))
+
+
+def test_basin_plot_label_shape_reshapes_flat_labels():
+    labels = np.array([0, 1, 1, 0, 0, 1], dtype=np.int64)
+
+    ax = basin_plot(labels, label_shape=(3, 2), colorbar=False)
+
+    assert len(ax.collections) == 1
+    assert ax.collections[0].get_array().shape == (2, 3)
+
+
+def test_basin_plot_uses_auto_aspect_without_colorbar():
+    labels = np.array([0, 1, 1, 0, 0, 1], dtype=np.int64)
+
+    ax = basin_plot(
+        labels,
+        label_shape=(3, 2),
+        bounds=((-5.0, 5.0), (-1.0, 1.0)),
+        colorbar=False,
+    )
+
+    assert ax.get_aspect() == "auto"
+
+
+def test_basin_plot_preserves_equal_aspect_with_colorbar():
+    labels = np.array([0, 1, 1, 0, 0, 1], dtype=np.int64)
+
+    ax = basin_plot(
+        labels,
+        label_shape=(3, 2),
+        bounds=((-5.0, 5.0), (-1.0, 1.0)),
+    )
+
+    assert ax.get_aspect() == 1.0

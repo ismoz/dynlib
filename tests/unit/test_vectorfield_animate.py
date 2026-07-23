@@ -50,7 +50,7 @@ def test_vectorfield_animate_simple_sweep():
         values=[0.5, 1.0, 1.5],
         xlim=(-1, 1),
         ylim=(0, 1),
-        grid=(3, 2),
+        resolution=(3, 2),
         speed_color=True,
         fps=5,
         interactive=False,

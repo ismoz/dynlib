@@ -22,18 +22,18 @@ from ._primitives import (
 __all__ = ["basin_plot"]
 
 
-def _coerce_grid_2d(grid: Sequence[int] | int | None) -> tuple[int, int] | None:
-    if grid is None:
+def _coerce_label_shape(label_shape: Sequence[int] | int | None) -> tuple[int, int] | None:
+    if label_shape is None:
         return None
-    if isinstance(grid, (int, np.integer)):
-        return int(grid), int(grid)
-    grid_tuple = tuple(int(x) for x in grid)
-    if len(grid_tuple) != 2:
-        raise ValueError("grid must be an int or a length-2 sequence for 2D basin plots.")
-    return grid_tuple
+    if isinstance(label_shape, (int, np.integer)):
+        return int(label_shape), int(label_shape)
+    shape_tuple = tuple(int(x) for x in label_shape)
+    if len(shape_tuple) != 2:
+        raise ValueError("label_shape must be an int or a length-2 sequence for 2D basin plots.")
+    return shape_tuple
 
 
-def _resolve_labels(res, labels: np.ndarray | None, grid: Sequence[int] | int | None) -> tuple[np.ndarray, dict[str, object]]:
+def _resolve_labels(res, labels: np.ndarray | None, label_shape: Sequence[int] | int | None) -> tuple[np.ndarray, dict[str, object]]:
     if labels is None:
         if hasattr(res, "labels"):
             labels = res.labels
@@ -44,24 +44,24 @@ def _resolve_labels(res, labels: np.ndarray | None, grid: Sequence[int] | int | 
     if hasattr(res, "meta"):
         meta = dict(getattr(res, "meta") or {})
 
-    grid_tuple = _coerce_grid_2d(grid)
-    if grid_tuple is None:
+    shape_tuple = _coerce_label_shape(label_shape)
+    if shape_tuple is None:
         meta_grid = meta.get("ic_grid")
         if meta_grid is not None:
-            grid_tuple = _coerce_grid_2d(meta_grid)
+            shape_tuple = _coerce_label_shape(meta_grid)
     if labels_arr.ndim == 1:
-        if grid_tuple is None:
-            raise ValueError("1D basin labels require grid=(nx, ny) to reshape.")
-        nx, ny = grid_tuple
+        if shape_tuple is None:
+            raise ValueError("1D basin labels require label_shape=(nx, ny) to reshape.")
+        nx, ny = shape_tuple
         # Basin labels are flattened from (nx, ny) with indexing='ij'
         # Need to reshape to (nx, ny) then transpose to (ny, nx) for pcolormesh
         shape = (int(nx), int(ny))
         if labels_arr.size != shape[0] * shape[1]:
-            raise ValueError("grid size does not match labels length.")
+            raise ValueError("label_shape does not match labels length.")
         labels_arr = labels_arr.reshape(shape).T
     elif labels_arr.ndim == 2:
-        if grid_tuple is not None:
-            nx, ny = grid_tuple
+        if shape_tuple is not None:
+            nx, ny = shape_tuple
             # For 2D labels, verify they match expected transpose shape (ny, nx)
             shape = (int(ny), int(nx))
             if labels_arr.shape != shape:
@@ -69,7 +69,7 @@ def _resolve_labels(res, labels: np.ndarray | None, grid: Sequence[int] | int | 
                 if labels_arr.shape == (int(nx), int(ny)):
                     labels_arr = labels_arr.T
                 else:
-                    raise ValueError("grid size does not match labels shape.")
+                    raise ValueError("label_shape does not match labels shape.")
     else:
         raise ValueError("labels must be 1D or 2D for basin_plot.")
 
@@ -150,7 +150,7 @@ def _resolve_attractor_labels(
 def basin_plot(
     res,
     *,
-    grid: Sequence[int] | int | None = None,
+    label_shape: Sequence[int] | int | None = None,
     bounds: Sequence[tuple[float, float]] | None = None,
     labels: np.ndarray | None = None,
     x: np.ndarray | None = None,
@@ -171,7 +171,7 @@ def basin_plot(
     colorbar_kwargs: Mapping[str, Any] | None = None,
     shading: str = "auto",
     alpha: float | None = None,
-    aspect: str | None = "equal",
+    aspect: str | None = None,
     # axes config
     xlim: tuple[float | None, float | None] | None = None,
     ylim: tuple[float | None, float | None] | None = None,
@@ -196,8 +196,8 @@ def basin_plot(
     ----------
     res : BasinResult or array-like
         BasinResult returned by ``analysis.basin_auto`` or raw labels array.
-    grid : Sequence[int] | int, optional
-        Grid shape (nx, ny). Required for 1D labels unless present in
+    label_shape : Sequence[int] | int, optional
+        Label shape (nx, ny). Required for 1D labels unless present in
         ``res.meta['ic_grid']``.
     bounds : Sequence[tuple[float, float]], optional
         Axis bounds for the IC grid. Exact ``res.meta['ic_axis_values']`` are
@@ -209,7 +209,7 @@ def basin_plot(
     Attractor labels fall back to ``res.meta['attractor_labels']`` or
     ``res.meta['attractor_names']`` when provided and ``attractor_labels`` is None.
     """
-    labels_arr, meta = _resolve_labels(res, labels, grid)
+    labels_arr, meta = _resolve_labels(res, labels, label_shape)
     if bounds is None:
         meta_bounds = meta.get("ic_bounds")
         if meta_bounds is not None:
@@ -349,6 +349,9 @@ def basin_plot(
     )
     _apply_tick_rotation(plot_ax, xlabel_rot=xlabel_rot, ylabel_rot=ylabel_rot, theme=_theme)
     _apply_tick_fontsizes(plot_ax, xtick_fs=xtick_fs, ytick_fs=ytick_fs)
-    if aspect is not None:
-        plot_ax.set_aspect(aspect)
+    resolved_aspect = aspect
+    if resolved_aspect is None:
+        resolved_aspect = "equal" if colorbar else "auto"
+    if resolved_aspect is not None:
+        plot_ax.set_aspect(resolved_aspect)
     return plot_ax

@@ -118,18 +118,18 @@ def _apply_param_overrides(params: np.ndarray, updates: Mapping[str, float] | No
         params[param_index[key]] = float(val)
 
 
-def _make_meshgrid(xlim, ylim, grid, *, dtype=float) -> tuple[np.ndarray, np.ndarray]:
-    gx, gy = grid
+def _make_meshgrid(xlim, ylim, resolution, *, dtype=float) -> tuple[np.ndarray, np.ndarray]:
+    gx, gy = resolution
     xs = np.linspace(xlim[0], xlim[1], int(gx), dtype=dtype)
     ys = np.linspace(ylim[0], ylim[1], int(gy), dtype=dtype)
     X, Y = np.meshgrid(xs, ys, indexing="xy")
     return X, Y
 
 
-def _coerce_grid(grid: tuple[int, int] | int) -> tuple[int, int]:
-    if isinstance(grid, int):
-        return (int(grid), int(grid))
-    gx, gy = grid
+def _coerce_resolution(resolution: tuple[int, int] | int) -> tuple[int, int]:
+    if isinstance(resolution, int):
+        return (int(resolution), int(resolution))
+    gx, gy = resolution
     return (int(gx), int(gy))
 
 
@@ -263,7 +263,7 @@ def _compute_shared_speed_norm(
     vars,
     xlim,
     ylim,
-    grid,
+    resolution,
     normalize,
     stepper,
     jit: bool,
@@ -286,7 +286,7 @@ def _compute_shared_speed_norm(
             params=sl.params,
             xlim=xlim,
             ylim=ylim,
-            grid=grid,
+            resolution=resolution,
             normalize=normalize,
             return_speed=True,
             stepper=stepper,
@@ -319,12 +319,12 @@ def _speed_mappable(handle: "VectorFieldHandle"):
     return None
 
 
-def _default_nullcline_grid(grid: tuple[int, int]) -> tuple[int, int]:
+def _default_nullcline_resolution(resolution: tuple[int, int]) -> tuple[int, int]:
     """
-    Use a denser grid for nullcline computation to reduce numerical wobble.
+    Use a denser sampling lattice for nullcline computation to reduce numerical wobble.
     Caps growth to avoid runaway cost while ensuring at least a moderate density.
     """
-    gx, gy = _coerce_grid(grid)
+    gx, gy = _coerce_resolution(resolution)
     dense_x = max(gx, min(max(gx * 2, 40), 120))
     dense_y = max(gy, min(max(gy * 2, 40), 120))
     return dense_x, dense_y
@@ -390,7 +390,7 @@ def eval_vectorfield(
     params: Mapping[str, float] | None = None,
     xlim: tuple[float, float] = (-1, 1),
     ylim: tuple[float, float] = (-1, 1),
-    grid: tuple[int, int] = (20, 20),
+    resolution: tuple[int, int] | int = (20, 20),
     normalize: bool = False,
     return_speed: bool = False,
     stepper: str | None = None,
@@ -398,7 +398,7 @@ def eval_vectorfield(
     disk_cache: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Evaluate a 2D vector field on a grid and return X, Y, U, V arrays (and optionally speed).
+    Evaluate a 2D vector field on a sampling lattice and return X, Y, U, V arrays (and optionally speed).
     """
     model, base_state, base_params, t0, lag_state_info = _resolve_model(model_or_sim, stepper=stepper, jit=jit, disk_cache=disk_cache)
     spec = getattr(model, "spec", None)
@@ -426,8 +426,8 @@ def eval_vectorfield(
     _apply_param_overrides(base_params_template, params, param_index=param_index)
 
     # Grid
-    grid = _coerce_grid(grid)
-    X, Y = _make_meshgrid(xlim, ylim, grid, dtype=model.dtype)
+    resolution = _coerce_resolution(resolution)
+    X, Y = _make_meshgrid(xlim, ylim, resolution, dtype=model.dtype)
 
     lag_state_info_tuple = _lag_state_info_from_spec(model, lag_state_info)
     runtime_ws_template = make_runtime_workspace(
@@ -505,8 +505,8 @@ class VectorFieldHandle:
     nullcline_cache_valid: bool
     xlim: tuple[float, float]
     ylim: tuple[float, float]
-    grid: tuple[int, int]
-    nullcline_grid: tuple[int, int]
+    resolution: tuple[int, int]
+    nullcline_resolution: tuple[int, int]
     last_fixed: dict[str, float]
     last_params: dict[str, float]
     traj_lines: list[Any]
@@ -633,12 +633,12 @@ class VectorFieldHandle:
         self.last_params = params_norm
         return fixed_norm, params_norm, changed
 
-    def _ensure_nullcline_grid(self) -> None:
+    def _ensure_nullcline_resolution(self) -> None:
         if self.nullcline_X is not None and self.nullcline_Y is not None:
             return
-        resolved_nc_grid = self.nullcline_grid
-        use_same_grid = resolved_nc_grid == self.grid and not self.normalize
-        if use_same_grid:
+        resolved_nc_resolution = self.nullcline_resolution
+        use_same_resolution = resolved_nc_resolution == self.resolution and not self.normalize
+        if use_same_resolution:
             self.nullcline_X, self.nullcline_Y = self.X, self.Y
             self.nullcline_U = np.array(self.U, copy=True)
             self.nullcline_V = np.array(self.V, copy=True)
@@ -646,7 +646,7 @@ class VectorFieldHandle:
             self.nullcline_X, self.nullcline_Y = _make_meshgrid(
                 self.xlim,
                 self.ylim,
-                resolved_nc_grid,
+                resolved_nc_resolution,
                 dtype=self.model.dtype,
             )
             self.nullcline_U = np.zeros_like(self.nullcline_X, dtype=self.model.dtype)
@@ -655,7 +655,7 @@ class VectorFieldHandle:
     def _ensure_nullclines(self, base_state: np.ndarray, base_params: np.ndarray, *, force: bool = False) -> None:
         if self.nullcline_cache_valid and not force and self.nullcline_X is not None and self.nullcline_Y is not None:
             return
-        self._ensure_nullcline_grid()
+        self._ensure_nullcline_resolution()
         self.nullcline_U[:, :], self.nullcline_V[:, :] = _evaluate_field(
             rhs=self.rhs,
             t0=self.t0,
@@ -782,7 +782,7 @@ def vectorfield(
     params: Mapping[str, float] | None = None,
     xlim=(-1, 1),
     ylim=(-1, 1),
-    grid=(20, 20),
+    resolution=(20, 20),
     normalize: bool = False,
     color: str | None = None,
     speed_color: bool = False,
@@ -791,7 +791,7 @@ def vectorfield(
     mode: str = "quiver",
     stream_kwargs: Mapping[str, Any] | None = None,
     nullclines: bool = False,
-    nullcline_grid: tuple[int, int] | int | None = None,
+    nullcline_resolution: tuple[int, int] | int | None = None,
     nullcline_style: Mapping[str, Any] | None = None,
     interactive: bool = True,
     T: float | None = None,
@@ -805,8 +805,8 @@ def vectorfield(
     """
     Draw a quiver or streamline plot (and optional numerical nullclines) and return a handle with .update().
 
-    Nullclines are evaluated on a denser, always-un-normalized grid by default to avoid
-    visual wobble; override with nullcline_grid to control the density.
+    Nullclines are evaluated on a denser, always-un-normalized sampling lattice by default to avoid
+    visual wobble; override with nullcline_resolution to control the density.
 
     Interactive controls:
       - Click anywhere on the axes to launch a trajectory from that point (uses the model's
@@ -843,7 +843,7 @@ def vectorfield(
             params=params,
             xlim=xlim,
             ylim=ylim,
-            grid=grid,
+            resolution=resolution,
             normalize=normalize,
             return_speed=True,
             stepper=stepper,
@@ -858,7 +858,7 @@ def vectorfield(
             params=params,
             xlim=xlim,
             ylim=ylim,
-            grid=grid,
+            resolution=resolution,
             normalize=normalize,
             stepper=stepper,
             jit=jit,
@@ -866,8 +866,10 @@ def vectorfield(
         )
         speed = None
 
-    grid = _coerce_grid(grid)
-    resolved_nc_grid = _coerce_grid(nullcline_grid) if nullcline_grid is not None else _default_nullcline_grid(grid)
+    resolution = _coerce_resolution(resolution)
+    resolved_nc_resolution = (
+        _coerce_resolution(nullcline_resolution) if nullcline_resolution is not None else _default_nullcline_resolution(resolution)
+    )
     model, base_state, base_params, t0, lag_state_info = _resolve_model(model_or_sim, stepper=stepper, jit=jit, disk_cache=disk_cache)
     spec = model.spec
     state_names = tuple(spec.states)
@@ -951,8 +953,8 @@ def vectorfield(
     nullcline_V = None
     nullcline_cache_valid = False
     if nullclines:
-        use_same_grid = resolved_nc_grid == grid and not normalize
-        if use_same_grid:
+        use_same_resolution = resolved_nc_resolution == resolution and not normalize
+        if use_same_resolution:
             nullcline_X, nullcline_Y = X, Y
             nullcline_U, nullcline_V = np.array(U, copy=True), np.array(V, copy=True)
         else:
@@ -963,7 +965,7 @@ def vectorfield(
                 params=last_params,
                 xlim=xlim,
                 ylim=ylim,
-                grid=resolved_nc_grid,
+                resolution=resolved_nc_resolution,
                 normalize=False,
                 jit=jit,
                 disk_cache=disk_cache,
@@ -1015,8 +1017,8 @@ def vectorfield(
         nullcline_cache_valid=nullcline_cache_valid,
         xlim=(float(xlim[0]), float(xlim[1])),
         ylim=(float(ylim[0]), float(ylim[1])),
-        grid=grid,
-        nullcline_grid=resolved_nc_grid,
+        resolution=resolution,
+        nullcline_resolution=resolved_nc_resolution,
         last_fixed=last_fixed,
         last_params=last_params,
         traj_lines=[],
@@ -1104,7 +1106,7 @@ def vectorfield_sweep(
     params: Mapping[str, float] | None = None,
     xlim: tuple[float, float] = (-1, 1),
     ylim: tuple[float, float] = (-1, 1),
-    grid: tuple[int, int] | int = (20, 20),
+    resolution: tuple[int, int] | int = (20, 20),
     normalize: bool = False,
     color: str | None = None,
     speed_color: bool = False,
@@ -1114,7 +1116,7 @@ def vectorfield_sweep(
     mode: str = "quiver",
     stream_kwargs: Mapping[str, Any] | None = None,
     nullclines: bool = False,
-    nullcline_grid: tuple[int, int] | int | None = None,
+    nullcline_resolution: tuple[int, int] | int | None = None,
     nullcline_style: Mapping[str, Any] | None = None,
     interactive: bool = False,
     T: float | None = None,
@@ -1133,7 +1135,7 @@ def vectorfield_sweep(
     disk_cache: bool = False,
 ) -> VectorFieldSweep:
     """
-    Draw a grid of vector fields for a 1D sweep (parameter or state overrides).
+    Draw a wrapped layout of vector fields for a 1D sweep (parameter or state overrides).
 
     You can either provide ``param`` + ``values`` for a simple sweep, or pass
     ``sweep`` as a mapping/sequence of ``(key, {"params": {...}, "fixed": {...}})``
@@ -1185,7 +1187,7 @@ def vectorfield_sweep(
         vars=vars,
         xlim=xlim,
         ylim=ylim,
-        grid=grid,
+        resolution=resolution,
         normalize=normalize,
         stepper=stepper,
         jit=jit,
@@ -1210,7 +1212,7 @@ def vectorfield_sweep(
             params=sl.params,
             xlim=xlim,
             ylim=ylim,
-            grid=grid,
+            resolution=resolution,
             normalize=normalize,
             color=color,
             speed_color=speed_color,
@@ -1219,7 +1221,7 @@ def vectorfield_sweep(
             mode=mode,
             stream_kwargs=stream_kwargs,
             nullclines=nullclines,
-            nullcline_grid=nullcline_grid,
+            nullcline_resolution=nullcline_resolution,
             nullcline_style=nullcline_style,
             interactive=interactive,
             T=T,
@@ -1361,7 +1363,7 @@ def vectorfield_animate(
     params: Mapping[str, float] | None = None,
     xlim=(-1, 1),
     ylim=(-1, 1),
-    grid=(20, 20),
+    resolution=(20, 20),
     normalize: bool = False,
     color: str | None = None,
     speed_color: bool = False,
@@ -1371,7 +1373,7 @@ def vectorfield_animate(
     mode: str = "quiver",
     stream_kwargs: Mapping[str, Any] | None = None,
     nullclines: bool = False,
-    nullcline_grid: tuple[int, int] | int | None = None,
+    nullcline_resolution: tuple[int, int] | int | None = None,
     nullcline_style: Mapping[str, Any] | None = None,
     interactive: bool = False,
     T: float | None = None,
@@ -1418,7 +1420,7 @@ def vectorfield_animate(
         vars=vars,
         xlim=xlim,
         ylim=ylim,
-        grid=grid,
+        resolution=resolution,
         normalize=normalize,
         stepper=stepper,
         jit=jit,
@@ -1435,7 +1437,7 @@ def vectorfield_animate(
         params=first.params,
         xlim=xlim,
         ylim=ylim,
-        grid=grid,
+        resolution=resolution,
         normalize=normalize,
         color=color,
         speed_color=speed_color,
@@ -1444,7 +1446,7 @@ def vectorfield_animate(
         mode=mode,
         stream_kwargs=stream_kwargs,
         nullclines=nullclines,
-        nullcline_grid=nullcline_grid,
+        nullcline_resolution=nullcline_resolution,
         nullcline_style=nullcline_style,
         interactive=interactive,
         T=T,

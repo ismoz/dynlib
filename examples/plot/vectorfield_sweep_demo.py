@@ -41,7 +41,7 @@ def main() -> None:
         values=[-0.6, 0.0, 0.6, 1.2],
         xlim=(-2.5, 2.5),
         ylim=(-2.5, 2.5),
-        grid=(22, 22),
+        resolution=(22, 22),
         normalize=True,
         speed_color=True,
         speed_cmap="plasma",

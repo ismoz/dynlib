@@ -1,12 +1,12 @@
 # Vector Fields and Vector Field Animations
 
-Vector fields visualize the direction and magnitude of change in dynamical systems. In dynlib, vector fields are computed by evaluating the system's right-hand side (RHS) equations on a 2D grid of points, showing how trajectories would evolve from each point.
+Vector fields visualize the direction and magnitude of change in dynamical systems. In dynlib, vector fields are computed by evaluating the system's right-hand side (RHS) equations on a 2D sampling lattice, showing how trajectories would evolve from each point.
 
 Most snippets in this guide assume `from dynlib import build, plot`. When we need numerical sequences for sweeps or animations, you will also see `numpy` being used—import it as `import numpy as np` in those contexts.
 
 ## Basic Vector Field Plotting
 
-The core function for plotting vector fields is `plot.vectorfield()`. It evaluates your model's equations on a grid and displays the resulting vectors.
+The core function for plotting vector fields is `plot.vectorfield()`. It evaluates your model's equations at sampled phase-plane points and displays the resulting vectors.
 
 ### Simple Example
 
@@ -41,7 +41,7 @@ plot.vectorfield(
     model,
     xlim=(-2, 2),
     ylim=(-2, 2),
-    grid=(25, 25)
+    resolution=(25, 25)
 )
 
 plot.export.show()
@@ -51,12 +51,12 @@ When passing DSL inline to `build()` (or `setup()`), start the string with `inli
 
 ## Vector Field Options
 
-### Grid and Limits
+### Resolution and Limits
 
 - `xlim`, `ylim`: Tuples specifying the plot boundaries (default: `(-1, 1)`)
-- `grid`: Tuple of `(nx, ny)` specifying grid resolution (default: `(20, 20)`)
+- `resolution`: Tuple of `(nx, ny)` specifying the sampling resolution (default: `(20, 20)`)
 
-Higher grid values give smoother, more detailed plots but take longer to compute.
+Higher resolution values give smoother, more detailed plots but take longer to compute.
 
 ### Variable Selection
 
@@ -129,9 +129,9 @@ plot.vectorfield(
 )
 ```
 
-Nullclines are computed on a denser grid by default for accuracy.
+Nullclines are computed on a denser sampling lattice by default for accuracy.
 
-Use `nullcline_grid` when you need even finer contours or resizing relative to the main grid.
+Use `nullcline_resolution` when you need even finer contours or resizing relative to the main vector-field resolution.
 
 ## Interactive Features
 
@@ -231,7 +231,7 @@ X, Y, U, V = plot.eval_vectorfield(
     model,
     xlim=(-2, 2),
     ylim=(-2, 2),
-    grid=(50, 50),
+    resolution=(50, 50),
     normalize=True
 )
 
@@ -240,7 +240,7 @@ import matplotlib.pyplot as plt
 plt.quiver(X, Y, U, V)
 ```
 
-Pass `return_speed=True` when you need the magnitude grid (e.g., to color with a colormap or compare normalized vs non-normalized speeds).
+Pass `return_speed=True` when you need the magnitude array (e.g., to color with a colormap or compare normalized vs non-normalized speeds).
 
 ### Higher-Dimensional Systems
 
@@ -266,9 +266,9 @@ When you slice higher-dimensional systems, make sure every other state is pinned
 
 ## Performance Considerations
 
-- **Grid size**: Larger grids give better resolution but slower computation
+- **Resolution**: Larger values give smoother vector fields but slower computation
 - **Normalization**: Normalized plots compute faster (no magnitude calculation)
-- **Nullclines**: Computed on separate grid; use `nullcline_grid` to control density
+- **Nullclines**: Computed on a separate sampling lattice; use `nullcline_resolution` to control density
 - **JIT compilation**: Set `jit=True` for repeated evaluations of the same model
 - **Disk caching**: Pass `disk_cache=True` when building from a URI to reuse compiled artifacts between runs
 

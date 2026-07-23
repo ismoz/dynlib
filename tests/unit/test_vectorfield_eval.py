@@ -48,7 +48,7 @@ def test_eval_vectorfield_values_change_with_params_and_fixed():
         model,
         xlim=(-1, 1),
         ylim=(0, 1),
-        grid=(3, 2),
+        resolution=(3, 2),
         params={"a": 2.0},
         fixed={"z": 1.0},
     )
@@ -64,7 +64,7 @@ def test_eval_vectorfield_values_change_with_params_and_fixed():
 
 def test_eval_vectorfield_can_return_speed():
     model = _linear_model()
-    X, Y, U, V, speed = eval_vectorfield(model, xlim=(-1, 1), ylim=(0, 1), grid=(3, 2), return_speed=True)
+    X, Y, U, V, speed = eval_vectorfield(model, xlim=(-1, 1), ylim=(0, 1), resolution=(3, 2), return_speed=True)
     xs = np.linspace(-1, 1, 3, dtype=model.dtype)
     ys = np.linspace(0, 1, 2, dtype=model.dtype)
     expected_U = np.vstack([xs + 1.0 for _ in ys])
@@ -80,7 +80,7 @@ def test_return_speed_uses_pre_normalization_magnitude():
         model,
         xlim=(-1, 1),
         ylim=(-1, 1),
-        grid=(2, 2),
+        resolution=(2, 2),
         normalize=True,
         return_speed=True,
     )
@@ -103,7 +103,7 @@ def test_vectorfield_handle_update_recomputes():
         ax=ax,
         xlim=(-1, 1),
         ylim=(-1, 1),
-        grid=(2, 2),
+        resolution=(2, 2),
         normalize=False,
         nullclines=False,
     )
@@ -123,7 +123,7 @@ def test_vectorfield_stream_mode_draws_and_updates():
     handle = vectorfield(
         model,
         ax=ax,
-        grid=(5, 5),
+        resolution=(5, 5),
         mode="stream",
         stream_kwargs={"density": 1.0},
         interactive=False,
@@ -147,7 +147,7 @@ def test_speed_coloring_updates_quiver_and_stream():
     quiver_handle = vectorfield(
         model,
         ax=ax_q,
-        grid=(3, 2),
+        resolution=(3, 2),
         normalize=True,
         speed_color=True,
         speed_cmap="plasma",
@@ -169,7 +169,7 @@ def test_speed_coloring_updates_quiver_and_stream():
     stream_handle = vectorfield(
         model,
         ax=ax_s,
-        grid=(4, 3),
+        resolution=(4, 3),
         speed_color=True,
         mode="stream",
         stream_kwargs={"density": 1.0},
@@ -199,7 +199,7 @@ def test_nullclines_use_dense_grid_and_straight_lines():
         ax=ax,
         xlim=(-2, 2),
         ylim=(-1, 1),
-        grid=(5, 5),
+        resolution=(5, 5),
         normalize=True,
         nullclines=True,
     )
@@ -223,7 +223,7 @@ def test_nullclines_use_dense_grid_and_straight_lines():
 # Test that attempting to evaluate a map model raises TypeError
 def test_map_model_rejected():
     with pytest.raises(TypeError):
-        eval_vectorfield("tests/data/models/logistic_map.toml", grid=(5, 5))
+        eval_vectorfield("tests/data/models/logistic_map.toml", resolution=(5, 5))
 
 
 def test_toggle_nullclines_reuses_cached_values():

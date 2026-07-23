@@ -1,12 +1,12 @@
 # Vektör Alanları ve Vektör Alanı Animasyonları
 
-Vektör alanları, dinamik sistemlerdeki değişimin yönünü ve büyüklüğünü görselleştirir. Dynlib'de vektör alanları, sistemin sağ taraf (RHS) denklemlerini 2B bir nokta ızgarası üzerinde değerlendirerek ve her bir noktadan yörüngelerin nasıl evrileceğini göstererek hesaplanır.
+Vektör alanları, dinamik sistemlerdeki değişimin yönünü ve büyüklüğünü görselleştirir. Dynlib'de vektör alanları, sistemin sağ taraf (RHS) denklemlerini 2B bir örnekleme kafesi üzerinde değerlendirerek ve her bir noktadan yörüngelerin nasıl evrileceğini göstererek hesaplanır.
 
 Bu rehberdaki çoğu kod parçası `from dynlib import build, plot` yapıldığını varsayar. Taramalar (sweeps) veya animasyonlar için sayısal dizilere ihtiyacımız olduğunda, `numpy`'ın da `import numpy as np` şeklinde içe aktarıldığını göreceksiniz.
 
 ## Temel Vektör Alanı Çizimi
 
-Vektör alanlarını çizmek için temel fonksiyon `plot.vectorfield()` fonksiyonudur. Modelinizin denklemlerini bir ızgara üzerinde değerlendirir ve ortaya çıkan vektörleri görüntüler.
+Vektör alanlarını çizmek için temel fonksiyon `plot.vectorfield()` fonksiyonudur. Modelinizin denklemlerini örneklenen faz düzlemi noktalarında değerlendirir ve ortaya çıkan vektörleri görüntüler.
 
 ### Basit Örnek
 
@@ -41,7 +41,7 @@ plot.vectorfield(
     model,
     xlim=(-2, 2),
     ylim=(-2, 2),
-    grid=(25, 25)
+    resolution=(25, 25)
 )
 
 plot.export.show()
@@ -51,12 +51,12 @@ plot.export.show()
 
 ## Vektör Alanı Seçenekleri
 
-### Izgara ve Limitler
+### Çözünürlük ve Limitler
 
 - `xlim`, `ylim`: Çizim sınırlarını belirten demetler (varsayılan: `(-1, 1)`)
-- `grid`: Izgara çözünürlüğünü belirten `(nx, ny)` demeti (varsayılan: `(20, 20)`)
+- `resolution`: Örnekleme çözünürlüğünü belirten `(nx, ny)` demeti (varsayılan: `(20, 20)`)
 
-Yüksek ızgara değerleri daha pürüzsüz, daha detaylı çizimler sağlar ancak hesaplanması daha uzun sürer.
+Yüksek çözünürlük değerleri daha pürüzsüz, daha detaylı çizimler sağlar ancak hesaplanması daha uzun sürer.
 
 ### Değişken Seçimi
 
@@ -129,9 +129,9 @@ plot.vectorfield(
 )
 ```
 
-Doğruluk için nullcline'lar varsayılan olarak daha yoğun bir ızgara üzerinde hesaplanır.
+Doğruluk için nullcline'lar varsayılan olarak daha yoğun bir örnekleme kafesi üzerinde hesaplanır.
 
-Daha ince konturlara veya ana ızgaraya göre yeniden boyutlandırmaya ihtiyacınız olduğunda `nullcline_grid` kullanın.
+Daha ince konturlara veya ana vektör alanı çözünürlüğüne göre yeniden boyutlandırmaya ihtiyacınız olduğunda `nullcline_resolution` kullanın.
 
 ## Etkileşimli Özellikler
 
@@ -231,7 +231,7 @@ X, Y, U, V = plot.eval_vectorfield(
     model,
     xlim=(-2, 2),
     ylim=(-2, 2),
-    grid=(50, 50),
+    resolution=(50, 50),
     normalize=True
 )
 
@@ -240,7 +240,7 @@ import matplotlib.pyplot as plt
 plt.quiver(X, Y, U, V)
 ```
 
-Büyüklük ızgarasına (örneğin, bir renk haritası ile renklendirmek veya normalleştirilmiş ile normalleştirilmemiş hızları karşılaştırmak için) ihtiyacınız olduğunda `return_speed=True` geçirin.
+Büyüklük dizisine (örneğin, bir renk haritası ile renklendirmek veya normalleştirilmiş ile normalleştirilmemiş hızları karşılaştırmak için) ihtiyacınız olduğunda `return_speed=True` geçirin.
 
 ### Yüksek Boyutlu Sistemler
 
@@ -266,9 +266,9 @@ Yüksek boyutlu sistemleri dilimlerken, değerlendirmenin istenen düzlem içind
 
 ## Performans Hususları
 
-- **Izgara boyutu**: Daha büyük ızgaralar daha iyi çözünürlük sağlar ancak hesaplama daha yavaştır.
+- **Çözünürlük**: Daha büyük değerler daha pürüzsüz vektör alanları sağlar ancak hesaplama daha yavaştır.
 - **Normalizasyon**: Normalleştirilmiş çizimler daha hızlı hesaplanır (büyüklük hesaplaması yoktur).
-- **Nullcline'lar**: Ayrı bir ızgarada hesaplanır; yoğunluğu kontrol etmek için `nullcline_grid` kullanın.
+- **Nullcline'lar**: Ayrı bir örnekleme kafesinde hesaplanır; yoğunluğu kontrol etmek için `nullcline_resolution` kullanın.
 - **JIT derleme**: Aynı modelin tekrarlanan değerlendirmeleri için `jit=True` ayarlayın.
 - **Disk önbellekleme**: Çalıştırmalar arasında derlenmiş yapıları yeniden kullanmak için bir URI'den oluştururken `disk_cache=True` geçirin.
 

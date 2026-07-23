@@ -13,9 +13,9 @@ Her ızgara hücresi, analiz sırasında tanımlanan bir başlangıç koşuluna 
 
 ## Verilerinizi hazırlama
 
-`analysis.basin_auto()` (veya `analysis.basin_known()`) tarafından döndürülen `BasinResult` nesnesini doğrudan `basin_plot()` fonksiyonuna iletin. Yardımcı araç, kategorik ızgara için `res.labels` verisini okur ve ızgara boyutlarını, açık eksen değerlerini, taranan değişken adlarını ve çeker meta verilerini (`attractor_labels`/`attractor_names`) çıkarmak için `res.meta` verisini kullanır.
+`analysis.basin_auto()` (veya `analysis.basin_known()`) tarafından döndürülen `BasinResult` nesnesini doğrudan `basin_plot()` fonksiyonuna iletin. Yardımcı araç, kategorik etiketler için `res.labels` verisini okur ve etiket boyutlarını, açık eksen değerlerini, taranan değişken adlarını ve çeker meta verilerini (`attractor_labels`/`attractor_names`) çıkarmak için `res.meta` verisini kullanır.
 
-Etiketleri kendiniz hesapladıysanız, bunları `labels=` ile iletin; 1D diziler, yardımcının 2D'ye yeniden şekillendirebilmesi için `grid=(nx, ny)` şeklini gerektirirken, önceden şekillendirilmiş 2D diziler doğrudan sağlanabilir. Alternatif olarak, etiket dizisiyle eşleşen açık `x` ve `y` koordinatlarını sağlayın.
+Etiketleri kendiniz hesapladıysanız, bunları `labels=` ile iletin; 1D diziler, yardımcının 2D'ye yeniden şekillendirebilmesi için `label_shape=(nx, ny)` şeklini gerektirirken, önceden şekillendirilmiş 2D diziler doğrudan sağlanabilir. Alternatif olarak, etiket dizisiyle eşleşen açık `x` ve `y` koordinatlarını sağlayın.
 
 ```python
 from dynlib import setup
@@ -62,7 +62,7 @@ Eksen sınırları, etiketler ve tik (işaret) stillendirmesi olağan `plot` yar
 
 - `res.meta["ic_axis_values"]` varsa eksen koordinatları otomatik olarak buradan alınır. `bounds` veya `res.meta["ic_bounds"]` yedek ölçek bilgisidir. Eğer `x` ve `y` dizilerini sağlarsanız, metadata sınırları yok sayılır.
 - `xlabel`, `ylabel` ve `title`, `matplotlib.axes.Axes` etiketleri gibi davranır. Sonuç meta verileri `ic_vars` içeriyorsa, bunları geçersiz kılmadığınız sürece bu isimler otomatik olarak `xlabel`/`ylabel` alanlarını doldurur.
-- `xlim`, `ylim`, `aspect`, `xlabel_fs`, `ylabel_fs`, `xtick_fs`, `ytick_fs`, `xlabel_rot`, `ylabel_rot`, `title_fs`, `titlepad`, `xpad` ve `ypad`, görünümü ince ayar yapmanıza olanak tanır.
+- `xlim`, `ylim`, `aspect`, `xlabel_fs`, `ylabel_fs`, `xtick_fs`, `ytick_fs`, `xlabel_rot`, `ylabel_rot`, `title_fs`, `titlepad`, `xpad` ve `ypad`, görünümü ince ayar yapmanıza olanak tanır. Varsayılan olarak `basin_plot()`, renk çubuğu görünürken eşit veri oranını korur; `colorbar=False` olduğunda ise havzanın mevcut eksen alanını doldurabilmesi için `aspect="auto"` kullanır. Renk çubuğu olmadan da kare veri birimleri istiyorsanız `aspect="equal"` değerini açıkça verin.
 - Yardımcı, mevcut bir `ax=` parametresini kabul eder, böylece havza haritasını `plot.fig()`/`plot.theme()` veya doğrudan Matplotlib tarafından üretilen çok panelli bir şekle yerleştirebilirsiniz.
 
 Çizim `pcolormesh` kullandığından, `shading` varsayılan olarak `"auto"`dur ve başka bir veri setinden konturlar veya havzalar bindirmeyi düşünüyorsanız ızgarayı soluklaştırmak için `alpha` kullanılabilir.
@@ -78,8 +78,8 @@ Renk çubuğunu kaldırmak için `colorbar=False` olarak ayarlayın. Aksi takdir
 
 ## İpuçları
 
-- Yalnızca düzleştirilmiş etiketler iletirken `grid` parametresini sağlayın; yardımcı, `pcolormesh` için bunları `(ny, nx)` şeklinde nasıl yeniden boyutlandıracağını bilmelidir.
-- İsimlendirilmiş IC metadatası analiz rutinleri tarafından doldurulur, bu nedenle çizim yaparken grid, koordinat veya etiket bilgisini nadiren tekrar etmeniz gerekir.
+- Yalnızca düzleştirilmiş etiketler iletirken `label_shape` parametresini sağlayın; yardımcı, `pcolormesh` için bunları `(ny, nx)` şeklinde nasıl yeniden boyutlandıracağını bilmelidir.
+- İsimlendirilmiş IC metadatası analiz rutinleri tarafından doldurulur, bu nedenle çizim yaparken etiket şekli, koordinat veya etiket bilgisini nadiren tekrar etmeniz gerekir.
 - Çok parametreli bir sonucun farklı bir dilimini görselleştirmek için, `basin_plot()` çağrısından önce etiket dizisini dilimleyin ve `bounds` değerini buna göre güncelleyin (yardımcı, çok boyutlu dilimleri otomatik olarak yeniden şekillendirmez).
 - Kimlikler yerine çeker adlarını vurgulamak istiyorsanız, her zaman `attractor_labels` sağlayın; böylece çeker kayıt defterinizin sırasına bakılmaksızın renk çubuğu tikleri net bir şekilde okunur.
 

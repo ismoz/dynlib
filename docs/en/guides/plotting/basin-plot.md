@@ -13,9 +13,9 @@ Each grid cell corresponds to one initial condition defined during the analysis.
 
 ## Preparing your data
 
-Pass the `BasinResult` returned by `analysis.basin_auto()` (or `analysis.basin_known()`) directly to `basin_plot()`. The helper reads `res.labels` for the categorical grid and uses `res.meta` to infer grid dimensions, exact axis values, swept variable names, and attractor metadata (`attractor_labels`/`attractor_names`).
+Pass the `BasinResult` returned by `analysis.basin_auto()` (or `analysis.basin_known()`) directly to `basin_plot()`. The helper reads `res.labels` for the categorical grid and uses `res.meta` to infer label dimensions, exact axis values, swept variable names, and attractor metadata (`attractor_labels`/`attractor_names`).
 
-If you computed the labels yourself, pass them with `labels=`; 1D arrays require a `grid=(nx, ny)` shape so the helper can reshape to 2D, whereas pre-shaped 2D arrays can be supplied directly. Alternatively, provide explicit `x` and `y` coordinates that match the label array.
+If you computed the labels yourself, pass them with `labels=`; 1D arrays require a `label_shape=(nx, ny)` shape so the helper can reshape to 2D, whereas pre-shaped 2D arrays can be supplied directly. Alternatively, provide explicit `x` and `y` coordinates that match the label array.
 
 ```python
 from dynlib import setup
@@ -62,7 +62,7 @@ Axis limits, labels, and tick styling are handled by the usual `plot` helpers:
 
 - Exact coordinates from `res.meta["ic_axis_values"]` are used automatically for named IC grids. `bounds` or `res.meta["ic_bounds"]` are the fallback scale. If you supply `x` and `y` arrays instead, metadata bounds are ignored.
 - `xlabel`, `ylabel`, and `title` behave like `matplotlib.axes.Axes` labels. When the result metadata contains `ic_vars`, those names automatically populate `xlabel`/`ylabel` unless you override them.
-- `xlim`, `ylim`, `aspect`, `xlabel_fs`, `ylabel_fs`, `xtick_fs`, `ytick_fs`, `xlabel_rot`, `ylabel_rot`, `title_fs`, `titlepad`, `xpad`, and `ypad` let you fine-tune the appearance.
+- `xlim`, `ylim`, `aspect`, `xlabel_fs`, `ylabel_fs`, `xtick_fs`, `ytick_fs`, `xlabel_rot`, `ylabel_rot`, `title_fs`, `titlepad`, `xpad`, and `ypad` let you fine-tune the appearance. By default, `basin_plot()` keeps an equal data aspect when the colorbar is shown, and switches to `aspect="auto"` when `colorbar=False` so the basin can fill the available axes area. Pass `aspect="equal"` explicitly if you want square data units without a colorbar.
 - The helper accepts an existing `ax=` so you can place the basin map into a multi-panel figure produced by `plot.fig()`/`plot.theme()` or Matplotlib directly.
 
 Because the plot uses `pcolormesh`, `shading` defaults to `"auto"` and `alpha` can be used to fade the grid if you intend to overlay contours or basins from another dataset.
@@ -78,8 +78,8 @@ Set `colorbar=False` to omit it. Otherwise, the helper automatically hooks up ti
 
 ## Tips
 
-- Provide `grid` when passing only flattened labels; the helper must know how to reshape them into `(ny, nx)` for `pcolormesh`.
-- Named IC metadata is populated by the analysis routines, so you rarely need to repeat grid, coordinate, or label information when plotting.
+- Provide `label_shape` when passing only flattened labels; the helper must know how to reshape them into `(ny, nx)` for `pcolormesh`.
+- Named IC metadata is populated by the analysis routines, so you rarely need to repeat label shape, coordinate, or label information when plotting.
 - To visualize a different slice of a multi-parameter result, slice the labels array before calling `basin_plot()` and update `bounds` accordingly (the helper does not automatically reshape multidimensional slices).
 - If you want to highlight attractor names instead of IDs, always supply `attractor_labels` so the colorbar ticks read clearly regardless of the order of your attractor registry.
 
