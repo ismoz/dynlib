@@ -2,6 +2,16 @@
 
 ---
 
+## [0.40.0] – 2026-07-23
+### Changed
+- Replaced basin analysis `ic_grid`/`ic_bounds` inputs with the named `ic={...}` API using `basin_axis`, 
+  `basin_values`, and `basin_points`. This is a breaking API change for `basin_known` and `basin_auto`.
+- `plot.basin_plot(...)` now reads named IC metadata to infer 2D grid shape, axis values, and axis labels directly.
+- `ReferenceRun` now supports per-reference `transient_samples` and `signature_samples` overrides for known-basin
+  attractor signature capture.
+
+---
+
 ## [0.39.0] – 2026-06-26
 ### Changed
 - Renamed the single-series plotting helper from `plot.series.plot(...)` to `plot.series.line(...)` and added 

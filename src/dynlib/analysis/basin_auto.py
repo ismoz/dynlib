@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor
-from typing import Literal, Sequence
+from typing import Literal, Mapping, Sequence
 
 import os
 import numpy as np
 
 from dynlib.analysis.basin import (
     Attractor,
+    BasinPoints,
     BasinResult,
     BLOWUP,
     OUTSIDE,
@@ -19,6 +20,7 @@ from dynlib.analysis.basin import (
     _normalize_grid,
     _prepare_record_vars,
     _require_numba,
+    _resolve_basin_ic,
     _resolve_mode,
     _seq_len,
     nb_types,
@@ -1232,9 +1234,7 @@ if njit is not None:  # pragma: no cover
 def basin_auto(
     sim: Sim,
     *,
-    ic: np.ndarray | None = None,
-    ic_grid: Sequence[int] | None = None,
-    ic_bounds: Sequence[tuple[float, float]] | None = None,
+    ic: Mapping[str | int, object] | BasinPoints | None = None,
     params: np.ndarray | None = None,
     mode: Literal["map", "ode", "auto"] = "auto",
     observe_vars: Sequence[str | int] | None = None,
@@ -1279,20 +1279,10 @@ def basin_auto(
         Simulation object containing the dynamical system model and stepper configuration.
         For ODEs, must use a fixed-step stepper (adaptive steppers are not supported).
 
-    ic : np.ndarray | None, default=None
-        Initial conditions to test. Shape: (n_points, n_states) or (n_states,) for a single point.
-        Each row represents one initial condition from which to compute the basin.
-        Either ic or ic_grid must be provided (but not both).
-
-    ic_grid : Sequence[int] | None, default=None
-        Auto-generate uniform grid of initial conditions. Sequence of resolution per dimension.
-        Example: [512, 512] creates a 512x512 grid. Requires ic_bounds to be provided.
-        Either ic or ic_grid must be provided (but not both).
-
-    ic_bounds : Sequence[tuple[float, float]] | None, default=None
-        Bounds for auto-generated IC grid. Sequence of (min, max) tuples per dimension.
-        Example: [(-3, 3), (-3, 3)] for 2D grid. Required when ic_grid is provided.
-        Also serves as default for obs_min/obs_max when those are not specified.
+    ic : mapping or BasinPoints
+        Named initial-condition specification. Use scalars for fixed state
+        variables, basin_axis(...) for uniform swept axes, basin_values(...)
+        for explicit swept axes, or basin_points(...) for custom point clouds.
 
     params : np.ndarray | None, default=None
         Parameter values for each initial condition. Shape: (n_points, n_params) or (n_params,).
@@ -1310,13 +1300,13 @@ def basin_auto(
     obs_min : Sequence[float] | float | None, default=None
         Minimum bounds of the observation space for each dimension. If scalar, broadcasts to all dimensions.
         Defines the lower edge of the grid where attractors are detected. Should cover the region
-        where attractors reside. If None, defaults to ic_bounds lower values when ic_bounds is provided,
-        otherwise defaults to 0.0. Example: [-2.0, -2.0] for a 2D system.
+        where attractors reside. If None, defaults to the swept IC bounds when
+        they match observe_vars, otherwise defaults to 0.0. Example: [-2.0, -2.0].
 
     obs_max : Sequence[float] | float | None, default=None
         Maximum bounds of the observation space for each dimension. Must be > obs_min for all dimensions.
-        Defines the upper edge of the detection grid. If None, defaults to ic_bounds upper values when
-        ic_bounds is provided, otherwise defaults to 1.0. Example: [2.0, 2.0] for a 2D system.
+        Defines the upper edge of the detection grid. If None, defaults to the
+        swept IC bounds when they match observe_vars, otherwise defaults to 1.0.
 
     grid_res : Sequence[int] | int, default=64
         Grid resolution for each observation dimension. Higher values give finer spatial resolution
@@ -1461,81 +1451,23 @@ def basin_auto(
     Examples
     --------
     >>> # 2D Henon map basin of attraction
-    >>> from dynlib import Sim
-    >>> import numpy as np
-    >>> 
-    >>> # Create grid of initial conditions
-    >>> x = np.linspace(-2, 2, 200)
-    >>> y = np.linspace(-2, 2, 200)
-    >>> X, Y = np.meshgrid(x, y, indexing="ij")
-    >>> ic = np.column_stack([X.ravel(), Y.ravel()])
-    >>> 
-    >>> # Compute basins (method 1: manual IC grid)
+    >>> from dynlib.analysis import basin_axis
+    >>>
     >>> result = basin_auto(
     ...     sim,
-    ...     ic=ic,
-    ...     mode="map",
-    ...     obs_min=[-2, -2],
-    ...     obs_max=[2, 2],
-    ...     grid_res=64,
-    ...     max_samples=500,
-    ...     window=50,
-    ...     u_th=0.5,
-    ... )
-    >>> 
-    >>> # Method 2: auto-generate IC grid
-    >>> result = basin_auto(
-    ...     sim,
-    ...     ic_grid=[200, 200],
-    ...     ic_bounds=[(-2, 2), (-2, 2)],
+    ...     ic={"x": basin_axis(-2, 2, n=200), "y": basin_axis(-2, 2, n=200)},
     ...     mode="map",
     ...     grid_res=64,
     ...     max_samples=500,
     ... )
-    >>> 
-    >>> # Reshape for visualization
-    >>> labels_2d = result.labels.reshape(200, 200)
     """
     _require_numba("basin_auto")
 
-    # Validate ic/ic_grid mutual exclusivity
-    if ic is None and ic_grid is None:
-        raise ValueError("Either ic or ic_grid must be provided")
-    if ic is not None and ic_grid is not None:
-        raise ValueError("Cannot specify both ic and ic_grid")
-    if ic_grid is not None and ic_bounds is None:
-        raise ValueError("ic_bounds must be provided when using ic_grid")
+    if ic is None:
+        raise ValueError("ic must be provided")
 
-    # Auto-generate IC grid if requested
-    ic_grid_meta: tuple[int, ...] | None = None
-    ic_bounds_meta: tuple[tuple[float, float], ...] | None = None
-    if ic_grid is not None:
-        ic_grid_arr = np.asarray(ic_grid, dtype=np.int64)
-        if ic_grid_arr.ndim != 1:
-            raise ValueError("ic_grid must be a 1D sequence")
-        n_dims = len(ic_grid_arr)
-        if len(ic_bounds) != n_dims:
-            raise ValueError(f"ic_bounds must have {n_dims} elements to match ic_grid")
-        
-        # Create meshgrid
-        axes = [np.linspace(float(bmin), float(bmax), int(n)) 
-                for (bmin, bmax), n in zip(ic_bounds, ic_grid_arr)]
-        meshgrids = np.meshgrid(*axes, indexing="ij")
-        ic = np.column_stack([g.ravel(order="C") for g in meshgrids])
-        ic_grid_meta = tuple(int(x) for x in ic_grid_arr)
-        ic_bounds_meta = tuple((float(bmin), float(bmax)) for bmin, bmax in ic_bounds)
-
-    # Default obs_min/obs_max from ic_bounds if not provided
-    if obs_min is None:
-        if ic_bounds is not None:
-            obs_min = [float(bmin) for bmin, _ in ic_bounds]
-        else:
-            obs_min = 0.0
-    if obs_max is None:
-        if ic_bounds is not None:
-            obs_max = [float(bmax) for _, bmax in ic_bounds]
-        else:
-            obs_max = 1.0
+    dtype = sim.model.dtype
+    ic_arr_full, ic_meta = _resolve_basin_ic(sim, ic, dtype)
 
     if max_samples <= 0:
         raise ValueError("max_samples must be positive")
@@ -1567,6 +1499,10 @@ def basin_auto(
     if mode_use == "ode" and adaptive:
         raise ValueError("basin_auto requires a fixed-step stepper for ODE mode")
 
+    ic_vars_meta = tuple(ic_meta.get("ic_vars", ()))
+    if observe_vars is None and ic_vars_meta:
+        observe_vars = ic_vars_meta
+
     dims: list[int] = []
     if observe_vars is not None:
         obs_len = _seq_len(observe_vars)
@@ -1575,6 +1511,14 @@ def basin_auto(
     grid_len = _seq_len(grid_res)
     if grid_len is not None:
         dims.append(grid_len)
+    ic_bounds_meta = ic_meta.get("ic_bounds")
+    if obs_min is None and ic_bounds_meta is not None:
+        if observe_vars is None or tuple(str(v) for v in observe_vars) == ic_vars_meta:
+            obs_min = [float(bmin) for bmin, _ in ic_bounds_meta]
+    if obs_max is None and ic_bounds_meta is not None:
+        if observe_vars is None or tuple(str(v) for v in observe_vars) == ic_vars_meta:
+            obs_max = [float(bmax) for _, bmax in ic_bounds_meta]
+
     obs_min_len = _seq_len(obs_min)
     if obs_min_len is not None:
         dims.append(obs_min_len)
@@ -1585,6 +1529,10 @@ def basin_auto(
     d = dims[0] if dims else 1
     if any(dim != d for dim in dims):
         raise ValueError("observe_vars, obs_min/obs_max, and grid_res must agree on dimension")
+    if obs_min is None:
+        obs_min = 0.0
+    if obs_max is None:
+        obs_max = 1.0
 
     obs_min_arr = _normalize_dims("obs_min", obs_min, d)
     obs_max_arr = _normalize_dims("obs_max", obs_max, d)
@@ -1610,12 +1558,11 @@ def basin_auto(
 
     n_state = len(sim.model.spec.states)
     n_params = len(sim.model.spec.params)
-    dtype = sim.model.dtype
     session_params = sim.param_vector(source="session", copy=True)
     if params is None:
         params = session_params
     ic_arr, params_arr = _coerce_batch(
-        ic=ic,
+        ic=ic_arr_full,
         params=params,
         n_state=n_state,
         n_params=n_params,
@@ -2047,10 +1994,7 @@ def basin_auto(
             "online_max_cells": int(max_cells),
             "persistence_truncated": bool(persistence_truncated),
         }
-        if ic_grid_meta is not None:
-            meta["ic_grid"] = ic_grid_meta
-        if ic_bounds_meta is not None:
-            meta["ic_bounds"] = ic_bounds_meta
+        meta.update(ic_meta)
 
         return BasinResult(labels=labels, registry=registry, meta=meta)
 
@@ -2274,9 +2218,6 @@ def basin_auto(
         "fingerprint_cap": int(fp_cap),
         "post_detect_samples": int(post_detect_samples),
     }
-    if ic_grid_meta is not None:
-        meta["ic_grid"] = ic_grid_meta
-    if ic_bounds_meta is not None:
-        meta["ic_bounds"] = ic_bounds_meta
+    meta.update(ic_meta)
 
     return BasinResult(labels=labels, registry=registry, meta=meta)

@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import os
 from concurrent.futures import ProcessPoolExecutor
-from typing import Literal, Sequence
+from typing import Literal, Mapping, Sequence
 
 import numpy as np
 
 from dynlib.analysis.basin import (
     Attractor,
+    BasinPoints,
     BasinResult,
     BLOWUP,
     OUTSIDE,
@@ -20,6 +21,7 @@ from dynlib.analysis.basin import (
     _coerce_batch,
     _prepare_record_vars,
     _require_numba,
+    _resolve_basin_ic,
     _resolve_mode,
     njit,
 )
@@ -1708,9 +1710,7 @@ def basin_known(
     sim: Sim,
     attractors: Sequence[FixedPoint | ReferenceRun],
     *,
-    ic: np.ndarray | None = None,
-    ic_grid: Sequence[int] | None = None,
-    ic_bounds: Sequence[tuple[float, float]] | None = None,
+    ic: Mapping[str | int, object] | BasinPoints | None = None,
     params: np.ndarray | None = None,
     mode: Literal["map", "ode", "auto"] = "auto",
     max_samples: int = 1024,
@@ -1754,13 +1754,13 @@ def basin_known(
     attractors : sequence of FixedPoint or ReferenceRun
         List of attractors to identify. Each attractor is defined by either:
         - FixedPoint: a known fixed point with position and optional radius
-        - ReferenceRun: initial conditions to run and capture the attractor trajectory
-    ic : np.ndarray, optional
-        Initial conditions (n_ics x n_states)
-    ic_grid : sequence of int, optional
-        Grid resolution for each dimension
-    ic_bounds : sequence of (min, max) tuples, optional
-        Bounds for each dimension when using ic_grid
+        - ReferenceRun: initial conditions to run and capture the attractor trajectory.
+          ReferenceRun may override transient_samples and signature_samples for
+          reference capture only.
+    ic : mapping or BasinPoints
+        Named initial-condition specification. Use scalars for fixed state
+        variables, basin_axis(...) for uniform swept axes, basin_values(...)
+        for explicit swept axes, or basin_points(...) for custom point clouds.
     params : np.ndarray, optional
         Parameters for each IC
     mode : {'map', 'ode', 'auto'}, default 'auto'
@@ -1769,11 +1769,13 @@ def basin_known(
         Maximum number of steps to simulate for classification
     transient_samples : int, default 0
         Number of initial steps to skip before matching (used for both
-        building attractors and classifying trajectories)
+        building attractors and classifying trajectories, unless overridden by
+        an individual ReferenceRun for reference capture)
     signature_samples : int, default 500
         Number of steps to capture for building attractor signatures.
         Only needed for ReferenceRun attractors. For basins with only
-        FixedPoint attractors, set to 0 to skip signature capture.
+        FixedPoint attractors, set to 0 to skip signature capture. Individual
+        ReferenceRun objects may override this value.
     dt_obs : float, optional
         Observation timestep (required for ODE mode)
     observe_vars : sequence of str or int, optional
@@ -1806,7 +1808,7 @@ def basin_known(
         Enable coarse-to-fine grid refinement. When True, first classifies a
         coarse grid, then refines only the boundary regions at full resolution.
         This can provide 5-20x speedup for basins with large homogeneous regions.
-        Only applies when ic_grid is provided.
+        Only applies when ic uses refinable basin_axis swept variables.
     coarse_factor : int, default 8
         Factor to reduce grid resolution for coarse pass when refine=True.
         A value of 8 means the coarse grid is 1/8 the resolution in each dimension.
@@ -1829,6 +1831,11 @@ def basin_known(
     """
     _require_numba("basin_known")
 
+    if ic is None:
+        raise ValueError("ic must be provided")
+    dtype = sim.model.dtype
+    ic_arr_full, ic_meta = _resolve_basin_ic(sim, ic, dtype)
+
     # Build known attractors library from attractor specs
     known = build_known_attractors_psc(
         sim,
@@ -1841,12 +1848,6 @@ def basin_known(
         signature_samples=signature_samples,
     )
 
-    if ic is None and ic_grid is None:
-        raise ValueError("Either ic or ic_grid must be provided")
-    if ic is not None and ic_grid is not None:
-        raise ValueError("Cannot specify both ic and ic_grid")
-    if ic_grid is not None and ic_bounds is None:
-        raise ValueError("ic_bounds must be provided when using ic_grid")
     if max_samples <= 0:
         raise ValueError("max_samples must be positive")
     if transient_samples < 0:
@@ -1892,7 +1893,6 @@ def basin_known(
 
     n_state = len(sim.model.spec.states)
     n_params = len(sim.model.spec.params)
-    dtype = sim.model.dtype
     if params is None:
         params = sim.param_vector(source="session", copy=True)
 
@@ -1956,24 +1956,13 @@ def basin_known(
         fixed_point_settle_steps=fixed_point_settle_steps,
     )
 
-    # Store grid metadata
-    ic_grid_meta: tuple[int, ...] | None = None
-    ic_bounds_meta: tuple[tuple[float, float], ...] | None = None
+    ic_grid_meta = ic_meta.get("ic_grid")
     refine_used = False
     coarse_points = 0
     fine_points = 0
 
-    if ic_grid is not None:
-        ic_grid_arr = np.asarray(ic_grid, dtype=np.int64)
-        if ic_grid_arr.ndim != 1:
-            raise ValueError("ic_grid must be a 1D sequence")
-        n_dims = len(ic_grid_arr)
-        if len(ic_bounds) != n_dims:
-            raise ValueError(f"ic_bounds must have {n_dims} elements to match ic_grid")
-        
-        fine_shape = tuple(int(x) for x in ic_grid_arr)
-        ic_grid_meta = fine_shape
-        ic_bounds_meta = tuple((float(bmin), float(bmax)) for bmin, bmax in ic_bounds)
+    if ic_grid_meta is not None:
+        fine_shape = tuple(int(x) for x in ic_grid_meta)
         if refine:
             params_arr = np.asarray(params)
             if params_arr.ndim > 1 and params_arr.shape[0] != 1:
@@ -1983,7 +1972,11 @@ def basin_known(
         
         # Check if refinement is worthwhile
         min_coarse_size = max(4, coarse_factor)  # Need at least 4 cells per dimension
-        can_refine = refine and all(n >= min_coarse_size * coarse_factor for n in fine_shape)
+        can_refine = (
+            refine
+            and bool(ic_meta.get("ic_refinable", False))
+            and all(n >= min_coarse_size * coarse_factor for n in fine_shape)
+        )
         
         if can_refine:
             # =========================================================
@@ -2015,7 +2008,7 @@ def basin_known(
             
             # Phase 1: Coarse classification
             coarse_shape = tuple(max(min_coarse_size, n // coarse_factor) for n in fine_shape)
-            coarse_ics = _generate_grid_ics(coarse_shape, ic_bounds_meta, dtype)
+            coarse_ics, _ = _resolve_basin_ic(sim, ic, dtype, grid_shape=coarse_shape)
             
             coarse_ic_arr, coarse_params_arr = _coerce_batch(
                 ic=coarse_ics,
@@ -2073,12 +2066,7 @@ def basin_known(
                     fine_points = int(fine_indices.size)
 
                     if fine_points > 0:
-                        fine_ics = _grid_points_from_flat_indices(
-                            fine_indices,
-                            fine_shape,
-                            ic_bounds_meta,
-                            dtype,
-                        )
+                        fine_ics, _ = _resolve_basin_ic(sim, ic, dtype, flat_indices=fine_indices)
 
                         fine_ic_arr, fine_params_arr = _coerce_batch(
                             ic=fine_ics,
@@ -2127,12 +2115,7 @@ def basin_known(
                 fine_points = int(fine_indices.size)
 
                 if fine_points > 0:
-                    fine_ics = _grid_points_from_flat_indices(
-                        fine_indices,
-                        fine_shape,
-                        ic_bounds_meta,
-                        dtype,
-                    )
+                    fine_ics, _ = _resolve_basin_ic(sim, ic, dtype, flat_indices=fine_indices)
 
                     fine_ic_arr, fine_params_arr = _coerce_batch(
                         ic=fine_ics,
@@ -2155,9 +2138,8 @@ def basin_known(
                     labels[fine_indices] = fine_labels
         else:
             # No refinement - classify full grid
-            ic = _generate_grid_ics(fine_shape, ic_bounds_meta, dtype)
             ic_arr, params_arr = _coerce_batch(
-                ic=ic,
+                ic=ic_arr_full,
                 params=params,
                 n_state=n_state,
                 n_params=n_params,
@@ -2165,9 +2147,9 @@ def basin_known(
             )
             labels = _classify_batch_core(sim, ic_arr, params_arr, **classify_kwargs)
     else:
-        # Direct IC array provided - no refinement possible
+        # Point cloud or single IC spec provided - no refinement possible
         ic_arr, params_arr = _coerce_batch(
-            ic=ic,
+            ic=ic_arr_full,
             params=params,
             n_state=n_state,
             n_params=n_params,
@@ -2193,10 +2175,7 @@ def basin_known(
         "min_match_ratio": float(min_match_ratio),
         "batch_size": int(batch_size_use),
     }
-    if ic_grid_meta is not None:
-        meta["ic_grid"] = ic_grid_meta
-    if ic_bounds_meta is not None:
-        meta["ic_bounds"] = ic_bounds_meta
+    meta.update(ic_meta)
     if refine_used:
         meta["refine"] = True
         meta["coarse_factor"] = int(coarse_factor)

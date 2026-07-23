@@ -8,10 +8,8 @@ provided beforehand.
 
 from __future__ import annotations
 
-import numpy as np
-
 from dynlib import setup
-from dynlib.analysis import basin_known, print_basin_summary, ReferenceRun
+from dynlib.analysis import basin_known, basin_axis, print_basin_summary, ReferenceRun
 from dynlib.plot import export, theme, fig, basin_plot
 from dynlib.utils import Timer
 
@@ -50,8 +48,10 @@ with Timer("basin_known computation"):
         attractors=[
             ReferenceRun(name="Henon attractor", ic=[0.1, 0.1]),
         ],
-        ic_grid=[grid_nx, grid_ny],
-        ic_bounds=[(x_min, x_max), (y_min, y_max)],
+        ic={
+            "x": basin_axis(x_min, x_max, n=grid_nx),
+            "y": basin_axis(y_min, y_max, n=grid_ny),
+        },
         max_samples=500,
         transient_samples=200,
         signature_samples=500,

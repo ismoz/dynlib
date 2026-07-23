@@ -5,7 +5,7 @@ two fixed point attractors at +1 and -1.
 This example uses basin_known analysis utility.
 """
 from dynlib import setup
-from dynlib.analysis import basin_known, FixedPoint
+from dynlib.analysis import basin_known, basin_axis, FixedPoint
 from dynlib.plot import export, basin_plot
 from dynlib.utils import Timer
 
@@ -19,8 +19,10 @@ with Timer("Calculation time"):
         # this should be small but the sim will take longer to classify.
         attractors=[FixedPoint(name="+1", loc=[1.0, 0.0], radius=0.3), 
                     FixedPoint(name="-1", loc=[-1.0, 0.0], radius=0.3)],
-        ic_grid=[300, 300],
-        ic_bounds=[(-1.5, 1.5), (-1.5, 1.5)],
+        ic={
+            "x": basin_axis(-1.5, 1.5, n=300),
+            "y": basin_axis(-1.5, 1.5, n=300),
+        },
         # For damped, unforced Duffing the true attractors are fixed points.
         # Make recurrence detection trigger only very close to the attractor.
         dt_obs=0.01,

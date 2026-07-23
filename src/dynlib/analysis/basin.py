@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal, Mapping, Sequence
 import warnings
 import numpy as np
 
@@ -33,9 +33,15 @@ __all__ = [
     "UNRESOLVED",
     "Attractor",
     "BasinResult",
+    "BasinAxis",
+    "BasinValues",
+    "BasinPoints",
     "FixedPoint",
     "ReferenceRun",
     "KnownAttractorLibrary",
+    "basin_axis",
+    "basin_values",
+    "basin_points",
     "build_known_attractors_psc",
 ]
 
@@ -55,6 +61,25 @@ class BasinResult:
 
 
 @dataclass(frozen=True)
+class BasinAxis:
+    min: float
+    max: float
+    n: int
+    sample: Literal["edge", "center"] = "edge"
+
+
+@dataclass(frozen=True)
+class BasinValues:
+    values: Sequence[float]
+
+
+@dataclass(frozen=True)
+class BasinPoints:
+    points: Sequence[Sequence[float]] | np.ndarray
+    vars: Sequence[str | int]
+
+
+@dataclass(frozen=True)
 class FixedPoint:
     name: str
     loc: Sequence[float]
@@ -66,6 +91,8 @@ class ReferenceRun:
     name: str
     ic: Sequence[float] | np.ndarray
     params: Sequence[float] | np.ndarray | None = None
+    transient_samples: int | None = None
+    signature_samples: int | None = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +120,239 @@ class KnownAttractorLibrary:
 def _require_numba(who: str) -> None:
     if not _NUMBA_AVAILABLE or njit is None:
         raise JITUnavailableError(f"{who} requires numba for nopython execution")
+
+
+def basin_axis(
+    min: float,
+    max: float,
+    *,
+    n: int,
+    sample: Literal["edge", "center"] = "edge",
+) -> BasinAxis:
+    """Describe a uniformly sampled basin initial-condition axis."""
+    n_int = int(n)
+    if n_int <= 0:
+        raise ValueError("n must be positive")
+    if sample not in ("edge", "center"):
+        raise ValueError("sample must be 'edge' or 'center'")
+    min_f = float(min)
+    max_f = float(max)
+    if max_f <= min_f:
+        raise ValueError("max must be greater than min")
+    return BasinAxis(min=min_f, max=max_f, n=n_int, sample=sample)
+
+
+def basin_values(values: Sequence[float]) -> BasinValues:
+    """Describe an explicit basin initial-condition axis."""
+    arr = np.asarray(values, dtype=np.float64)
+    if arr.ndim != 1 or arr.size == 0:
+        raise ValueError("values must be a non-empty 1D sequence")
+    return BasinValues(values=tuple(float(x) for x in arr.tolist()))
+
+
+def basin_points(
+    points: Sequence[Sequence[float]] | np.ndarray,
+    *,
+    vars: Sequence[str | int],
+) -> BasinPoints:
+    """Describe an advanced point cloud with named columns."""
+    if not vars:
+        raise ValueError("vars must be non-empty")
+    return BasinPoints(points=points, vars=tuple(vars))
+
+
+def _state_index_map(sim: Sim) -> tuple[list[str], dict[str, int]]:
+    state_names = list(sim.model.spec.states)
+    return state_names, {name: idx for idx, name in enumerate(state_names)}
+
+
+def _resolve_state_name(
+    item: str | int,
+    *,
+    state_names: Sequence[str],
+) -> str:
+    if isinstance(item, (int, np.integer)):
+        idx = int(item)
+        if idx < 0 or idx >= len(state_names):
+            raise ValueError(f"state index {idx} out of range")
+        return state_names[idx]
+    name = str(item)
+    if name not in state_names:
+        raise ValueError(f"Unknown state variable '{name}'")
+    return name
+
+
+def _axis_values(spec: BasinAxis | BasinValues, *, n_override: int | None = None) -> np.ndarray:
+    if isinstance(spec, BasinAxis):
+        n = int(spec.n if n_override is None else n_override)
+        if n <= 0:
+            raise ValueError("axis resolution must be positive")
+        if spec.sample == "center":
+            step = (float(spec.max) - float(spec.min)) / float(n)
+            return float(spec.min) + (np.arange(n, dtype=np.float64) + 0.5) * step
+        return np.linspace(float(spec.min), float(spec.max), n, dtype=np.float64)
+    arr = np.asarray(spec.values, dtype=np.float64)
+    if arr.ndim != 1 or arr.size == 0:
+        raise ValueError("basin_values axes must be non-empty 1D sequences")
+    return arr
+
+
+def _default_ic_vector(sim: Sim, dtype: np.dtype) -> np.ndarray:
+    return np.asarray(sim.model.spec.state_ic, dtype=dtype)
+
+
+def _resolve_basin_points(
+    sim: Sim,
+    spec: BasinPoints,
+    dtype: np.dtype,
+) -> tuple[np.ndarray, dict[str, object]]:
+    state_names, state_to_idx = _state_index_map(sim)
+    var_names = tuple(_resolve_state_name(item, state_names=state_names) for item in spec.vars)
+    if len(set(var_names)) != len(var_names):
+        raise ValueError("basin_points vars must be unique")
+
+    points = np.asarray(spec.points, dtype=dtype)
+    if points.ndim == 1:
+        points = points[None, :]
+    if points.ndim != 2 or points.shape[0] == 0:
+        raise ValueError("basin_points points must be a non-empty 2D array")
+    if points.shape[1] != len(var_names):
+        raise ValueError(
+            f"basin_points expected {len(var_names)} columns for vars={list(var_names)}, "
+            f"got {points.shape[1]}"
+        )
+
+    base = _default_ic_vector(sim, dtype)
+    ic_arr = np.repeat(base[None, :], points.shape[0], axis=0)
+    for col, name in enumerate(var_names):
+        ic_arr[:, state_to_idx[name]] = points[:, col]
+
+    meta = {
+        "ic_kind": "points",
+        "ic_vars": var_names,
+        "ic_fixed": {
+            name: float(base[idx])
+            for idx, name in enumerate(state_names)
+            if name not in var_names
+        },
+    }
+    return np.ascontiguousarray(ic_arr, dtype=dtype), meta
+
+
+def _resolve_basin_ic(
+    sim: Sim,
+    ic: Mapping[str | int, object] | BasinPoints,
+    dtype: np.dtype,
+    *,
+    grid_shape: Sequence[int] | None = None,
+    flat_indices: np.ndarray | None = None,
+) -> tuple[np.ndarray, dict[str, object]]:
+    """Resolve named basin IC specs into full state arrays plus plotting metadata."""
+    if isinstance(ic, BasinPoints):
+        if grid_shape is not None or flat_indices is not None:
+            raise ValueError("basin_points cannot be used with grid refinement")
+        return _resolve_basin_points(sim, ic, dtype)
+
+    if isinstance(ic, np.ndarray):
+        raise TypeError("raw IC arrays are no longer accepted; use basin_points(array, vars=[...])")
+    if not isinstance(ic, Mapping) or not ic:
+        raise TypeError("ic must be a non-empty mapping of state names to basin specs")
+
+    state_names, state_to_idx = _state_index_map(sim)
+    base = _default_ic_vector(sim, dtype)
+    fixed = base.astype(np.float64, copy=True)
+    fixed_overrides: dict[str, float] = {}
+    axis_names: list[str] = []
+    axis_specs: list[BasinAxis | BasinValues] = []
+
+    seen: set[str] = set()
+    for key, value in ic.items():
+        name = _resolve_state_name(key, state_names=state_names)
+        if name in seen:
+            raise ValueError(f"Duplicate state variable '{name}' in ic")
+        seen.add(name)
+        if isinstance(value, (BasinAxis, BasinValues)):
+            axis_names.append(name)
+            axis_specs.append(value)
+            continue
+        if isinstance(value, (str, bytes)):
+            raise TypeError(f"ic value for '{name}' must be a scalar, basin_axis, or basin_values")
+        try:
+            scalar = float(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError) as exc:
+            raise TypeError(f"ic value for '{name}' must be a scalar, basin_axis, or basin_values") from exc
+        fixed[state_to_idx[name]] = scalar
+        fixed_overrides[name] = scalar
+
+    if not axis_names:
+        if flat_indices is not None or grid_shape is not None:
+            raise ValueError("refinement requires at least one swept basin_axis")
+        return fixed.astype(dtype, copy=False)[None, :], {
+            "ic_kind": "single",
+            "ic_vars": (),
+            "ic_fixed": {name: float(fixed[idx]) for idx, name in enumerate(state_names)},
+        }
+
+    if grid_shape is not None:
+        if len(grid_shape) != len(axis_specs):
+            raise ValueError("grid_shape length must match the number of swept IC axes")
+        if any(not isinstance(spec, BasinAxis) for spec in axis_specs):
+            raise ValueError("refinement only supports basin_axis IC axes")
+
+    axes: list[np.ndarray] = []
+    for idx, spec in enumerate(axis_specs):
+        n_override = None if grid_shape is None else int(grid_shape[idx])
+        axes.append(_axis_values(spec, n_override=n_override))
+
+    shape = tuple(int(axis.size) for axis in axes)
+    if any(n <= 0 for n in shape):
+        raise ValueError("IC axes must be non-empty")
+
+    if flat_indices is None:
+        mesh = np.meshgrid(*axes, indexing="ij")
+        point_count = int(np.prod(shape))
+        ic_arr = np.repeat(fixed.astype(dtype, copy=False)[None, :], point_count, axis=0)
+        for name, grid in zip(axis_names, mesh):
+            ic_arr[:, state_to_idx[name]] = grid.ravel(order="C").astype(dtype, copy=False)
+    else:
+        flat = np.asarray(flat_indices, dtype=np.int64)
+        if flat.ndim != 1:
+            raise ValueError("flat_indices must be a 1D array")
+        if flat.size and (np.any(flat < 0) or np.any(flat >= int(np.prod(shape)))):
+            raise ValueError("flat_indices contains values outside the IC grid")
+        coords = np.unravel_index(flat, shape)
+        ic_arr = np.repeat(fixed.astype(dtype, copy=False)[None, :], flat.size, axis=0)
+        for dim, name in enumerate(axis_names):
+            ic_arr[:, state_to_idx[name]] = axes[dim][coords[dim]].astype(dtype, copy=False)
+
+    bounds: list[tuple[float, float]] = []
+    axis_values_meta: list[tuple[float, ...]] = []
+    axis_samples: list[str] = []
+    refinable = True
+    for axis, spec in zip(axes, axis_specs):
+        bounds.append((float(np.min(axis)), float(np.max(axis))))
+        axis_values_meta.append(tuple(float(x) for x in axis.tolist()))
+        if isinstance(spec, BasinAxis):
+            axis_samples.append(spec.sample)
+        else:
+            axis_samples.append("values")
+            refinable = False
+
+    meta = {
+        "ic_kind": "grid",
+        "ic_grid": shape,
+        "ic_bounds": tuple(bounds),
+        "ic_vars": tuple(axis_names),
+        "ic_axis_values": tuple(axis_values_meta),
+        "ic_axis_sample": tuple(axis_samples),
+        "ic_fixed": {
+            name: float(fixed[idx])
+            for idx, name in enumerate(state_names)
+            if name not in axis_names or name in fixed_overrides
+        },
+        "ic_refinable": refinable,
+    }
+    return np.ascontiguousarray(ic_arr, dtype=dtype), meta
 
 
 def _resolve_mode(
@@ -245,19 +505,14 @@ def build_known_attractors_psc(
     
     Note: signature_samples can be 0 if all attractors are FixedPoints (no
     trajectory capture needed). For ReferenceRun attractors, signature_samples
-    must be positive to capture the attractor signature.
+    must be positive to capture the attractor signature. Individual ReferenceRun
+    objects may override transient_samples and signature_samples.
     """
     if not attractor_specs:
         raise ValueError("attractor_specs must be non-empty")
     if transient_samples < 0:
         raise ValueError("transient_samples must be non-negative")
     
-    # Check if we have any ReferenceRun attractors that need signature capture
-    has_reference_runs = any(isinstance(spec, ReferenceRun) for spec in attractor_specs)
-    if has_reference_runs and signature_samples <= 0:
-        raise ValueError("signature_samples must be positive when using ReferenceRun attractors")
-    # For fixed-point-only basins, signature_samples=0 is valid
-
     mode_use = _resolve_mode(mode=mode, sim=sim)
     adaptive = getattr(sim._stepper_spec.meta, "time_control", "fixed") == "adaptive"
     if mode_use == "ode" and adaptive:
@@ -299,15 +554,6 @@ def build_known_attractors_psc(
     if mode_use == "ode" and dt_obs is None:
         raise ValueError("dt_obs required for ODE mode")
     
-    t0 = float(sim.model.spec.sim.t0)
-    max_steps = int(transient_samples + signature_samples + 1)
-    if mode_use == "ode":
-        T = t0 + float(max_steps) * dt_use
-        N = None
-    else:
-        T = None
-        N = int(max_steps)
-    
     # Record every step for signature capture
     record_stride = 1
     plan = FixedStridePlan(stride=record_stride)
@@ -338,6 +584,7 @@ def build_known_attractors_psc(
     names: list[str] = []
     all_points: list[np.ndarray] = []
     attractor_radii: list[np.ndarray | None] = []
+    reference_timing: list[dict[str, int] | None] = []
     
     for idx, spec in enumerate(attractor_specs):
         name = getattr(spec, "name", f"attr_{idx}")
@@ -358,8 +605,40 @@ def build_known_attractors_psc(
             else:
                 radius_arr = np.full(d, float(spec.radius), dtype=dtype)
                 attractor_radii.append(radius_arr)
+            reference_timing.append(None)
             continue
         elif isinstance(spec, ReferenceRun):
+            ref_transient_samples = (
+                int(spec.transient_samples)
+                if spec.transient_samples is not None
+                else int(transient_samples)
+            )
+            ref_signature_samples = (
+                int(spec.signature_samples)
+                if spec.signature_samples is not None
+                else int(signature_samples)
+            )
+            if ref_transient_samples < 0:
+                raise ValueError(f"ReferenceRun '{name}' transient_samples must be non-negative")
+            if ref_signature_samples <= 0:
+                raise ValueError(f"ReferenceRun '{name}' signature_samples must be positive")
+
+            t0 = float(sim.model.spec.sim.t0)
+            max_steps = int(ref_transient_samples + ref_signature_samples + 1)
+            if mode_use == "ode":
+                T = t0 + float(max_steps) * dt_use
+                N = None
+            else:
+                T = None
+                N = int(max_steps)
+            reference_timing.append(
+                {
+                    "transient_samples": int(ref_transient_samples),
+                    "signature_samples": int(ref_signature_samples),
+                    "max_steps": int(max_steps),
+                }
+            )
+
             # Run the trajectory and record it
             ic_arr, params_arr = _coerce_batch(
                 ic=np.asarray(spec.ic, dtype=dtype),
@@ -447,7 +726,7 @@ def build_known_attractors_psc(
                 continue
             
             # Extract trajectory after transient
-            traj = traj_full[transient_samples:, :]  # Skip transient  
+            traj = traj_full[ref_transient_samples:, :]  # Skip transient
             if traj.shape[0] == 0:
                 warnings.warn(f"Transient too long for '{name}'", RuntimeWarning)
                 trajectories.append(np.zeros((0, d), dtype=dtype))
@@ -481,6 +760,7 @@ def build_known_attractors_psc(
         "dt_obs": float(dt_use),
         "transient_samples": int(transient_samples),
         "signature_samples": int(signature_samples),
+        "reference_timing": tuple(reference_timing),
     }
 
     return KnownAttractorLibrary(
@@ -494,5 +774,3 @@ def build_known_attractors_psc(
         attractor_radii=attractor_radii,
         meta=meta,
     )
-
-

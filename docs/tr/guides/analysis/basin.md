@@ -37,9 +37,10 @@ Aşağıdaki isimler **API’deki anahtarlar**dır; aynen kullanın:
 - `attractors: Sequence[FixedPoint | ReferenceRun]`  
   Bilinen çekiciler listesi.
 
-- `ic` **veya** `ic_grid`  
-  - `ic: np.ndarray`: Doğrudan IC matrisi (`(n_points, n_states)`).
-  - `ic_grid: Sequence[int]` + `ic_bounds: Sequence[(min,max)]`: IC ızgarası üretir.
+- `ic`  
+  İsimlendirilmiş başlangıç koşulu tanımı. Sabit değişkenler için skaler değer,
+  taranan eksenler için `basin_axis(...)`, açık değer listeleri için
+  `basin_values(...)`, gelişmiş nokta bulutları için `basin_points(...)` kullanılır.
 
 - `observe_vars: Sequence[str|int] | None`  
   Eşleştirme/kuantalama için gözlenen durum değişkenleri. `None` ise varsayılan seçim kullanılır.
@@ -85,26 +86,21 @@ Aşağıdaki isimler **API’deki anahtarlar**dır; aynen kullanın:
 ### Kısa örnek
 
 ```python
-from dynlib.runtime.sim import Sim
-from dynlib.analysis.basin import FixedPoint, ReferenceRun
-from dynlib.analysis.basin_known import basin_known
-import numpy as np
-
-# IC grid
-ic_grid = [400, 400]
-ic_bounds = [(-2.0, 2.0), (-2.0, 2.0)]
+from dynlib.analysis import basin_axis, basin_known, FixedPoint, ReferenceRun
 
 # Bilinen çekiciler (örnek)
 attractors = [
-    FixedPoint(label="fp0", ic=[0.0, 0.0], radius=1e-3),
-    ReferenceRun(label="attr1", ic=[0.1, 0.1]),
+    FixedPoint(name="fp0", loc=[0.0, 0.0], radius=1e-3),
+    ReferenceRun(name="attr1", ic=[0.1, 0.1], transient_samples=500, signature_samples=2000),
 ]
 
 result = basin_known(
     sim,
     attractors,
-    ic_grid=ic_grid,
-    ic_bounds=ic_bounds,
+    ic={
+        "x": basin_axis(-2.0, 2.0, n=400),
+        "y": basin_axis(-2.0, 2.0, n=400),
+    },
     mode="map",
     max_samples=2000,
     transient_samples=200,
@@ -113,7 +109,6 @@ result = basin_known(
     coarse_factor=8,
     boundary_dilation=1,
 )
-labels_2d = result.labels.reshape(*ic_grid)
 ```
 
 
@@ -135,14 +130,15 @@ labels_2d = result.labels.reshape(*ic_grid)
 
 ### Parametreler (özet)
 
-- `ic` **veya** `ic_grid` (+ `ic_bounds`)  
-  IC’leri doğrudan verin ya da uniform grid üretin.
+- `ic`  
+  İsimlendirilmiş IC tanımı. `basin_axis(...)` ile uniform grid, `basin_values(...)`
+  ile açık eksen değerleri, `basin_points(...)` ile özel nokta bulutları verilir.
 
 - `observe_vars`  
   Gözlem uzayı değişkenleri (isim veya indeks). Boyut `d`, `grid_res/obs_min/obs_max` ile uyumlu olmalıdır.
 
 - `obs_min`, `obs_max`  
-  Gözlem uzayının alt/üst sınırları. `None` ise `ic_bounds`’tan türetilebilir.
+  Gözlem uzayının alt/üst sınırları. `None` ise uyumlu isimlendirilmiş IC eksenlerinden türetilebilir.
 
 - `grid_res`  
   Her gözlem boyutu için hücre sayısı. Toplam hücre sayısı `product(grid_res)`.
@@ -195,13 +191,14 @@ labels_2d = result.labels.reshape(*ic_grid)
 ### Kısa örnek
 
 ```python
-from dynlib.analysis.basin_auto import basin_auto
-import numpy as np
+from dynlib.analysis import basin_auto, basin_axis
 
 result = basin_auto(
     sim,
-    ic_grid=[300, 300],
-    ic_bounds=[(-2.0, 2.0), (-2.0, 2.0)],
+    ic={
+        "x": basin_axis(-2.0, 2.0, n=300),
+        "y": basin_axis(-2.0, 2.0, n=300),
+    },
     mode="map",
     observe_vars=("x", "y"),
     obs_min=[-2.0, -2.0],
@@ -215,8 +212,6 @@ result = basin_auto(
     p_in=8,
     online=True,
 )
-
-labels_2d = result.labels.reshape(300, 300)
 ```
 
 ### Ayar önerileri (pratik)

@@ -80,11 +80,22 @@ def _resolve_xy(
     labels: np.ndarray,
     *,
     bounds: Sequence[tuple[float, float]] | None,
+    axis_values: Sequence[Sequence[float]] | None,
     x: np.ndarray | None,
     y: np.ndarray | None,
 ) -> tuple[np.ndarray, np.ndarray]:
     ny, nx = labels.shape
     if x is None and y is None:
+        if axis_values is not None:
+            if len(axis_values) != 2:
+                raise ValueError("axis_values must be a length-2 sequence for 2D basin plots.")
+            x_vals = np.asarray(axis_values[0], dtype=float)
+            y_vals = np.asarray(axis_values[1], dtype=float)
+            if x_vals.ndim != 1 or y_vals.ndim != 1:
+                raise ValueError("axis_values entries must be 1D arrays.")
+            if x_vals.size != nx or y_vals.size != ny:
+                raise ValueError("axis_values lengths must match labels shape.")
+            return x_vals, y_vals
         if bounds is None:
             x_vals = np.arange(nx, dtype=float)
             y_vals = np.arange(ny, dtype=float)
@@ -186,11 +197,11 @@ def basin_plot(
     res : BasinResult or array-like
         BasinResult returned by ``analysis.basin_auto`` or raw labels array.
     grid : Sequence[int] | int, optional
-        ``ic_grid`` used in basin_auto (nx, ny). Required for 1D labels
-        unless present in ``res.meta['ic_grid']``.
+        Grid shape (nx, ny). Required for 1D labels unless present in
+        ``res.meta['ic_grid']``.
     bounds : Sequence[tuple[float, float]], optional
-        ``ic_bounds`` used for the IC grid. When provided, sets the axis scale,
-        and defaults from ``res.meta['ic_bounds']`` when available.
+        Axis bounds for the IC grid. Exact ``res.meta['ic_axis_values']`` are
+        preferred when available; otherwise bounds set the axis scale.
     labels : np.ndarray, optional
         Override labels to plot (useful when res is not a BasinResult).
     x, y : np.ndarray, optional
@@ -203,7 +214,8 @@ def basin_plot(
         meta_bounds = meta.get("ic_bounds")
         if meta_bounds is not None:
             bounds = meta_bounds
-    x_vals, y_vals = _resolve_xy(labels_arr, bounds=bounds, x=x, y=y)
+    axis_values = None if x is not None or y is not None else meta.get("ic_axis_values")
+    x_vals, y_vals = _resolve_xy(labels_arr, bounds=bounds, axis_values=axis_values, x=x, y=y)
     attr_ids = _resolve_attractor_ids(res, labels_arr)
 
     special_order = list(special_order) if special_order is not None else [BLOWUP, OUTSIDE, UNRESOLVED]
@@ -301,6 +313,14 @@ def basin_plot(
                 label_kwargs["labelpad"] = float(colorbar_labelpad)
             cbar.set_label(colorbar_label, **label_kwargs)
         setattr(plot_ax, "_last_colorbar", cbar)
+
+    if (xlabel is None or ylabel is None) and isinstance(meta.get("ic_vars"), (list, tuple)):
+        ic_vars = meta.get("ic_vars")
+        if ic_vars:
+            if xlabel is None:
+                xlabel = str(ic_vars[0])
+            if ylabel is None and len(ic_vars) > 1:
+                ylabel = str(ic_vars[1])
 
     if xlabel is None and isinstance(meta.get("observe_vars"), (list, tuple)):
         obs = meta.get("observe_vars")

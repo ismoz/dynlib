@@ -11,7 +11,7 @@ import time
 import numpy as np
 
 from dynlib import setup
-from dynlib.analysis import basin_known, ReferenceRun
+from dynlib.analysis import basin_known, basin_axis, ReferenceRun
 
 # Setup Henon map model
 print("Setting up Henon map model...")
@@ -33,7 +33,6 @@ y_min, y_max = -2.5, 2.5
 attractors = [
     ReferenceRun(name="Henon attractor", ic=[0.1, 0.1]),
 ]
-ic_bounds = [(x_min, x_max), (y_min, y_max)]
 max_samples = 500
 transient_samples = 200
 signature_samples = 500
@@ -57,8 +56,10 @@ print("-" * (grid_width + time_width * 2 + match_width + 9))
 basin_known(
     sim,
     attractors=attractors,
-    ic_grid=[grid_sizes[0], grid_sizes[0]],
-    ic_bounds=ic_bounds,
+    ic={
+        "x": basin_axis(x_min, x_max, n=grid_sizes[0]),
+        "y": basin_axis(y_min, y_max, n=grid_sizes[0]),
+    },
     max_samples=max_samples,
     transient_samples=transient_samples,
     signature_samples=signature_samples,
@@ -71,15 +72,17 @@ basin_known(
 )
 
 for size in grid_sizes:
-    ic_grid = [size, size]
+    ic = {
+        "x": basin_axis(x_min, x_max, n=size),
+        "y": basin_axis(y_min, y_max, n=size),
+    }
     
     # Measure refine=False
     start_time = time.perf_counter()
     result_false = basin_known(
         sim,
         attractors=attractors,
-        ic_grid=ic_grid,
-        ic_bounds=ic_bounds,
+        ic=ic,
         max_samples=max_samples,
         transient_samples=transient_samples,
         signature_samples=signature_samples,
@@ -97,8 +100,7 @@ for size in grid_sizes:
     result_true = basin_known(
         sim,
         attractors=attractors,
-        ic_grid=ic_grid,
-        ic_bounds=ic_bounds,
+        ic=ic,
         max_samples=max_samples,
         transient_samples=transient_samples,
         signature_samples=signature_samples,

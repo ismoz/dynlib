@@ -13,17 +13,23 @@ Her ızgara hücresi, analiz sırasında tanımlanan bir başlangıç koşuluna 
 
 ## Verilerinizi hazırlama
 
-`analysis.basin_auto()` (veya `analysis.basin_known()`) tarafından döndürülen `BasinResult` nesnesini doğrudan `basin_plot()` fonksiyonuna iletin. Yardımcı araç, kategorik ızgara için `res.labels` verisini okur ve ızgara boyutlarını (`ic_grid`), sınırları (`ic_bounds`), gözlemlenen değişkenleri (`observe_vars`) ve çeker meta verilerini (`attractor_labels`/`attractor_names`) çıkarmak için `res.meta` verisini kullanır.
+`analysis.basin_auto()` (veya `analysis.basin_known()`) tarafından döndürülen `BasinResult` nesnesini doğrudan `basin_plot()` fonksiyonuna iletin. Yardımcı araç, kategorik ızgara için `res.labels` verisini okur ve ızgara boyutlarını, açık eksen değerlerini, taranan değişken adlarını ve çeker meta verilerini (`attractor_labels`/`attractor_names`) çıkarmak için `res.meta` verisini kullanır.
 
 Etiketleri kendiniz hesapladıysanız, bunları `labels=` ile iletin; 1D diziler, yardımcının 2D'ye yeniden şekillendirebilmesi için `grid=(nx, ny)` şeklini gerektirirken, önceden şekillendirilmiş 2D diziler doğrudan sağlanabilir. Alternatif olarak, etiket dizisiyle eşleşen açık `x` ve `y` koordinatlarını sağlayın.
 
 ```python
 from dynlib import setup
-from dynlib.analysis import basin_auto
+from dynlib.analysis import basin_auto, basin_axis
 from dynlib.plot import basin_plot
 
 sim = setup("models/henon.map", stepper="map")
-res = basin_auto(sim, ic_grid=[256, 256], ic_bounds=[(-2, 2), (-2, 2)])
+res = basin_auto(
+    sim,
+    ic={
+        "x": basin_axis(-2, 2, n=256),
+        "y": basin_axis(-2, 2, n=256),
+    },
+)
 basin_plot(res)
 ```
 
@@ -54,8 +60,8 @@ basin_plot(
 
 Eksen sınırları, etiketler ve tik (işaret) stillendirmesi olağan `plot` yardımcıları tarafından yönetilir:
 
-- `bounds` veya `res.meta["ic_bounds"]`, başlangıç koşulları oluşturulurken kullanılan `(x_min, x_max)`/`(y_min, y_max)` aralıklarını belirtir. Eğer `x` ve `y` dizilerini sağlarsanız, `bounds` yok sayılır.
-- `xlabel`, `ylabel` ve `title`, `matplotlib.axes.Axes` etiketleri gibi davranır. Sonuç meta verileri `observe_vars` içeriyorsa, bunları geçersiz kılmadığınız sürece bu isimler otomatik olarak `xlabel`/`ylabel` alanlarını doldurur.
+- `res.meta["ic_axis_values"]` varsa eksen koordinatları otomatik olarak buradan alınır. `bounds` veya `res.meta["ic_bounds"]` yedek ölçek bilgisidir. Eğer `x` ve `y` dizilerini sağlarsanız, metadata sınırları yok sayılır.
+- `xlabel`, `ylabel` ve `title`, `matplotlib.axes.Axes` etiketleri gibi davranır. Sonuç meta verileri `ic_vars` içeriyorsa, bunları geçersiz kılmadığınız sürece bu isimler otomatik olarak `xlabel`/`ylabel` alanlarını doldurur.
 - `xlim`, `ylim`, `aspect`, `xlabel_fs`, `ylabel_fs`, `xtick_fs`, `ytick_fs`, `xlabel_rot`, `ylabel_rot`, `title_fs`, `titlepad`, `xpad` ve `ypad`, görünümü ince ayar yapmanıza olanak tanır.
 - Yardımcı, mevcut bir `ax=` parametresini kabul eder, böylece havza haritasını `plot.fig()`/`plot.theme()` veya doğrudan Matplotlib tarafından üretilen çok panelli bir şekle yerleştirebilirsiniz.
 
@@ -73,7 +79,7 @@ Renk çubuğunu kaldırmak için `colorbar=False` olarak ayarlayın. Aksi takdir
 ## İpuçları
 
 - Yalnızca düzleştirilmiş etiketler iletirken `grid` parametresini sağlayın; yardımcı, `pcolormesh` için bunları `(ny, nx)` şeklinde nasıl yeniden boyutlandıracağını bilmelidir.
-- `res.meta["ic_grid"]` ve `res.meta["ic_bounds"]` genellikle analiz rutinleri tarafından doldurulur, bu nedenle çizim yaparken bunları nadiren tekrar etmeniz gerekir.
+- İsimlendirilmiş IC metadatası analiz rutinleri tarafından doldurulur, bu nedenle çizim yaparken grid, koordinat veya etiket bilgisini nadiren tekrar etmeniz gerekir.
 - Çok parametreli bir sonucun farklı bir dilimini görselleştirmek için, `basin_plot()` çağrısından önce etiket dizisini dilimleyin ve `bounds` değerini buna göre güncelleyin (yardımcı, çok boyutlu dilimleri otomatik olarak yeniden şekillendirmez).
 - Kimlikler yerine çeker adlarını vurgulamak istiyorsanız, her zaman `attractor_labels` sağlayın; böylece çeker kayıt defterinizin sırasına bakılmaksızın renk çubuğu tikleri net bir şekilde okunur.
 

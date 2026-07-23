@@ -9,9 +9,8 @@ depends on the choice of parameters and the nature of the dynamical system.
 """
 
 from __future__ import annotations
-import numpy as np
 from dynlib import setup
-from dynlib.analysis import basin_auto, print_basin_summary
+from dynlib.analysis import basin_auto, basin_axis, print_basin_summary
 from dynlib.plot import export, theme, fig, basin_plot
 from dynlib.utils import Timer
 
@@ -48,8 +47,10 @@ print(f"  Domain: x ∈ [{x_min}, {x_max}], y ∈ [{y_min}, {y_max}]")
 with Timer("Basin computation time"):
     result = basin_auto(
         sim,
-        ic_grid=[grid_nx, grid_ny],
-        ic_bounds=[(x_min, x_max), (y_min, y_max)],
+        ic={
+            "x": basin_axis(x_min, x_max, n=grid_nx),
+            "y": basin_axis(y_min, y_max, n=grid_ny),
+        },
         observe_vars=["x", "y"],  # Use both state variables
         grid_res=[128, 128],  # Cell resolution for recurrence detection
         merge_downsample=4,

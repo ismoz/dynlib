@@ -1,5 +1,5 @@
 from dynlib import setup
-from dynlib.analysis import basin_auto
+from dynlib.analysis import basin_auto, basin_axis
 from dynlib.plot import export, basin_plot, fig, phase
 
 # Energy Template Oscillator (ETO) with Circular L Curve
@@ -9,8 +9,10 @@ sim.assign(mu=0.8, a=2.0)
 
 results = basin_auto(
     sim,
-    ic_grid=[128, 128],
-    ic_bounds=[(-3, 3), (-3, 3)],
+    ic={
+        "x": basin_axis(-3, 3, n=128),
+        "y": basin_axis(-3, 3, n=128),
+    },
     dt_obs=0.01,
     # run long enough to converge + see the cycle
     max_samples=4000,          # 40 time units
