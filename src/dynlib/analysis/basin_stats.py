@@ -79,6 +79,46 @@ def _infer_ic_bounds(meta: dict[str, object]) -> tuple[tuple[float, float], ...]
         return None
 
 
+def _format_number(x: float) -> str:
+    return f"{float(x):.6g}"
+
+
+def _format_ic_axis_values(meta: dict[str, object]) -> list[str]:
+    axis_values = meta.get("ic_axis_values")
+    if axis_values is None:
+        return ["  ic_axis_values: None"]
+
+    try:
+        axes = list(axis_values)  # type: ignore[arg-type]
+    except TypeError:
+        return [f"  ic_axis_values: {axis_values}"]
+
+    vars_raw = meta.get("ic_vars", ())
+    samples_raw = meta.get("ic_axis_sample", ())
+    try:
+        var_names = [str(x) for x in vars_raw]  # type: ignore[arg-type]
+    except TypeError:
+        var_names = []
+    try:
+        sample_names = [str(x) for x in samples_raw]  # type: ignore[arg-type]
+    except TypeError:
+        sample_names = []
+
+    lines = ["  ic_axis_values:"]
+    for idx, values in enumerate(axes):
+        name = var_names[idx] if idx < len(var_names) else f"axis_{idx}"
+        sample = sample_names[idx] if idx < len(sample_names) else "unknown"
+        arr = np.asarray(values, dtype=float)
+        if arr.size == 0:
+            lines.append(f"    {name}: 0 values, sample={sample}")
+            continue
+        lines.append(
+            f"    {name}: {arr.size} values, min={_format_number(float(np.min(arr)))}, "
+            f"max={_format_number(float(np.max(arr)))}, sample={sample}"
+        )
+    return lines
+
+
 def basin_stats(result: Any, *, top_k: int | None = None) -> BasinStats:
     """
     Compute derived statistics from a BasinResult-like object.
@@ -236,7 +276,10 @@ def basin_summary(
                 items.sort(key=lambda kv: kv[0])
 
         for k, v in items:
-            lines.append(f"  {k}: {v}")
+            if k == "ic_axis_values":
+                lines.extend(_format_ic_axis_values(meta))
+            else:
+                lines.append(f"  {k}: {v}")
 
     lines.append("")
     return "\n".join(lines)

@@ -15,6 +15,7 @@ from dynlib.analysis import (
     ReferenceRun,
     basin_axis,
     basin_known,
+    basin_summary,
     build_known_attractors_psc,
     basin_points,
     basin_values,
@@ -97,6 +98,28 @@ def test_basin_values_preserves_explicit_values(sim):
     np.testing.assert_allclose(ic[:, 0], [2.0, -1.0, 0.25])
     assert meta["ic_axis_values"][0] == (2.0, -1.0, 0.25)
     assert meta["ic_refinable"] is False
+
+
+def test_basin_summary_compacts_ic_axis_values():
+    result = BasinResult(
+        labels=np.array([], dtype=np.int64),
+        registry=[],
+        meta={
+            "ic_axis_values": (
+                (-4.979166666666667, -4.9375, 4.979166666666666),
+                (-1.0, 0.0, 1.0),
+            ),
+            "ic_axis_sample": ("center", "edge"),
+            "ic_vars": ("phi", "x"),
+        },
+    )
+
+    text = basin_summary(result, meta_keys=["ic_axis_values"], sort_meta=False)
+
+    assert "  ic_axis_values:\n" in text
+    assert "    phi: 3 values, min=-4.97917, max=4.97917, sample=center" in text
+    assert "    x: 3 values, min=-1, max=1, sample=edge" in text
+    assert "(-4.979166666666667, -4.9375, 4.979166666666666)" not in text
 
 
 def test_basin_points_maps_named_columns_to_state_order(sim):

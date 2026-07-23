@@ -2,6 +2,13 @@
 
 ---
 
+## [0.40.1] – 2026-07-23
+### Changed
+- `print_basin_summary` / `basin_summary` now does not dump all ic axis values. These values can be accessed via 
+  `result.meta["ic_axis_values"]`.
+
+---
+
 ## [0.40.0] – 2026-07-23
 ### Changed
 - Replaced basin analysis `ic_grid`/`ic_bounds` inputs with the named `ic={...}` API using `basin_axis`, 
